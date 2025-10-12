@@ -14,29 +14,16 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
     return {
       type: "postgres",
       host: this.configService.get("DB_HOST"),
-      port: this.configService.get("DB_PORT"),
-      username: this.configService.get("DB_USERNAME"),
-      password: this.configService.get("DB_PASSWORD"),
+      port: parseInt(this.configService.get("DB_PORT") || "5432", 10),
+      username: this.configService.get("DB_USER"),
+      password: this.configService.get("DB_PASS"),
       database: this.configService.get("DB_NAME"),
-      entities: [User, Submission, AuditLog, FinalScore],
-      synchronize: this.configService.get("NODE_ENV") === "development",
-      logging: this.configService.get("NODE_ENV") === "development",
-      migrations: ["dist/migrations/*.js"],
-      migrationsRun: false,
-      ssl: {
-        rejectUnauthorized: false, // Only for development/self-signed certs
-      },
-      // Connection pool settings for stability and SSL
+      ssl: { rejectUnauthorized: false },
       extra: {
-        ssl: true,
-        max: 20,
-        min: 5,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
+        ssl: { rejectUnauthorized: false },
       },
-      connectTimeoutMS: 10000,
-      retryAttempts: 3,
-      retryDelay: 3000,
+      synchronize: false,
+      autoLoadEntities: true,
     };
   }
 }
