@@ -1,0 +1,873 @@
+{
+  "info": {
+    "name": "NIRI Backend - Complete Updated API Collection",
+    "description": "Complete API collection for NIRI Backend with Multiple Status Support and Scoring System",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mospi.approver@gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\",\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\",\n  \"role\": \"NODAL_OFFICER\",\n  \"stateUt\": \"Maharashtra\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Management",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["users"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/:id",
+              "host": ["{{base_url}}"],
+              "path": ["users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Updated Name\",\n  \"lastName\": \"Updated Last\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/:id",
+              "host": ["{{base_url}}"],
+              "path": ["users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/:id",
+              "host": ["{{base_url}}"],
+              "path": ["users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Deactivate Users",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [\"user-id-1\", \"user-id-2\", \"user-id-3\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/bulk/delete",
+              "host": ["{{base_url}}"],
+              "path": ["users", "bulk", "delete"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Submission Management",
+      "item": [
+        {
+          "name": "Get All Submissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/submission?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["submission"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submissions - Multiple Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/submission?status=SUBMITTED_TO_MOSPI_APPROVER,APPROVED&page=1&limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["submission"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "SUBMITTED_TO_MOSPI_APPROVER,APPROVED"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/submission/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Submission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submissionId\": \"SUB-TEST-001\",\n  \"formData\": {\n    \"qualityIndex\": 9,\n    \"socialImpact\": 8.5,\n    \"economicGrowth\": 7\n  },\n  \"status\": \"DRAFT\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission",
+              "host": ["{{base_url}}"],
+              "path": ["submission"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Submission",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"qualityIndex\": 9.5,\n    \"socialImpact\": 9,\n    \"economicGrowth\": 8\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Submission",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/submission/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Submission Workflow",
+      "item": [
+        {
+          "name": "Update Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUBMITTED_TO_STATE\",\n  \"comment\": \"Ready for state review\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/update-status/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "update-status", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI Reviewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUBMITTED_TO_MOSPI_REVIEWER\",\n  \"comment\": \"Approved by state, forwarding to MoSPI for review\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/forward-to-mospi-reviewer/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "forward-to-mospi-reviewer", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI Approver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUBMITTED_TO_MOSPI_APPROVER\",\n  \"comment\": \"Reviewed and approved, forwarding to MoSPI Approver for final approval\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/forward-to-mospi-approver/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "forward-to-mospi-approver", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Submission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\",\n  \"comment\": \"Approved by MoSPI Approver\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/approve/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "approve", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Back to State",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUBMITTED_TO_STATE\",\n  \"comment\": \"Please address the following issues and resubmit\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/send-back-to-state/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "send-back-to-state", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "State Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED_TO_STATE\",\n  \"comment\": \"Rejected by state approver\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/state-reject/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "state-reject", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Final Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED_FINAL\",\n  \"comment\": \"Rejected by MoSPI Approver\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/final-reject/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "final-reject", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resubmit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Resubmitted with corrections\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/resubmit/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "resubmit", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit to State",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/submission/submit-to-state/:id",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "submit-to-state", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Scoring System",
+      "item": [
+        {
+          "name": "Get Score Rankings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/scoring/rankings",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "rankings"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Score Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/scoring/statistics",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "statistics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Score",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/scoring/state/:stateUt",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "state", ":stateUt"],
+              "variable": [
+                {
+                  "key": "stateUt",
+                  "value": "Maharashtra"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Calculate Score",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/scoring/calculate/:submissionId",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "calculate", ":submissionId"],
+              "variable": [
+                {
+                  "key": "submissionId",
+                  "value": "submission-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Data",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Generate Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/report/generate",
+              "host": ["{{base_url}}"],
+              "path": ["report", "generate"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "File Storage",
+      "item": [
+        {
+          "name": "Upload File",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "submissionId",
+                  "value": "submission-id-here",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/storage/upload",
+              "host": ["{{base_url}}"],
+              "path": ["storage", "upload"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Download File",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/storage/download/:fileId",
+              "host": ["{{base_url}}"],
+              "path": ["storage", "download", ":fileId"],
+              "variable": [
+                {
+                  "key": "fileId",
+                  "value": "file-id-here"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,409 @@
+# PostgreSQL Local Setup Guide for NIRI Backend
+
+## 📋 Complete PostgreSQL Local Installation & Setup
+
+यह guide आपको step-by-step बताएगा कि PostgreSQL को local machine पर कैसे install और configure करें।
+
+## 🖥️ Operating System Wise Installation
+
+### 1. **macOS Setup**
+
+#### **Option A: Using Homebrew (Recommended)**
+```bash
+# Homebrew install करें (अगर नहीं है)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# PostgreSQL install करें
+brew install postgresql@15
+
+# PostgreSQL service start करें
+brew services start postgresql@15
+
+# PostgreSQL को system startup पर auto-start करने के लिए
+brew services enable postgresql@15
+```
+
+#### **Option B: Using PostgreSQL.app (GUI)**
+1. https://postgresapp.com/ से download करें
+2. Install करें और start करें
+3. GUI interface से database create करें
+
+### 2. **Windows Setup**
+
+#### **Option A: Using Installer**
+1. https://www.postgresql.org/download/windows/ से download करें
+2. Installer run करें
+3. Password set करें (remember करें!)
+4. Port 5432 select करें
+5. Installation complete होने पर pgAdmin open होगा
+
+#### **Option B: Using Chocolatey**
+```powershell
+# Chocolatey install करें (अगर नहीं है)
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+# PostgreSQL install करें
+choco install postgresql
+
+# Service start करें
+net start postgresql-x64-15
+```
+
+### 3. **Ubuntu/Debian Setup**
+
+```bash
+# Update package list
+sudo apt update
+
+# PostgreSQL install करें
+sudo apt install postgresql postgresql-contrib
+
+# PostgreSQL service start करें
+sudo systemctl start postgresql
+
+# Auto-start enable करें
+sudo systemctl enable postgresql
+
+# PostgreSQL version check करें
+sudo -u postgres psql -c "SELECT version();"
+```
+
+### 4. **CentOS/RHEL Setup**
+
+```bash
+# PostgreSQL repository add करें
+sudo dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+
+# PostgreSQL install करें
+sudo dnf install -y postgresql15-server postgresql15
+
+# Database initialize करें
+sudo /usr/pgsql-15/bin/postgresql-15-setup initdb
+
+# Service start करें
+sudo systemctl start postgresql-15
+sudo systemctl enable postgresql-15
+```
+
+## 🔧 PostgreSQL Configuration
+
+### 1. **PostgreSQL Service Status Check**
+
+#### **macOS:**
+```bash
+# Service status
+brew services list | grep postgresql
+
+# Manual start/stop
+brew services start postgresql@15
+brew services stop postgresql@15
+```
+
+#### **Windows:**
+```powershell
+# Service status
+Get-Service postgresql*
+
+# Start service
+Start-Service postgresql-x64-15
+```
+
+#### **Linux:**
+```bash
+# Service status
+sudo systemctl status postgresql
+
+# Start/stop service
+sudo systemctl start postgresql
+sudo systemctl stop postgresql
+```
+
+### 2. **PostgreSQL Connection Test**
+
+```bash
+# Default postgres user से connect करें
+psql -U postgres
+
+# या specific host/port के साथ
+psql -h localhost -p 5432 -U postgres
+```
+
+## 🗄️ Database Setup for NIRI
+
+### 1. **Create Database**
+
+```sql
+-- PostgreSQL में login करें
+psql -U postgres
+
+-- Database create करें
+CREATE DATABASE niri_db;
+
+-- User create करें (optional)
+CREATE USER niri_user WITH PASSWORD 'niri_password123';
+
+-- User को database access दें
+GRANT ALL PRIVILEGES ON DATABASE niri_db TO niri_user;
+
+-- Database list check करें
+\l
+
+-- Exit करें
+\q
+```
+
+### 2. **Verify Database Creation**
+
+```bash
+# Database list देखें
+psql -U postgres -l
+
+# Specific database में connect करें
+psql -U postgres -d niri_db
+
+# Tables list देखें (migration के बाद)
+\dt
+```
+
+## ⚙️ Environment Configuration
+
+### 1. **Update .env File**
+
+```env
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=your_postgres_password
+DB_NAME=niri_db
+DB_SYNCHRONIZE=false
+DB_LOGGING=true
+```
+
+### 2. **Test Database Connection**
+
+```bash
+# NIRI project directory में जाएं
+cd /Users/vishu/Public/Git\ Workspace\ Projects/Niri-Dev/niri-backend
+
+# Dependencies install करें
+npm install
+
+# Database connection test करें
+npm run migration:run
+```
+
+## 🔐 PostgreSQL Security Setup
+
+### 1. **Change Default Password**
+
+```sql
+-- PostgreSQL में login करें
+psql -U postgres
+
+-- Password change करें
+ALTER USER postgres PASSWORD 'your_secure_password';
+
+-- Exit करें
+\q
+```
+
+### 2. **Create Application User**
+
+```sql
+-- Application के लिए dedicated user create करें
+CREATE USER niri_app_user WITH PASSWORD 'app_secure_password';
+
+-- Database access दें
+GRANT ALL PRIVILEGES ON DATABASE niri_db TO niri_app_user;
+
+-- Schema access दें
+GRANT ALL ON SCHEMA public TO niri_app_user;
+```
+
+### 3. **Update .env with App User**
+
+```env
+DB_USERNAME=niri_app_user
+DB_PASSWORD=app_secure_password
+```
+
+## 🚀 Complete Setup Commands
+
+### 1. **macOS Complete Setup**
+
+```bash
+# 1. PostgreSQL install करें
+brew install postgresql@15
+brew services start postgresql@15
+
+# 2. Database create करें
+psql -U postgres -c "CREATE DATABASE niri_db;"
+
+# 3. NIRI project setup करें
+cd /Users/vishu/Public/Git\ Workspace\ Projects/Niri-Dev/niri-backend
+npm install
+
+# 4. Environment configure करें
+cp env.example .env
+# .env file में database credentials update करें
+
+# 5. Migrations run करें
+npm run migration:run
+
+# 6. Application start करें
+npm run start:dev
+```
+
+### 2. **Windows Complete Setup**
+
+```powershell
+# 1. PostgreSQL install करें (installer से)
+# 2. pgAdmin open करें और database create करें
+# 3. Command prompt में:
+cd "C:\Users\YourName\Projects\niri-backend"
+npm install
+copy env.example .env
+# .env file में database credentials update करें
+npm run migration:run
+npm run start:dev
+```
+
+### 3. **Linux Complete Setup**
+
+```bash
+# 1. PostgreSQL install करें
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# 2. Database create करें
+sudo -u postgres psql -c "CREATE DATABASE niri_db;"
+
+# 3. NIRI project setup करें
+cd /path/to/niri-backend
+npm install
+cp env.example .env
+# .env file में database credentials update करें
+npm run migration:run
+npm run start:dev
+```
+
+## 🔍 Troubleshooting
+
+### Common Issues & Solutions
+
+#### **1. Connection Refused Error**
+```bash
+# Check if PostgreSQL is running
+# macOS:
+brew services list | grep postgresql
+
+# Linux:
+sudo systemctl status postgresql
+
+# Windows:
+Get-Service postgresql*
+```
+
+#### **2. Authentication Failed**
+```bash
+# Check pg_hba.conf file
+# macOS: /usr/local/var/postgresql@15/pg_hba.conf
+# Linux: /etc/postgresql/15/main/pg_hba.conf
+
+# Add this line for local connections:
+local   all             all                                     trust
+host    all             all             127.0.0.1/32            trust
+```
+
+#### **3. Database Does Not Exist**
+```sql
+-- Create database
+psql -U postgres -c "CREATE DATABASE niri_db;"
+
+-- Check if created
+psql -U postgres -l | grep niri_db
+```
+
+#### **4. Permission Denied**
+```sql
+-- Grant permissions
+psql -U postgres -d niri_db -c "GRANT ALL PRIVILEGES ON DATABASE niri_db TO your_username;"
+```
+
+## 📊 Database Management Tools
+
+### 1. **Command Line (psql)**
+```bash
+# Connect to database
+psql -U postgres -d niri_db
+
+# List databases
+\l
+
+# List tables
+\dt
+
+# Describe table
+\d table_name
+
+# Exit
+\q
+```
+
+### 2. **pgAdmin (GUI)**
+- Download from: https://www.pgadmin.org/
+- Web-based interface
+- Easy database management
+
+### 3. **DBeaver (Free GUI)**
+- Download from: https://dbeaver.io/
+- Universal database tool
+- Free community edition
+
+## 🎯 Quick Verification
+
+### 1. **Test Database Connection**
+```bash
+# Test connection
+psql -U postgres -d niri_db -c "SELECT version();"
+```
+
+### 2. **Test NIRI Application**
+```bash
+# Start application
+npm run start:dev
+
+# Check logs for database connection
+# Should see: "Database connection established"
+```
+
+### 3. **Test API Endpoints**
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Should return: {"status": "ok", "database": "connected"}
+```
+
+## 🎉 Success Checklist
+
+- [ ] PostgreSQL installed और running
+- [ ] Database `niri_db` created
+- [ ] User permissions set
+- [ ] `.env` file configured
+- [ ] Migrations run successfully
+- [ ] Application starts without errors
+- [ ] Database connection verified
+
+## 🚀 Next Steps
+
+1. **PostgreSQL Setup Complete** ✅
+2. **Import Postman Collection** 
+3. **Register Users**
+4. **Test API Endpoints**
+5. **Start Development**
+
+**अब आपका PostgreSQL local setup complete है!** 🎉

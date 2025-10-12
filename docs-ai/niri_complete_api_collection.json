@@ -1,0 +1,1605 @@
+{
+  "info": {
+    "name": "NIRI Backend API - Complete Collection",
+    "description": "Complete API collection for National Infrastructure Readiness Index (NIRI) Backend System with File Storage Support and Recent Activities Dashboard",
+    "version": "2.1.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "submissionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "filePath",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "stateApproverToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mospiReviewerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mospiApproverToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register Nodal Officer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nodal.officer@maharashtra.gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Rajesh\",\n  \"lastName\": \"Kumar\",\n  \"role\": \"NODAL_OFFICER\",\n  \"stateUt\": \"Maharashtra\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register State Approver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"state.approver@maharashtra.gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Priya\",\n  \"lastName\": \"Sharma\",\n  \"role\": \"STATE_APPROVER\",\n  \"stateUt\": \"Maharashtra\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register MoSPI Reviewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mospi.reviewer@gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Amit\",\n  \"lastName\": \"Singh\",\n  \"role\": \"MOSPI_REVIEWER\",\n  \"stateUt\": \"Central\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register MoSPI Approver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mospi.approver@gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Dr. Sunita\",\n  \"lastName\": \"Patel\",\n  \"role\": \"MOSPI_APPROVER\",\n  \"stateUt\": \"Central\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - Nodal Officer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('authToken', response.accessToken);",
+                  "    pm.collectionVariables.set('userId', response.user.id);",
+                  "    console.log('Nodal Officer logged in:', response.user.email);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nodal.officer@maharashtra.gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - State Approver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('stateApproverToken', response.accessToken);",
+                  "    console.log('State Approver logged in:', response.user.email);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"state.approver@maharashtra.gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - MoSPI Reviewer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('mospiReviewerToken', response.accessToken);",
+                  "    console.log('MoSPI Reviewer logged in:', response.user.email);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mospi.reviewer@gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - MoSPI Approver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('mospiApproverToken', response.accessToken);",
+                  "    console.log('MoSPI Approver logged in:', response.user.email);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mospi.approver@gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "profile"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"password123\",\n  \"newPassword\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "change-password"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Management",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Users by State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/by-state/Maharashtra",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "by-state", "Maharashtra"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Users by Role",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/by-role/NODAL_OFFICER?stateUt=Maharashtra",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "by-role", "NODAL_OFFICER"],
+              "query": [
+                {
+                  "key": "stateUt",
+                  "value": "Maharashtra"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Updated Name\",\n  \"lastName\": \"Updated Last Name\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "File Storage",
+      "item": [
+        {
+          "name": "Upload Single File",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('filePath', response.data.filePath);",
+                  "    console.log('File uploaded:', response.data.fileName);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Multiple Files",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('Files uploaded:', response.count);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload-multiple/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload-multiple", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get File URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/url/{{filePath}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "url", "{{filePath}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete File",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/{{filePath}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "{{filePath}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Storage Info",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/storage-info",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "storage-info"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Submission Workflow",
+      "item": [
+        {
+          "name": "Create Submission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('submissionId', response.id);",
+                  "    console.log('Submission created:', response.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submissionId\": \"SUB-MH-2024-001\",\n  \"formData\": {\n    \"capexToGsdpRatio\": 5.5,\n    \"infrastructureInvestment\": 1000,\n    \"projectCompletionRate\": 85,\n    \"qualityIndex\": 8.5,\n    \"sustainabilityScore\": 7.5,\n    \"innovationIndex\": 6.5,\n    \"digitalInfrastructure\": 9.0,\n    \"environmentalCompliance\": 8.0,\n    \"socialImpact\": 7.8,\n    \"economicGrowth\": 6.2\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Submissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/submission?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/submission/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Submission",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"capexToGsdpRatio\": 6.0,\n    \"infrastructureInvestment\": 1200,\n    \"projectCompletionRate\": 90,\n    \"qualityIndex\": 9.0,\n    \"sustainabilityScore\": 8.0,\n    \"innovationIndex\": 7.0\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"This submission looks good and meets all requirements.\",\n  \"type\": \"comment\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/{{submissionId}}/comment",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "{{submissionId}}", "comment"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stateApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Submission reviewed and approved by State. Forwarding to MoSPI for final review.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/forward-to-mospi/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "forward-to-mospi", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "State Reject",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stateApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED\",\n  \"comment\": \"Submission rejected due to incomplete data and missing documentation.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/state-reject/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "state-reject", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Final Reject (First Time)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Submission requires additional clarification on infrastructure metrics.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/final-reject/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "final-reject", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resubmit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"capexToGsdpRatio\": 6.2,\n    \"infrastructureInvestment\": 1100,\n    \"projectCompletionRate\": 88,\n    \"qualityIndex\": 8.8,\n    \"sustainabilityScore\": 7.8,\n    \"innovationIndex\": 6.8,\n    \"additionalClarification\": \"Detailed infrastructure metrics provided\"\n  },\n  \"comment\": \"Resubmitted with additional clarification and updated metrics.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/resubmit/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "resubmit", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Final Reject (Second Time - Final)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Final rejection: Submission does not meet minimum standards for infrastructure readiness.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/final-reject/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "final-reject", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Submission",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/submission/approve/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "approve", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Role-Specific KPIs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/kpis",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "kpis"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Recent Activities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/recent-activities",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "recent-activities"]
+            }
+          },
+          "response": [
+            {
+              "name": "Recent Activities Response",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/dashboard/recent-activities",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["dashboard", "recent-activities"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[\n  {\n    \"id\": \"uuid\",\n    \"submissionId\": \"SUB-MH-2024-001\",\n    \"title\": \"Digital Infrastructure Survey\",\n    \"status\": \"APPROVED\",\n    \"statusLabel\": \"Approved\",\n    \"statusColor\": \"green\",\n    \"stateUt\": \"Maharashtra\",\n    \"submittedBy\": \"Rajesh Kumar\",\n    \"submittedByRole\": \"NODAL_OFFICER\",\n    \"updatedAt\": \"2025-01-14T10:30:00.000Z\",\n    \"createdAt\": \"2025-01-13T09:15:00.000Z\"\n  },\n  {\n    \"id\": \"uuid\",\n    \"submissionId\": \"SUB-MH-2024-002\",\n    \"title\": \"PPP Project Assessment\",\n    \"status\": \"REJECTED\",\n    \"statusLabel\": \"Returned\",\n    \"statusColor\": \"orange\",\n    \"stateUt\": \"Maharashtra\",\n    \"submittedBy\": \"Priya Sharma\",\n    \"submittedByRole\": \"STATE_APPROVER\",\n    \"updatedAt\": \"2025-01-13T14:45:00.000Z\",\n    \"createdAt\": \"2025-01-12T11:20:00.000Z\"\n  }\n]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Get Rankings",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/report/ranking",
+              "host": ["{{baseUrl}}"],
+              "path": ["report", "ranking"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Full Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/report/full-report",
+              "host": ["{{baseUrl}}"],
+              "path": ["report", "full-report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/report/state/Maharashtra",
+              "host": ["{{baseUrl}}"],
+              "path": ["report", "state", "Maharashtra"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Export Rankings (JSON)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/report/export?format=json",
+              "host": ["{{baseUrl}}"],
+              "path": ["report", "export"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "json"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Export Rankings (CSV)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/report/export?format=csv",
+              "host": ["{{baseUrl}}"],
+              "path": ["report", "export"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "csv"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Status Report",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/report/submission-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["report", "submission-status"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "item": [
+        {
+          "name": "Get All Audit Logs",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Entity Audit Trail",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit/entity/Submission/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "entity", "Submission", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Audit Logs",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit/user/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "user", "{{userId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Audit Statistics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audit/my-activity",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "my-activity"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Complete Workflow Test",
+      "item": [
+        {
+          "name": "1. Register All Users",
+          "item": [
+            {
+              "name": "Register Nodal Officer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"nodal.officer@maharashtra.gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Rajesh\",\n  \"lastName\": \"Kumar\",\n  \"role\": \"NODAL_OFFICER\",\n  \"stateUt\": \"Maharashtra\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/register",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "register"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Register State Approver",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"state.approver@maharashtra.gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Priya\",\n  \"lastName\": \"Sharma\",\n  \"role\": \"STATE_APPROVER\",\n  \"stateUt\": \"Maharashtra\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/register",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "register"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Register MoSPI Reviewer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"mospi.reviewer@gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Amit\",\n  \"lastName\": \"Singh\",\n  \"role\": \"MOSPI_REVIEWER\",\n  \"stateUt\": \"Central\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/register",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "register"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Register MoSPI Approver",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"mospi.approver@gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Dr. Sunita\",\n  \"lastName\": \"Patel\",\n  \"role\": \"MOSPI_APPROVER\",\n  \"stateUt\": \"Central\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/register",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "register"]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "2. Login All Users",
+          "item": [
+            {
+              "name": "Login Nodal Officer",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('authToken', response.accessToken);",
+                      "    pm.collectionVariables.set('userId', response.user.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"nodal.officer@maharashtra.gov.in\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "login"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Login State Approver",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('stateApproverToken', response.accessToken);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"state.approver@maharashtra.gov.in\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "login"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Login MoSPI Reviewer",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('mospiReviewerToken', response.accessToken);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"mospi.reviewer@gov.in\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "login"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Login MoSPI Approver",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('mospiApproverToken', response.accessToken);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"mospi.approver@gov.in\",\n  \"password\": \"password123\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["auth", "login"]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "3. Complete Workflow with Files",
+          "item": [
+            {
+              "name": "Create Submission",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    const response = pm.response.json();",
+                      "    pm.collectionVariables.set('workflowSubmissionId', response.id);",
+                      "    console.log('Workflow submission created:', response.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"submissionId\": \"SUB-WORKFLOW-TEST-001\",\n  \"formData\": {\n    \"capexToGsdpRatio\": 6.0,\n    \"infrastructureInvestment\": 1500,\n    \"projectCompletionRate\": 92,\n    \"qualityIndex\": 9.2,\n    \"sustainabilityScore\": 8.5,\n    \"innovationIndex\": 7.8\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/submission",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["submission"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Upload Supporting Documents",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "files",
+                      "type": "file",
+                      "src": []
+                    },
+                    {
+                      "key": "files",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/file/upload-multiple/{{workflowSubmissionId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["file", "upload-multiple", "{{workflowSubmissionId}}"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Forward to MoSPI",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stateApproverToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"comment\": \"Workflow test - forwarding to MoSPI with supporting documents\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/submission/forward-to-mospi/{{workflowSubmissionId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["submission", "forward-to-mospi", "{{workflowSubmissionId}}"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "MoSPI Review Comment",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{mospiReviewerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"text\": \"Workflow test - MoSPI review completed with file verification\",\n  \"type\": \"comment\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/submission/{{workflowSubmissionId}}/comment",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["submission", "{{workflowSubmissionId}}", "comment"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "MoSPI Approval",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{mospiApproverToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/submission/approve/{{workflowSubmissionId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["submission", "approve", "{{workflowSubmissionId}}"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify Final Score",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/submission/{{workflowSubmissionId}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["submission", "{{workflowSubmissionId}}"]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

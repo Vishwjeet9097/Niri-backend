@@ -1,0 +1,1074 @@
+{
+  "info": {
+    "name": "NIRI Backend API Collection - Enhanced",
+    "description": "Complete API collection for National Infrastructure Readiness Index (NIRI) Backend System with File Storage Support",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "submissionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "filePath",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nodal.officer@maharashtra.gov.in\",\n  \"password\": \"password123\",\n  \"firstName\": \"Rajesh\",\n  \"lastName\": \"Kumar\",\n  \"role\": \"NODAL_OFFICER\",\n  \"stateUt\": \"Maharashtra\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - Nodal Officer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('authToken', response.accessToken);",
+                  "    pm.collectionVariables.set('userId', response.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nodal.officer@maharashtra.gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - State Approver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('stateApproverToken', response.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"state.approver@maharashtra.gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - MoSPI Reviewer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('mospiReviewerToken', response.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mospi.reviewer@gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login - MoSPI Approver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('mospiApproverToken', response.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mospi.approver@gov.in\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "File Storage",
+      "item": [
+        {
+          "name": "Upload Single File",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('filePath', response.data.filePath);",
+                  "    console.log('File uploaded:', response.data.fileName);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Multiple Files",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('Files uploaded:', response.count);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload-multiple/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload-multiple", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get File URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/url/{{filePath}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "url", "{{filePath}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete File",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/{{filePath}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "{{filePath}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Storage Info",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/storage-info",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "storage-info"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Submission Workflow with Files",
+      "item": [
+        {
+          "name": "Create Submission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('submissionId', response.id);",
+                  "    console.log('Submission created:', response.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submissionId\": \"SUB-MH-2024-001\",\n  \"formData\": {\n    \"capexToGsdpRatio\": 5.5,\n    \"infrastructureInvestment\": 1000,\n    \"projectCompletionRate\": 85,\n    \"qualityIndex\": 8.5,\n    \"sustainabilityScore\": 7.5,\n    \"innovationIndex\": 6.5,\n    \"digitalInfrastructure\": 9.0,\n    \"environmentalCompliance\": 8.0,\n    \"socialImpact\": 7.8,\n    \"economicGrowth\": 6.2\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Supporting Documents",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload-multiple/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload-multiple", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission with Files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/submission/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stateApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Submission reviewed with supporting documents. Forwarding to MoSPI for final review.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/forward-to-mospi/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "forward-to-mospi", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "MoSPI Review with File Access",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiReviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Review completed. All supporting documents verified and submission meets requirements.\",\n  \"type\": \"comment\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/{{submissionId}}/comment",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "{{submissionId}}", "comment"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "MoSPI Approval with Transaction",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/submission/approve/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "approve", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Enhanced Rejection Flow",
+      "item": [
+        {
+          "name": "Create Submission for Rejection Test",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('rejectionSubmissionId', response.id);",
+                  "    console.log('Rejection test submission created:', response.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submissionId\": \"SUB-REJECTION-TEST-001\",\n  \"formData\": {\n    \"capexToGsdpRatio\": 2.0,\n    \"infrastructureInvestment\": 200,\n    \"projectCompletionRate\": 30,\n    \"qualityIndex\": 3.0,\n    \"sustainabilityScore\": 2.5,\n    \"innovationIndex\": 1.8\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Files for Rejection Test",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload-multiple/{{rejectionSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload-multiple", "{{rejectionSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stateApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Rejection test - forwarding to MoSPI\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/forward-to-mospi/{{rejectionSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "forward-to-mospi", "{{rejectionSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "First Rejection (Count < 1)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Rejection test - first rejection, needs improvement. Status should be REJECTED_TO_STATE.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/final-reject/{{rejectionSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "final-reject", "{{rejectionSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resubmit with Updated Files",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"capexToGsdpRatio\": 4.0,\n    \"infrastructureInvestment\": 800,\n    \"projectCompletionRate\": 60,\n    \"qualityIndex\": 6.0,\n    \"sustainabilityScore\": 5.5,\n    \"innovationIndex\": 4.8\n  },\n  \"comment\": \"Rejection test - resubmitted with improvements and updated files\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/resubmit/{{rejectionSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "resubmit", "{{rejectionSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Additional Files After Resubmission",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload-multiple/{{rejectionSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload-multiple", "{{rejectionSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward Again",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stateApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Rejection test - forwarding again after resubmission with additional files\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/forward-to-mospi/{{rejectionSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "forward-to-mospi", "{{rejectionSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Final Rejection (Count >= 1)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Rejection test - final rejection, does not meet standards. Status should be REJECTED_FINAL.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/final-reject/{{rejectionSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "final-reject", "{{rejectionSubmissionId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "File Management Tests",
+      "item": [
+        {
+          "name": "Test File Upload Validation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Large File Upload (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Unauthorized File Upload",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stateApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload", "{{submissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test File Access After Approval",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/url/{{filePath}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "url", "{{filePath}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Storage Configuration Tests",
+      "item": [
+        {
+          "name": "Test Local Storage",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/storage-info",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "storage-info"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test S3 Storage (if configured)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file/storage-info",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "storage-info"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Complete Workflow with Files",
+      "item": [
+        {
+          "name": "1. Create Submission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('workflowSubmissionId', response.id);",
+                  "    console.log('Workflow submission created:', response.id);",
+                  "}"
+                ]
+              }
+            },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submissionId\": \"SUB-WORKFLOW-FILES-001\",\n  \"formData\": {\n    \"capexToGsdpRatio\": 6.0,\n    \"infrastructureInvestment\": 1500,\n    \"projectCompletionRate\": 92,\n    \"qualityIndex\": 9.2,\n    \"sustainabilityScore\": 8.5,\n    \"innovationIndex\": 7.8\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Upload Supporting Documents",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file/upload-multiple/{{workflowSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file", "upload-multiple", "{{workflowSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. Forward to MoSPI",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stateApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Workflow test with files - forwarding to MoSPI with supporting documents\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/forward-to-mospi/{{workflowSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "forward-to-mospi", "{{workflowSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. MoSPI Review with File Verification",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiReviewerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Workflow test - MoSPI review completed. All supporting documents verified and submission meets requirements.\",\n  \"type\": \"comment\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/submission/{{workflowSubmissionId}}/comment",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "{{workflowSubmissionId}}", "comment"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. MoSPI Approval with Transaction",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mospiApproverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/submission/approve/{{workflowSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "approve", "{{workflowSubmissionId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6. Verify Final Score Calculation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/submission/{{workflowSubmissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["submission", "{{workflowSubmissionId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
