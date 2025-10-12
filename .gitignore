@@ -7,3 +7,5 @@ docs-ai/
 npm-debug.log
 .DS_Store
 /uploads/
+
+src/config/database.config.ts
