@@ -2,8 +2,52 @@
 
 # This file demonstrates how to:
 # 1. Create a submission as NODAL_OFFICER
-# 2. Add comments as MOSPI_APPROVER
+# 2. Add comments as MOSPI_APPROVER, MOSPI_REVIEWER, or STATE_APPROVER
 # 3. View all comments with their respective roles
+
+# NOTE: Only users with roles STATE_APPROVER, MOSPI_REVIEWER, or MOSPI_APPROVER can add comments
+
+# IMPORTANT: If you encounter 401 Unauthorized errors, make sure all users exist!
+# Run steps 0.1, 0.2, and 0.3 first to register all necessary users.
+
+### Step 0.1: Register NODAL_OFFICER user (if it doesn't exist)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "nodal@niri.gov.in",
+  "password": "Nodal@123",
+  "firstName": "Nodal",
+  "lastName": "Officer",
+  "role": "NODAL_OFFICER",
+  "stateUt": "Karnataka"
+}
+
+### Step 0.2: Register MOSPI_APPROVER user (if it doesn't exist)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "admin@niri.gov.in",
+  "password": "Admin@123",
+  "firstName": "MOSPI",
+  "lastName": "Approver",
+  "role": "MOSPI_APPROVER",
+  "stateUt": "Delhi"
+}
+
+### Step 0.3: Register MOSPI_REVIEWER user (if it doesn't exist)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "reviewer@niri.gov.in",
+  "password": "Reviewer@123",
+  "firstName": "MOSPI",
+  "lastName": "Reviewer",
+  "role": "MOSPI_REVIEWER",
+  "stateUt": "Delhi"
+}
 
 # Set environment variables
 @baseUrl = http://localhost:3000
@@ -77,7 +121,31 @@ Authorization: Bearer {{approverToken}}
   "type": "approval"
 }
 
-### Step 7: Get the submission with comments (includes role information)
+### Step 7: Login as MOSPI_REVIEWER 
+# @name reviewerLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "reviewer@niri.gov.in",
+  "password": "Reviewer@123"
+}
+
+### Step 8: Add a comment as MOSPI_REVIEWER
+# @name reviewerComment
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{reviewerLogin.response.body.$.data.accessToken}}
+
+{
+  "text": "This is a reviewer comment from MOSPI_REVIEWER",
+  "type": "comment"
+}
+
+# Note: If you get a 401 Unauthorized error, make sure you've registered the user
+# by running Step 0.3 first, then try the login again
+
+### Step 9: Get the submission with comments (includes role information)
 GET {{baseUrl}}/submission/{{submissionId}}
 Authorization: Bearer {{approverToken}}
 
@@ -93,7 +161,7 @@ Authorization: Bearer {{approverToken}}
 #   ...
 # ]
 
-### Step 8: Extract and display only the comments with roles (using JavaScript)
+### Step 10: Extract and display only the comments with roles (using JavaScript)
 # @name extractComments
 GET {{baseUrl}}/submission/{{submissionId}}
 Authorization: Bearer {{approverToken}}
