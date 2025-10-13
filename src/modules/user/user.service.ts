@@ -33,8 +33,8 @@ export class UserService {
       ])
       .where("user.isActive = :isActive", { isActive: true });
 
-    // State/UT approvers can only see users from their state
-    if (userRole === UserRole.STATE_APPROVER) {
+    // Only ADMIN can see all users, others can only see users from their state
+    if (userRole !== UserRole.ADMIN) {
       query = query.andWhere("user.stateUt = :stateUt", {
         stateUt: userStateUt,
       });
@@ -67,8 +67,8 @@ export class UserService {
       throw new NotFoundException("User not found");
     }
 
-    // State/UT approvers can only access users from their state
-    if (userRole === UserRole.STATE_APPROVER && user.stateUt !== userStateUt) {
+    // Only ADMIN can access users from any state, others can only access users from their state
+    if (userRole !== UserRole.ADMIN && user.stateUt !== userStateUt) {
       throw new ForbiddenException("Access denied");
     }
 
@@ -180,7 +180,12 @@ export class UserService {
     return result;
   }
 
-  async getUsersByState(stateUt: string): Promise<User[]> {
+  async getUsersByState(stateUt: string, userRole?: UserRole, userStateUt?: string): Promise<User[]> {
+    // Only ADMIN can access users from any state, others can only access their own state
+    if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
+      throw new ForbiddenException("Access denied");
+    }
+
     return this.userRepository.find({
       where: { stateUt, isActive: true },
       select: [
@@ -197,7 +202,7 @@ export class UserService {
     });
   }
 
-  async getUsersByRole(role: UserRole, stateUt?: string): Promise<User[]> {
+  async getUsersByRole(role: UserRole, stateUt?: string, userRole?: UserRole, userStateUt?: string): Promise<User[]> {
     const query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -215,7 +220,14 @@ export class UserService {
       .andWhere("user.isActive = :isActive", { isActive: true });
 
     if (stateUt) {
+      // Only ADMIN can access users from any state, others can only access their own state
+      if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
+        throw new ForbiddenException("Access denied");
+      }
       query.andWhere("user.stateUt = :stateUt", { stateUt });
+    } else if (userRole && userRole !== UserRole.ADMIN) {
+      // If no specific state requested and user is not ADMIN, restrict to their state
+      query.andWhere("user.stateUt = :userStateUt", { userStateUt });
     }
 
     return query.getMany();
