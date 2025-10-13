@@ -21,6 +21,10 @@ export declare class ScoringService {
     constructor(submissionRepository: Repository<Submission>, finalScoreRepository: Repository<FinalScore>);
     calculateScore(submissionId: string, approvedBy: string): Promise<FinalScore>;
     private performScoreCalculation;
+    private calculateInfraFinancingScore;
+    private calculateInfraDevelopmentScore;
+    private calculatePPPDevelopmentScore;
+    private calculateInfraEnablersScore;
     getScoreRankings(): Promise<any[]>;
     getStateScore(stateUt: string): Promise<FinalScore | null>;
     getScoreStatistics(): Promise<any>;
