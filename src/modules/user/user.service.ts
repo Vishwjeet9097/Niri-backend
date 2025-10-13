@@ -52,6 +52,13 @@ export class UserService {
       });
     }
 
+    // STATE_APPROVER can only see NODAL_OFFICER users
+    if (userRole === UserRole.STATE_APPROVER) {
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
+    }
+
     return query.getMany();
   }
 
@@ -230,6 +237,13 @@ export class UserService {
       query = query.andWhere("user.id != :userId", { userId });
     }
 
+    // STATE_APPROVER can only see NODAL_OFFICER users
+    if (userRole === UserRole.STATE_APPROVER) {
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
+    }
+
     return query.getMany();
   }
 
@@ -260,6 +274,13 @@ export class UserService {
     // Hide logged-in user from the list
     if (userId) {
       query = query.andWhere("user.id != :userId", { userId });
+    }
+
+    // STATE_APPROVER can only see NODAL_OFFICER users
+    if (userRole === UserRole.STATE_APPROVER) {
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
     }
 
     if (stateUt) {
