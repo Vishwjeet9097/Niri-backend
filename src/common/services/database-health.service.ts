@@ -1,13 +1,13 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from '../../entities/user.entity';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { User } from "../../entities/user.entity";
 
 @Injectable()
 export class DatabaseHealthService {
   constructor(
     @InjectRepository(User)
-    private userRepository: Repository<User>,
+    private userRepository: Repository<User>
   ) {}
 
   async checkDatabaseHealth(): Promise<{
@@ -18,21 +18,23 @@ export class DatabaseHealthService {
   }> {
     try {
       // Check if database is connected
-      await this.userRepository.query('SELECT 1');
-      
+      await this.userRepository.query("SELECT 1");
+
       // Check if users table exists and get count
       const result = await this.userRepository.query(`
         SELECT COUNT(*) as count 
         FROM information_schema.tables 
         WHERE table_name = 'users' AND table_schema = 'public'
       `);
-      
+
       const hasUsersTable = result[0]?.count > 0;
-      
+
       let userCount = 0;
       if (hasUsersTable) {
-        const userCountResult = await this.userRepository.query('SELECT COUNT(*) as count FROM users');
-        userCount = parseInt(userCountResult[0]?.count || '0');
+        const userCountResult = await this.userRepository.query(
+          "SELECT COUNT(*) as count FROM users"
+        );
+        userCount = parseInt(userCountResult[0]?.count || "0");
       }
 
       return {
@@ -64,3 +66,5 @@ export class DatabaseHealthService {
     }
   }
 }
+
+

@@ -1,11 +1,16 @@
-import { Injectable, UnauthorizedException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
-import { User, UserRole } from '../../entities/user.entity';
-import { CreateUserDto, LoginDto } from './dto/auth.dto';
-import { DatabaseHealthService } from '../../common/services/database-health.service';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as bcrypt from "bcryptjs";
+import { User, UserRole } from "../../entities/user.entity";
+import { CreateUserDto, LoginDto } from "./dto/auth.dto";
+import { DatabaseHealthService } from "../../common/services/database-health.service";
 
 @Injectable()
 export class AuthService {
@@ -13,18 +18,21 @@ export class AuthService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private jwtService: JwtService,
-    private databaseHealthService: DatabaseHealthService,
+    private databaseHealthService: DatabaseHealthService
   ) {}
 
   async register(
-    createUserDto: CreateUserDto,
+    createUserDto: CreateUserDto
   ): Promise<{ user: Partial<User>; accessToken: string }> {
-    const { email, password, firstName, lastName, role, stateUt } = createUserDto;
+    const { email, password, firstName, lastName, role, stateUt } =
+      createUserDto;
 
     // Check if user already exists
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
     if (existingUser) {
-      throw new ConflictException('User with this email already exists');
+      throw new ConflictException("User with this email already exists");
     }
 
     // Hash password
@@ -61,40 +69,48 @@ export class AuthService {
     };
   }
 
-  async login(loginDto: LoginDto): Promise<{ user: Partial<User>; accessToken: string }> {
+  async login(
+    loginDto: LoginDto
+  ): Promise<{ user: Partial<User>; accessToken: string }> {
     const { email, password } = loginDto;
 
     try {
       // Check database health first
       const dbHealth = await this.databaseHealthService.checkDatabaseHealth();
-      
+
       if (!dbHealth.isConnected) {
-        throw new ServiceUnavailableException('Database connection failed. Please try again later.');
+        throw new ServiceUnavailableException(
+          "Database connection failed. Please try again later."
+        );
       }
-      
+
       if (!dbHealth.hasUsersTable) {
-        throw new ServiceUnavailableException('Users table not found. Please run database migration first.');
+        throw new ServiceUnavailableException(
+          "Users table not found. Please run database migration first."
+        );
       }
-      
+
       if (dbHealth.userCount === 0) {
-        throw new ServiceUnavailableException('No users found in database. Please run database migration to create default users.');
+        throw new ServiceUnavailableException(
+          "No users found in database. Please run database migration to create default users."
+        );
       }
 
       // Find user
       const user = await this.userRepository.findOne({ where: { email } });
       if (!user) {
-        throw new UnauthorizedException('Invalid credentials');
+        throw new UnauthorizedException("Invalid credentials");
       }
 
       // Check if user is active
       if (!user.isActive) {
-        throw new UnauthorizedException('Account is deactivated');
+        throw new UnauthorizedException("Account is deactivated");
       }
 
       // Verify password
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
-        throw new UnauthorizedException('Invalid credentials');
+        throw new UnauthorizedException("Invalid credentials");
       }
 
       // Generate JWT token
@@ -115,10 +131,15 @@ export class AuthService {
         accessToken,
       };
     } catch (error) {
-      if (error instanceof ServiceUnavailableException || error instanceof UnauthorizedException) {
+      if (
+        error instanceof ServiceUnavailableException ||
+        error instanceof UnauthorizedException
+      ) {
         throw error;
       }
-      throw new ServiceUnavailableException('Database error occurred. Please try again later.');
+      throw new ServiceUnavailableException(
+        "Database error occurred. Please try again later."
+      );
     }
   }
 
@@ -135,7 +156,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException("User not found");
     }
 
     const { password, ...userWithoutPassword } = user;
@@ -145,18 +166,21 @@ export class AuthService {
   async changePassword(
     userId: string,
     currentPassword: string,
-    newPassword: string,
+    newPassword: string
   ): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException("User not found");
     }
 
     // Verify current password
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    const isCurrentPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
     if (!isCurrentPasswordValid) {
-      throw new UnauthorizedException('Current password is incorrect');
+      throw new UnauthorizedException("Current password is incorrect");
     }
 
     // Hash new password
