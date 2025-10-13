@@ -1,6 +1,6 @@
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../../entities/user.entity';
-import { UpdateUserDto } from '../auth/dto/auth.dto';
+import { UpdateUserDto, CreateUserDto } from '../auth/dto/auth.dto';
 export declare class UserService {
     private userRepository;
     constructor(userRepository: Repository<User>);
@@ -18,4 +18,8 @@ export declare class UserService {
     }>;
     getUsersByState(stateUt: string): Promise<User[]>;
     getUsersByRole(role: UserRole, stateUt?: string): Promise<User[]>;
+    createUser(createUserDto: CreateUserDto, approverRole: UserRole, approverState: string): Promise<{
+        user: Partial<User>;
+        message: string;
+    }>;
 }

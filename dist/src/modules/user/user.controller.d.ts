@@ -1,5 +1,5 @@
 import { UserService } from './user.service';
-import { UpdateUserDto } from '../auth/dto/auth.dto';
+import { UpdateUserDto, CreateUserDto } from '../auth/dto/auth.dto';
 import { UserRole } from '../../entities/user.entity';
 export declare class UserController {
     private readonly userService;
@@ -8,6 +8,10 @@ export declare class UserController {
     getUsersByState(stateUt: string): Promise<import("../../entities/user.entity").User[]>;
     getUsersByRole(role: UserRole, stateUt?: string): Promise<import("../../entities/user.entity").User[]>;
     findOne(id: string, req: any): Promise<import("../../entities/user.entity").User>;
+    createUser(createUserDto: CreateUserDto, req: any): Promise<{
+        user: Partial<import("../../entities/user.entity").User>;
+        message: string;
+    }>;
     update(id: string, updateUserDto: UpdateUserDto, req: any): Promise<import("../../entities/user.entity").User>;
     deactivate(id: string, req: any): Promise<{
         message: string;

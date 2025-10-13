@@ -11,7 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import { UpdateUserDto } from '../auth/dto/auth.dto';
+import { UpdateUserDto, CreateUserDto } from '../auth/dto/auth.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../../entities/user.entity';
@@ -39,6 +39,13 @@ export class UserController {
   @Get(':id')
   async findOne(@Param('id') id: string, @Request() req) {
     return this.userService.findOne(id, req.user.role, req.user.stateUt);
+  }
+
+  @Post('create')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER)
+  async createUser(@Body() createUserDto: CreateUserDto, @Request() req) {
+    return this.userService.createUser(createUserDto, req.user.role, req.user.stateUt);
   }
 
   @Patch(':id')

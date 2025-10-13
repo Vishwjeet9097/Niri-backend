@@ -16,6 +16,7 @@ const app_service_1 = require("./app.service");
 const database_config_1 = require("./config/database.config");
 const auth_module_1 = require("./modules/auth/auth.module");
 const user_module_1 = require("./modules/user/user.module");
+const state_module_1 = require("./modules/state/state.module");
 const submission_module_1 = require("./modules/submission/submission.module");
 const audit_module_1 = require("./modules/audit/audit.module");
 const dashboard_module_1 = require("./modules/dashboard/dashboard.module");
@@ -45,6 +46,7 @@ exports.AppModule = AppModule = __decorate([
             }),
             auth_module_1.AuthModule,
             user_module_1.UserModule,
+            state_module_1.StateModule,
             submission_module_1.SubmissionModule,
             audit_module_1.AuditModule,
             dashboard_module_1.DashboardModule,

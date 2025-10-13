@@ -35,6 +35,9 @@ let UserController = class UserController {
     async findOne(id, req) {
         return this.userService.findOne(id, req.user.role, req.user.stateUt);
     }
+    async createUser(createUserDto, req) {
+        return this.userService.createUser(createUserDto, req.user.role, req.user.stateUt);
+    }
     async update(id, updateUserDto, req) {
         return this.userService.update(id, updateUserDto, req.user.role, req.user.stateUt);
     }
@@ -81,6 +84,16 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], UserController.prototype, "findOne", null);
+__decorate([
+    (0, common_1.Post)('create'),
+    (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
+    (0, roles_guard_1.Roles)(user_entity_1.UserRole.STATE_APPROVER, user_entity_1.UserRole.MOSPI_REVIEWER, user_entity_1.UserRole.MOSPI_APPROVER),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [auth_dto_1.CreateUserDto, Object]),
+    __metadata("design:returntype", Promise)
+], UserController.prototype, "createUser", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
