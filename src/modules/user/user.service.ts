@@ -9,6 +9,17 @@ import { Repository } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  ConflictException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, Not } from "typeorm";
+import { User, UserRole } from "../../entities/user.entity";
+import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
+import * as bcrypt from "bcryptjs";
 
 @Injectable()
 export class UserService {
@@ -17,7 +28,11 @@ export class UserService {
     private userRepository: Repository<User>
   ) {}
 
-  async findAll(userRole: UserRole, userStateUt: string): Promise<User[]> {
+  async findAll(
+    userRole: UserRole,
+    userStateUt: string,
+    userId?: string
+  ): Promise<User[]> {
     let query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -32,11 +47,30 @@ export class UserService {
         "user.createdAt",
       ])
       .where("user.isActive = :isActive", { isActive: true });
+      .where("user.isActive = :isActive", { isActive: true })
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
 
-    // State/UT approvers can only see users from their state
+    // Hide ADMIN users from all roles (including ADMIN itself)
+
+    // Hide logged-in user from the list
+    if (userId) {
+      query = query.andWhere("user.id != :userId", { userId });
+    }
+
+    // Only ADMIN can see all users, others can only see users from their state
+    if (userRole !== UserRole.ADMIN) {
+      query = query.andWhere("user.stateUt = :stateUt", {
+        stateUt: userStateUt,
+      });
+    }
+
+    // STATE_APPROVER can only see NODAL_OFFICER users
     if (userRole === UserRole.STATE_APPROVER) {
       query = query.andWhere("user.stateUt = :stateUt", {
         stateUt: userStateUt,
+      });
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
       });
     }
 
@@ -70,6 +104,14 @@ export class UserService {
     // State/UT approvers can only access users from their state
     if (userRole === UserRole.STATE_APPROVER && user.stateUt !== userStateUt) {
       throw new ForbiddenException("Access denied");
+    // Hide ADMIN users from all roles (including ADMIN itself)
+    if (user.role === UserRole.ADMIN) {
+      throw new NotFoundException("User not found");
+    }
+
+    // Only ADMIN can access users from any state, others can only access users from their state
+    if (userRole !== UserRole.ADMIN && user.stateUt !== userStateUt) {
+      throw new ForbiddenException("Access denied");
     }
 
     return user;
@@ -83,7 +125,7 @@ export class UserService {
   ): Promise<User> {
     const user = await this.findOne(id, userRole, userStateUt);
 
-    // State Approver and MoSPI roles can change user roles
+    // Admin, State Approver and MoSPI roles can change user roles
     if (
       updateUserDto.role &&
       ![
@@ -91,9 +133,18 @@ export class UserService {
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
       ].includes(userRole)
+      ![
+        UserRole.ADMIN,
+        UserRole.STATE_APPROVER,
+        UserRole.MOSPI_REVIEWER,
+        UserRole.MOSPI_APPROVER,
+      ].includes(userRole)
     ) {
       throw new ForbiddenException(
         "Only State Approver and MoSPI roles can change user roles"
+      );
+      throw new ForbiddenException(
+        "Only Admin, State Approver and MoSPI roles can change user roles"
       );
     }
 
@@ -113,9 +164,15 @@ export class UserService {
   ): Promise<void> {
     await this.findOne(id, userRole, userStateUt);
 
-    // State Approver and MoSPI roles can deactivate users
+    // Admin, State Approver and MoSPI roles can deactivate users
     if (
       ![
+        UserRole.STATE_APPROVER,
+        UserRole.MOSPI_REVIEWER,
+        UserRole.MOSPI_APPROVER,
+      ].includes(userRole)
+      ![
+        UserRole.ADMIN,
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
@@ -123,6 +180,9 @@ export class UserService {
     ) {
       throw new ForbiddenException(
         "Only State Approver and MoSPI roles can deactivate users"
+      );
+      throw new ForbiddenException(
+        "Only Admin, State Approver and MoSPI roles can deactivate users"
       );
     }
 
@@ -138,9 +198,15 @@ export class UserService {
     failedCount: number;
     errors: Array<{ userId: string; error: string }>;
   }> {
-    // Only STATE_APPROVER, MOSPI_REVIEWER, and MOSPI_APPROVER can bulk deactivate users
+    // Only ADMIN, STATE_APPROVER, MOSPI_REVIEWER, and MOSPI_APPROVER can bulk deactivate users
     if (
       ![
+        UserRole.STATE_APPROVER,
+        UserRole.MOSPI_REVIEWER,
+        UserRole.MOSPI_APPROVER,
+      ].includes(userRole)
+      ![
+        UserRole.ADMIN,
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
@@ -148,6 +214,7 @@ export class UserService {
     ) {
       throw new ForbiddenException(
         "Only State Approvers and MoSPI roles can bulk deactivate users"
+        "Only Admin, State Approvers and MoSPI roles can bulk deactivate users"
       );
     }
 
@@ -197,6 +264,58 @@ export class UserService {
   async getUsersByRole(role: UserRole, stateUt?: string): Promise<User[]> {
     const query = this.userRepository
       .createQueryBuilder("user")
+  async getUsersByState(
+    stateUt: string,
+    userRole?: UserRole,
+    userStateUt?: string,
+    userId?: string
+  ): Promise<User[]> {
+    // Only ADMIN can access users from any state, others can only access their own state
+    if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
+      throw new ForbiddenException("Access denied");
+    }
+
+    let query = this.userRepository
+      .createQueryBuilder("user")
+      .select([
+        "user.id",
+        "user.email",
+        "user.firstName",
+        "user.lastName",
+        "user.contactNumber",
+        "user.role",
+        "user.stateUt",
+        "user.isActive",
+        "user.createdAt",
+      ])
+      .where("user.stateUt = :stateUt", { stateUt })
+      .andWhere("user.isActive = :isActive", { isActive: true })
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+
+    // Hide logged-in user from the list
+    if (userId) {
+      query = query.andWhere("user.id != :userId", { userId });
+    }
+
+    // STATE_APPROVER can only see NODAL_OFFICER users
+    if (userRole === UserRole.STATE_APPROVER) {
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
+    }
+
+    return query.getMany();
+  }
+
+  async getUsersByRole(
+    role: UserRole,
+    stateUt?: string,
+    userRole?: UserRole,
+    userStateUt?: string,
+    userId?: string
+  ): Promise<User[]> {
+    let query = this.userRepository
+      .createQueryBuilder("user")
       .select([
         "user.id",
         "user.email",
@@ -210,9 +329,32 @@ export class UserService {
       ])
       .where("user.role = :role", { role })
       .andWhere("user.isActive = :isActive", { isActive: true });
+      .where("user.role = :role", { role })
+      .andWhere("user.isActive = :isActive", { isActive: true })
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+
+    // Hide logged-in user from the list
+    if (userId) {
+      query = query.andWhere("user.id != :userId", { userId });
+    }
+
+    // STATE_APPROVER can only see NODAL_OFFICER users
+    if (userRole === UserRole.STATE_APPROVER) {
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
+    }
 
     if (stateUt) {
       query.andWhere("user.stateUt = :stateUt", { stateUt });
+      // Only ADMIN can access users from any state, others can only access their own state
+      if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
+        throw new ForbiddenException("Access denied");
+      }
+      query.andWhere("user.stateUt = :stateUt", { stateUt });
+    } else if (userRole && userRole !== UserRole.ADMIN) {
+      // If no specific state requested and user is not ADMIN, restrict to their state
+      query.andWhere("user.stateUt = :userStateUt", { userStateUt });
     }
 
     return query.getMany();
@@ -255,15 +397,21 @@ export class UserService {
       throw new ConflictException("User with this email already exists");
     }
 
-    // State restriction removed - any user can create users for any state
-    console.log(
-      "✅ State restriction removed - allowing cross-state user creation"
-    );
-    console.log("Approver State:", approverState);
-    console.log("Requested State:", stateUt);
-    console.log("Cross-state creation allowed");
+    // State restriction for State Approvers
+    if (approverRole === UserRole.STATE_APPROVER) {
+      console.log("🚨 State Approver restriction check:");
+      console.log("Requested state:", stateUt);
+      console.log("Approver state:", approverState);
+      console.log("States match:", stateUt === approverState);
 
-    // All roles can now create users for any state (no restriction)
+      if (stateUt !== approverState) {
+        throw new ForbiddenException(
+          `You can only create users for ${approverState}. Cannot create user for ${stateUt}`
+        );
+      }
+    }
+
+    // Admin and MoSPI roles can create users for any state (no restriction)
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
