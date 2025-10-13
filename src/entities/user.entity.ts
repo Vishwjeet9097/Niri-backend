@@ -6,20 +6,21 @@ import {
   UpdateDateColumn,
   OneToMany,
   Index,
-} from 'typeorm';
+} from "typeorm";
 
 export enum UserRole {
-  NODAL_OFFICER = 'NODAL_OFFICER',
-  STATE_APPROVER = 'STATE_APPROVER',
-  MOSPI_REVIEWER = 'MOSPI_REVIEWER',
-  MOSPI_APPROVER = 'MOSPI_APPROVER',
+  NODAL_OFFICER = "NODAL_OFFICER",
+  STATE_APPROVER = "STATE_APPROVER",
+  MOSPI_REVIEWER = "MOSPI_REVIEWER",
+  MOSPI_APPROVER = "MOSPI_APPROVER",
+  ADMIN = "ADMIN",
 }
 
-@Entity('users')
-@Index(['email'], { unique: true })
-@Index(['stateUt', 'role'])
+@Entity("users")
+@Index(["email"], { unique: true })
+@Index(["stateUt", "role"])
 export class User {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column({ unique: true })
@@ -38,12 +39,12 @@ export class User {
   contactNumber: string;
 
   @Column({
-    type: 'enum',
+    type: "enum",
     enum: UserRole,
   })
   role: UserRole;
 
-  @Column({ name: 'state_ut' })
+  @Column({ name: "state_ut" })
   stateUt: string;
 
   @Column({ default: true })
