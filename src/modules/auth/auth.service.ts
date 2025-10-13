@@ -2,17 +2,6 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
-} from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import * as bcrypt from "bcryptjs";
-import { User, UserRole } from "../../entities/user.entity";
-import { CreateUserDto, LoginDto } from "./dto/auth.dto";
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -28,17 +17,13 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
-    private jwtService: JwtService
     private jwtService: JwtService,
     private databaseHealthService: DatabaseHealthService
   ) {}
 
   async register(
     createUserDto: CreateUserDto
-    createUserDto: CreateUserDto
   ): Promise<{ user: Partial<User>; accessToken: string }> {
-    const { email, password, firstName, lastName, role, stateUt } =
-      createUserDto;
     const { email, password, firstName, lastName, role, stateUt } =
       createUserDto;
 
@@ -46,11 +31,8 @@ export class AuthService {
     const existingUser = await this.userRepository.findOne({
       where: { email },
     });
-    const existingUser = await this.userRepository.findOne({
-      where: { email },
-    });
+
     if (existingUser) {
-      throw new ConflictException("User with this email already exists");
       throw new ConflictException("User with this email already exists");
     }
 
@@ -79,7 +61,7 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload);
 
-    // Remove password from response
+    // Return user without password
     const { password: _, ...userWithoutPassword } = savedUser;
 
     return {
@@ -91,78 +73,59 @@ export class AuthService {
   async login(
     loginDto: LoginDto
   ): Promise<{ user: Partial<User>; accessToken: string }> {
-  async login(
-    loginDto: LoginDto
-  ): Promise<{ user: Partial<User>; accessToken: string }> {
     const { email, password } = loginDto;
 
-    try {
-      // Check database health first
-      const dbHealth = await this.databaseHealthService.checkDatabaseHealth();
+    // Check database health before login
+    const dbHealth = await this.databaseHealthService.checkDatabaseHealth();
 
-      if (!dbHealth.isConnected) {
-        throw new ServiceUnavailableException(
-          "Database connection failed. Please try again later."
-        );
-      }
-
-      if (!dbHealth.hasUsersTable) {
-        throw new ServiceUnavailableException(
-          "Users table not found. Please run database migration first."
-        );
-      }
-
-      if (dbHealth.userCount === 0) {
-        throw new ServiceUnavailableException(
-          "No users found in database. Please run database migration to create default users."
-        );
-      }
-
-      // Find user
-      const user = await this.userRepository.findOne({ where: { email } });
-      if (!user) {
-        throw new UnauthorizedException("Invalid credentials");
-      }
-
-      // Check if user is active
-      if (!user.isActive) {
-        throw new UnauthorizedException("Account is deactivated");
-      }
-
-      // Verify password
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        throw new UnauthorizedException("Invalid credentials");
-      }
-
-      // Generate JWT token
-      const payload = {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-        stateUt: user.stateUt,
-      };
-
-      const accessToken = this.jwtService.sign(payload);
-
-      // Remove password from response
-      const { password: _, ...userWithoutPassword } = user;
-
-      return {
-        user: userWithoutPassword,
-        accessToken,
-      };
-    } catch (error) {
-      if (
-        error instanceof ServiceUnavailableException ||
-        error instanceof UnauthorizedException
-      ) {
-        throw error;
-      }
-      throw new ServiceUnavailableException(
-        "Database error occurred. Please try again later."
-      );
+    if (!dbHealth.isConnected) {
+      throw new ServiceUnavailableException("Database is not available");
     }
+
+    if (!dbHealth.hasUsersTable) {
+      throw new ServiceUnavailableException("Users table not found");
+    }
+
+    if (dbHealth.userCount === 0) {
+      throw new ServiceUnavailableException("No users found in database");
+    }
+
+    // Find user by email
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      throw new UnauthorizedException("Account is deactivated");
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    // Generate JWT token
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      stateUt: user.stateUt,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+
+    // Return user without password
+    const { password: _, ...userWithoutPassword } = user;
+
+    return {
+      user: userWithoutPassword,
+      accessToken,
+    };
   }
 
   async validateUserById(userId: string): Promise<User | null> {
@@ -179,9 +142,9 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException("User not found");
-      throw new UnauthorizedException("User not found");
     }
 
+    // Return user without password
     const { password, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
@@ -190,12 +153,10 @@ export class AuthService {
     userId: string,
     currentPassword: string,
     newPassword: string
-    newPassword: string
   ): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
     if (!user) {
-      throw new UnauthorizedException("User not found");
       throw new UnauthorizedException("User not found");
     }
 
@@ -204,12 +165,8 @@ export class AuthService {
       currentPassword,
       user.password
     );
-    const isCurrentPasswordValid = await bcrypt.compare(
-      currentPassword,
-      user.password
-    );
+
     if (!isCurrentPasswordValid) {
-      throw new UnauthorizedException("Current password is incorrect");
       throw new UnauthorizedException("Current password is incorrect");
     }
 

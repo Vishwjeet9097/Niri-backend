@@ -5,17 +5,6 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { User, UserRole } from "../../entities/user.entity";
-import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
-import * as bcrypt from "bcryptjs";
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-  ConflictException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
@@ -46,11 +35,8 @@ export class UserService {
         "user.isActive",
         "user.createdAt",
       ])
-      .where("user.isActive = :isActive", { isActive: true });
       .where("user.isActive = :isActive", { isActive: true })
       .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
-
-    // Hide ADMIN users from all roles (including ADMIN itself)
 
     // Hide logged-in user from the list
     if (userId) {
@@ -66,9 +52,6 @@ export class UserService {
 
     // STATE_APPROVER can only see NODAL_OFFICER users
     if (userRole === UserRole.STATE_APPROVER) {
-      query = query.andWhere("user.stateUt = :stateUt", {
-        stateUt: userStateUt,
-      });
       query = query.andWhere("user.role = :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
@@ -101,9 +84,6 @@ export class UserService {
       throw new NotFoundException("User not found");
     }
 
-    // State/UT approvers can only access users from their state
-    if (userRole === UserRole.STATE_APPROVER && user.stateUt !== userStateUt) {
-      throw new ForbiddenException("Access denied");
     // Hide ADMIN users from all roles (including ADMIN itself)
     if (user.role === UserRole.ADMIN) {
       throw new NotFoundException("User not found");
@@ -129,20 +109,12 @@ export class UserService {
     if (
       updateUserDto.role &&
       ![
-        UserRole.STATE_APPROVER,
-        UserRole.MOSPI_REVIEWER,
-        UserRole.MOSPI_APPROVER,
-      ].includes(userRole)
-      ![
         UserRole.ADMIN,
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
       ].includes(userRole)
     ) {
-      throw new ForbiddenException(
-        "Only State Approver and MoSPI roles can change user roles"
-      );
       throw new ForbiddenException(
         "Only Admin, State Approver and MoSPI roles can change user roles"
       );
@@ -155,8 +127,11 @@ export class UserService {
 
     // Filter out any invalid properties that don't exist in User entity
     const updateData = { ...updateUserDto };
-    delete updateData.stateId; // Remove stateId if it exists, as User entity has stateUt
-    
+    // Remove stateId if it exists, as User entity has stateUt
+    if ("stateId" in updateData) {
+      delete updateData.stateId;
+    }
+
     await this.userRepository.update(id, updateData);
     return this.findOne(id, userRole, userStateUt);
   }
@@ -171,20 +146,12 @@ export class UserService {
     // Admin, State Approver and MoSPI roles can deactivate users
     if (
       ![
-        UserRole.STATE_APPROVER,
-        UserRole.MOSPI_REVIEWER,
-        UserRole.MOSPI_APPROVER,
-      ].includes(userRole)
-      ![
         UserRole.ADMIN,
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
       ].includes(userRole)
     ) {
-      throw new ForbiddenException(
-        "Only State Approver and MoSPI roles can deactivate users"
-      );
       throw new ForbiddenException(
         "Only Admin, State Approver and MoSPI roles can deactivate users"
       );
@@ -205,10 +172,58 @@ export class UserService {
     // Only ADMIN, STATE_APPROVER, MOSPI_REVIEWER, and MOSPI_APPROVER can bulk deactivate users
     if (
       ![
+        UserRole.ADMIN,
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
       ].includes(userRole)
+    ) {
+      throw new ForbiddenException(
+        "Only Admin, State Approvers and MoSPI roles can bulk deactivate users"
+      );
+    }
+
+    const results = {
+      successCount: 0,
+      failedCount: 0,
+      errors: [] as Array<{ userId: string; error: string }>,
+    };
+
+    for (const userId of userIds) {
+      try {
+        await this.deactivate(userId, userRole, userStateUt);
+        results.successCount++;
+      } catch (error) {
+        results.failedCount++;
+        results.errors.push({
+          userId,
+          error: error.message || "Unknown error occurred",
+        });
+      }
+    }
+
+    return results;
+  }
+
+  async createUser(
+    createUserDto: CreateUserDto,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<{ user: Partial<User>; accessToken: string }> {
+    const { email, password, firstName, lastName, role, stateUt } =
+      createUserDto;
+
+    // Check if user already exists
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException("User with this email already exists");
+    }
+
+    // Only ADMIN and MoSPI roles can create users
+    if (
       ![
         UserRole.ADMIN,
         UserRole.STATE_APPROVER,
@@ -217,57 +232,53 @@ export class UserService {
       ].includes(userRole)
     ) {
       throw new ForbiddenException(
-        "Only State Approvers and MoSPI roles can bulk deactivate users"
-        "Only Admin, State Approvers and MoSPI roles can bulk deactivate users"
+        "Only Admin, State Approvers and MoSPI roles can create users"
       );
     }
 
-    const result = {
-      successCount: 0,
-      failedCount: 0,
-      errors: [] as Array<{ userId: string; error: string }>,
-    };
-
-    for (const userId of userIds) {
-      try {
-        // Check if user exists and has proper access
-        const user = await this.findOne(userId, userRole, userStateUt);
-
-        // Deactivate the user
-        await this.userRepository.update(userId, { isActive: false });
-        result.successCount++;
-      } catch (error) {
-        result.failedCount++;
-        result.errors.push({
-          userId,
-          error: error.message || "Unknown error occurred",
-        });
-      }
+    // State/UT approvers can only create users for their state
+    if (userRole === UserRole.STATE_APPROVER && stateUt !== userStateUt) {
+      throw new ForbiddenException("Cannot create user for different state/UT");
     }
 
-    return result;
-  }
+    // Admin and MoSPI roles can create users for any state (no restriction)
 
-  async getUsersByState(stateUt: string): Promise<User[]> {
-    return this.userRepository.find({
-      where: { stateUt, isActive: true },
-      select: [
-        "id",
-        "email",
-        "firstName",
-        "lastName",
-        "contactNumber",
-        "role",
-        "stateUt",
-        "isActive",
-        "createdAt",
-      ],
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create user
+    const user = this.userRepository.create({
+      email,
+      password: hashedPassword,
+      firstName,
+      lastName,
+      role,
+      stateUt,
     });
+
+    const savedUser = await this.userRepository.save(user);
+
+    // Generate JWT token
+    const payload = {
+      sub: savedUser.id,
+      email: savedUser.email,
+      role: savedUser.role,
+      stateUt: savedUser.stateUt,
+    };
+
+    const jwtService = require("@nestjs/jwt").JwtService;
+    const jwt = new jwtService({ secret: process.env.JWT_SECRET });
+    const accessToken = jwt.sign(payload);
+
+    // Return user without password
+    const { password: _, ...userWithoutPassword } = savedUser;
+
+    return {
+      user: userWithoutPassword,
+      accessToken,
+    };
   }
 
-  async getUsersByRole(role: UserRole, stateUt?: string): Promise<User[]> {
-    const query = this.userRepository
-      .createQueryBuilder("user")
   async getUsersByState(
     stateUt: string,
     userRole?: UserRole,
@@ -332,8 +343,6 @@ export class UserService {
         "user.createdAt",
       ])
       .where("user.role = :role", { role })
-      .andWhere("user.isActive = :isActive", { isActive: true });
-      .where("user.role = :role", { role })
       .andWhere("user.isActive = :isActive", { isActive: true })
       .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
 
@@ -350,7 +359,6 @@ export class UserService {
     }
 
     if (stateUt) {
-      query.andWhere("user.stateUt = :stateUt", { stateUt });
       // Only ADMIN can access users from any state, others can only access their own state
       if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
         throw new ForbiddenException("Access denied");
@@ -362,83 +370,5 @@ export class UserService {
     }
 
     return query.getMany();
-  }
-
-  /**
-   * Create a new user with state restrictions
-   * State Approvers can only create users for their state
-   * MoSPI roles can create users for any state
-   */
-  async createUser(
-    createUserDto: CreateUserDto,
-    approverRole: UserRole,
-    approverState: string
-  ): Promise<{ user: Partial<User>; message: string }> {
-    const {
-      email,
-      password,
-      firstName,
-      lastName,
-      contactNumber,
-      role,
-      stateUt,
-    } = createUserDto;
-
-    // Debug logging
-    console.log("🔍 Debug - User Creation:");
-    console.log("Approver Role:", approverRole);
-    console.log("Approver State:", approverState);
-    console.log("Requested State:", stateUt);
-    console.log("Role Check:", approverRole === UserRole.STATE_APPROVER);
-    console.log("Contact Number:", contactNumber);
-    console.log("Full DTO:", createUserDto);
-
-    // Check if user already exists
-    const existingUser = await this.userRepository.findOne({
-      where: { email },
-    });
-    if (existingUser) {
-      throw new ConflictException("User with this email already exists");
-    }
-
-    // State restriction for State Approvers
-    if (approverRole === UserRole.STATE_APPROVER) {
-      console.log("🚨 State Approver restriction check:");
-      console.log("Requested state:", stateUt);
-      console.log("Approver state:", approverState);
-      console.log("States match:", stateUt === approverState);
-
-      if (stateUt !== approverState) {
-        throw new ForbiddenException(
-          `You can only create users for ${approverState}. Cannot create user for ${stateUt}`
-        );
-      }
-    }
-
-    // Admin and MoSPI roles can create users for any state (no restriction)
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Create user
-    const user = this.userRepository.create({
-      email,
-      password: hashedPassword,
-      firstName,
-      lastName,
-      contactNumber,
-      role,
-      stateUt,
-    });
-
-    const savedUser = await this.userRepository.save(user);
-
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = savedUser;
-
-    return {
-      user: userWithoutPassword,
-      message: `User created successfully for ${stateUt}`,
-    };
   }
 }
