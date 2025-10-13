@@ -1,0 +1,16 @@
+# Simple test for user registration
+
+@baseUrl = http://localhost:3000
+
+### Register MOSPI_REVIEWER user
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "reviewer@niri.gov.in",
+  "password": "Reviewer@123",
+  "firstName": "MOSPI",
+  "lastName": "Reviewer",
+  "role": "MOSPI_REVIEWER",
+  "stateUt": "Delhi"
+}
