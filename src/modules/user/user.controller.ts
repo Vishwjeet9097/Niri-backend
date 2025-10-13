@@ -27,16 +27,17 @@ export class UserController {
   }
 
   @Get("by-state/:stateUt")
-  async getUsersByState(@Param("stateUt") stateUt: string) {
-    return this.userService.getUsersByState(stateUt);
+  async getUsersByState(@Param("stateUt") stateUt: string, @Request() req) {
+    return this.userService.getUsersByState(stateUt, req.user.role, req.user.stateUt);
   }
 
   @Get("by-role/:role")
   async getUsersByRole(
     @Param("role") role: UserRole,
+    @Request() req,
     @Query("stateUt") stateUt?: string
   ) {
-    return this.userService.getUsersByRole(role, stateUt);
+    return this.userService.getUsersByRole(role, stateUt, req.user.role, req.user.stateUt);
   }
 
   @Get(":id")
