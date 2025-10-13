@@ -143,12 +143,12 @@ export DB_SSL=require
 
 #### 📋 Default Users Created
 
-| Email | Password | Role | State/UT |
-|-------|----------|------|----------|
-| nodal@niri.gov.in | password123 | NODAL_OFFICER | Maharashtra |
-| state@niri.gov.in | password123 | STATE_APPROVER | Maharashtra |
-| mospi.reviewer@niri.gov.in | password123 | MOSPI_REVIEWER | Central |
-| mospi.approver@niri.gov.in | password123 | MOSPI_APPROVER | Central |
+| Email                      | Password    | Role           | State/UT    |
+| -------------------------- | ----------- | -------------- | ----------- |
+| nodal@niri.gov.in          | password123 | NODAL_OFFICER  | Maharashtra |
+| state@niri.gov.in          | password123 | STATE_APPROVER | Maharashtra |
+| mospi.reviewer@niri.gov.in | password123 | MOSPI_REVIEWER | Central     |
+| mospi.approver@niri.gov.in | password123 | MOSPI_APPROVER | Central     |
 
 > 📚 **Detailed Migration Guide**: See [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for complete setup instructions.
 
