@@ -28,24 +28,48 @@ let SubmissionController = class SubmissionController {
     }
     async findAll(queryDto, req) {
         if (queryDto.status) {
-            const statusArray = queryDto.status.split(',').map((s) => s.trim());
+            const statusArray = queryDto.status
+                .split(",")
+                .map((s) => s.trim());
             const validStatuses = [
-                'DRAFT',
-                'SUBMITTED_TO_STATE',
-                'SUBMITTED_TO_MOSPI_REVIEWER',
-                'SUBMITTED_TO_MOSPI_APPROVER',
-                'REJECTED',
-                'REJECTED_FINAL',
-                'RETURNED_FROM_STATE',
-                'RETURNED_FROM_MOSPI',
-                'APPROVED',
+                "DRAFT",
+                "SUBMITTED_TO_STATE",
+                "SUBMITTED_TO_MOSPI_REVIEWER",
+                "SUBMITTED_TO_MOSPI_APPROVER",
+                "REJECTED",
+                "REJECTED_FINAL",
+                "RETURNED_FROM_STATE",
+                "RETURNED_FROM_MOSPI",
+                "APPROVED",
             ];
             const invalidStatuses = statusArray.filter((status) => !validStatuses.includes(status));
             if (invalidStatuses.length > 0) {
-                throw new common_1.BadRequestException(`Invalid status values: ${invalidStatuses.join(', ')}`);
+                throw new common_1.BadRequestException(`Invalid status values: ${invalidStatuses.join(", ")}`);
             }
         }
         return this.submissionService.findAll(queryDto, req.user.role, req.user.stateUt, req.user.id);
+    }
+    async debugFindAll(req) {
+        const query = this.submissionService["submissionRepository"]
+            .createQueryBuilder("submission")
+            .leftJoinAndSelect("submission.user", "user")
+            .leftJoinAndSelect("submission.finalScore", "finalScore")
+            .orderBy("submission.createdAt", "DESC");
+        const [submissions, total] = await query.getManyAndCount();
+        return {
+            status: true,
+            data: {
+                submissions,
+                total,
+                userInfo: {
+                    role: req.user.role,
+                    stateUt: req.user.stateUt,
+                    userId: req.user.id,
+                },
+            },
+            message: "Debug: All submissions retrieved without filters",
+            timestamp: new Date().toISOString(),
+        };
     }
     async findOne(id, req) {
         return this.submissionService.findOne(id, req.user.role, req.user.stateUt);
@@ -109,20 +133,29 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "findAll", null);
 __decorate([
-    (0, common_1.Get)(':id'),
+    (0, common_1.Get)("debug/all"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.NODAL_OFFICER, user_entity_1.UserRole.STATE_APPROVER, user_entity_1.UserRole.MOSPI_REVIEWER, user_entity_1.UserRole.MOSPI_APPROVER),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], SubmissionController.prototype, "debugFindAll", null);
+__decorate([
+    (0, common_1.Get)(":id"),
+    (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
+    (0, roles_guard_1.Roles)(user_entity_1.UserRole.NODAL_OFFICER, user_entity_1.UserRole.STATE_APPROVER, user_entity_1.UserRole.MOSPI_REVIEWER, user_entity_1.UserRole.MOSPI_APPROVER),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "findOne", null);
 __decorate([
-    (0, common_1.Patch)(':id'),
+    (0, common_1.Patch)(":id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.NODAL_OFFICER),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -130,10 +163,10 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "update", null);
 __decorate([
-    (0, common_1.Post)(':id/comment'),
+    (0, common_1.Post)(":id/comment"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.STATE_APPROVER, user_entity_1.UserRole.MOSPI_REVIEWER, user_entity_1.UserRole.MOSPI_APPROVER),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -141,11 +174,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "addComment", null);
 __decorate([
-    (0, common_1.Post)('update-status/:id'),
+    (0, common_1.Post)("update-status/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.NODAL_OFFICER, user_entity_1.UserRole.STATE_APPROVER, user_entity_1.UserRole.MOSPI_REVIEWER, user_entity_1.UserRole.MOSPI_APPROVER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -153,11 +186,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "updateStatus", null);
 __decorate([
-    (0, common_1.Post)('forward-to-mospi-reviewer/:id'),
+    (0, common_1.Post)("forward-to-mospi-reviewer/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.STATE_APPROVER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -165,11 +198,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "forwardToMoSPIReviewer", null);
 __decorate([
-    (0, common_1.Post)('forward-to-mospi-approver/:id'),
+    (0, common_1.Post)("forward-to-mospi-approver/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.MOSPI_REVIEWER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -177,11 +210,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "forwardToMoSPIApprover", null);
 __decorate([
-    (0, common_1.Post)('send-back-to-state/:id'),
+    (0, common_1.Post)("send-back-to-state/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.MOSPI_REVIEWER, user_entity_1.UserRole.MOSPI_APPROVER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -189,11 +222,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "sendBackToState", null);
 __decorate([
-    (0, common_1.Post)('forward-to-mospi/:id'),
+    (0, common_1.Post)("forward-to-mospi/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.STATE_APPROVER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -201,11 +234,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "forwardToMoSPI", null);
 __decorate([
-    (0, common_1.Post)('state-reject/:id'),
+    (0, common_1.Post)("state-reject/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.STATE_APPROVER, user_entity_1.UserRole.MOSPI_APPROVER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -213,11 +246,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "stateReject", null);
 __decorate([
-    (0, common_1.Post)('final-reject/:id'),
+    (0, common_1.Post)("final-reject/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.MOSPI_APPROVER, user_entity_1.UserRole.STATE_APPROVER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -225,11 +258,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "finalReject", null);
 __decorate([
-    (0, common_1.Post)('resubmit/:id'),
+    (0, common_1.Post)("resubmit/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.NODAL_OFFICER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -237,22 +270,22 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "resubmit", null);
 __decorate([
-    (0, common_1.Post)('submit-to-state/:id'),
+    (0, common_1.Post)("submit-to-state/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.NODAL_OFFICER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Request)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "submitToState", null);
 __decorate([
-    (0, common_1.Post)('approve/:id'),
+    (0, common_1.Post)("approve/:id"),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_guard_1.Roles)(user_entity_1.UserRole.MOSPI_APPROVER),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)("id")),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
     __metadata("design:type", Function),
@@ -260,7 +293,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SubmissionController.prototype, "approve", null);
 exports.SubmissionController = SubmissionController = __decorate([
-    (0, common_1.Controller)('submission'),
+    (0, common_1.Controller)("submission"),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     __metadata("design:paramtypes", [submission_service_1.SubmissionService])
 ], SubmissionController);

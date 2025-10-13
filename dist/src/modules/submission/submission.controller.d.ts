@@ -1,6 +1,6 @@
-import { SubmissionService } from './submission.service';
-import { CreateSubmissionDto, UpdateSubmissionDto, AddCommentDto, ForwardToMoSPIDto, UpdateStatusDto, ForwardToMoSPIReviewerDto, ForwardToMoSPIApproverDto, SendBackToStateDto, StateRejectDto, FinalRejectDto, ResubmitDto } from './dto/submission.dto';
-import { SubmissionStatus } from '../../entities/submission.entity';
+import { SubmissionService } from "./submission.service";
+import { CreateSubmissionDto, UpdateSubmissionDto, AddCommentDto, ForwardToMoSPIDto, UpdateStatusDto, ForwardToMoSPIReviewerDto, ForwardToMoSPIApproverDto, SendBackToStateDto, StateRejectDto, FinalRejectDto, ResubmitDto } from "./dto/submission.dto";
+import { SubmissionStatus } from "../../entities/submission.entity";
 export declare class SubmissionController {
     private readonly submissionService;
     constructor(submissionService: SubmissionService);
@@ -13,6 +13,20 @@ export declare class SubmissionController {
     findAll(queryDto: any, req: any): Promise<{
         submissions: import("../../entities/submission.entity").Submission[];
         total: number;
+    }>;
+    debugFindAll(req: any): Promise<{
+        status: boolean;
+        data: {
+            submissions: import("../../entities/submission.entity").Submission[];
+            total: number;
+            userInfo: {
+                role: any;
+                stateUt: any;
+                userId: any;
+            };
+        };
+        message: string;
+        timestamp: string;
     }>;
     findOne(id: string, req: any): Promise<import("../../entities/submission.entity").Submission>;
     update(id: string, updateSubmissionDto: UpdateSubmissionDto, req: any): Promise<import("../../entities/submission.entity").Submission>;
