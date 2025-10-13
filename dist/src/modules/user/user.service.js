@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const user_entity_1 = require("../../entities/user.entity");
+const bcrypt = require("bcryptjs");
 let UserService = class UserService {
     constructor(userRepository) {
         this.userRepository = userRepository;
@@ -132,6 +133,42 @@ let UserService = class UserService {
             query.andWhere('user.stateUt = :stateUt', { stateUt });
         }
         return query.getMany();
+    }
+    async createUser(createUserDto, approverRole, approverState) {
+        const { email, password, firstName, lastName, role, stateUt } = createUserDto;
+        console.log('🔍 Debug - User Creation:');
+        console.log('Approver Role:', approverRole);
+        console.log('Approver State:', approverState);
+        console.log('Requested State:', stateUt);
+        console.log('Role Check:', approverRole === user_entity_1.UserRole.STATE_APPROVER);
+        const existingUser = await this.userRepository.findOne({ where: { email } });
+        if (existingUser) {
+            throw new common_1.ConflictException('User with this email already exists');
+        }
+        if (approverRole === user_entity_1.UserRole.STATE_APPROVER) {
+            console.log('🚨 State Approver restriction check:');
+            console.log('Requested state:', stateUt);
+            console.log('Approver state:', approverState);
+            console.log('States match:', stateUt === approverState);
+            if (stateUt !== approverState) {
+                throw new common_1.ForbiddenException(`You can only create users for ${approverState}. Cannot create user for ${stateUt}`);
+            }
+        }
+        const hashedPassword = await bcrypt.hash(password, 12);
+        const user = this.userRepository.create({
+            email,
+            password: hashedPassword,
+            firstName,
+            lastName,
+            role,
+            stateUt,
+        });
+        const savedUser = await this.userRepository.save(user);
+        const { password: _, ...userWithoutPassword } = savedUser;
+        return {
+            user: userWithoutPassword,
+            message: `User created successfully for ${stateUt}`,
+        };
     }
 };
 exports.UserService = UserService;

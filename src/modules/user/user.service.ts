@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, UserRole } from '../../entities/user.entity';
-import { UpdateUserDto } from '../auth/dto/auth.dto';
+import { UpdateUserDto, CreateUserDto } from '../auth/dto/auth.dto';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UserService {
@@ -178,5 +179,70 @@ export class UserService {
     }
 
     return query.getMany();
+  }
+
+  /**
+   * Create a new user with state restrictions
+   * State Approvers can only create users for their state
+   * MoSPI roles can create users for any state
+   */
+  async createUser(
+    createUserDto: CreateUserDto,
+    approverRole: UserRole,
+    approverState: string,
+  ): Promise<{ user: Partial<User>; message: string }> {
+    const { email, password, firstName, lastName, role, stateUt } = createUserDto;
+
+    // Debug logging
+    console.log('🔍 Debug - User Creation:');
+    console.log('Approver Role:', approverRole);
+    console.log('Approver State:', approverState);
+    console.log('Requested State:', stateUt);
+    console.log('Role Check:', approverRole === UserRole.STATE_APPROVER);
+
+    // Check if user already exists
+    const existingUser = await this.userRepository.findOne({ where: { email } });
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    // State restriction for State Approvers
+    if (approverRole === UserRole.STATE_APPROVER) {
+      console.log('🚨 State Approver restriction check:');
+      console.log('Requested state:', stateUt);
+      console.log('Approver state:', approverState);
+      console.log('States match:', stateUt === approverState);
+      
+      if (stateUt !== approverState) {
+        throw new ForbiddenException(
+          `You can only create users for ${approverState}. Cannot create user for ${stateUt}`,
+        );
+      }
+    }
+
+    // MoSPI roles can create users for any state (no restriction)
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create user
+    const user = this.userRepository.create({
+      email,
+      password: hashedPassword,
+      firstName,
+      lastName,
+      role,
+      stateUt,
+    });
+
+    const savedUser = await this.userRepository.save(user);
+
+    // Remove password from response
+    const { password: _, ...userWithoutPassword } = savedUser;
+
+    return {
+      user: userWithoutPassword,
+      message: `User created successfully for ${stateUt}`,
+    };
   }
 }

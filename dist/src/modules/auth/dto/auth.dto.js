@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChangePasswordDto = exports.UpdateUserDto = exports.LoginDto = exports.CreateUserDto = void 0;
 const class_validator_1 = require("class-validator");
 const user_entity_1 = require("../../../entities/user.entity");
+const states_1 = require("../../../constants/states");
 class CreateUserDto {
 }
 exports.CreateUserDto = CreateUserDto;
@@ -38,6 +39,7 @@ __decorate([
 ], CreateUserDto.prototype, "role", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsIn)(states_1.INDIAN_STATES_AND_UTS, { message: 'Please select a valid state/UT' }),
     __metadata("design:type", String)
 ], CreateUserDto.prototype, "stateUt", void 0);
 class LoginDto {
@@ -77,6 +79,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsIn)(states_1.INDIAN_STATES_AND_UTS, { message: 'Please select a valid state/UT' }),
     __metadata("design:type", String)
 ], UpdateUserDto.prototype, "stateUt", void 0);
 __decorate([
