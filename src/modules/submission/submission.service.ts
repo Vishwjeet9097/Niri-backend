@@ -187,7 +187,10 @@ export class SubmissionService {
       query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
     } else if (userRole === UserRole.STATE_APPROVER) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
-    } else if (userRole === UserRole.MOSPI_REVIEWER || userRole === UserRole.MOSPI_APPROVER) {
+    } else if (
+      userRole === UserRole.MOSPI_REVIEWER ||
+      userRole === UserRole.MOSPI_APPROVER
+    ) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
     }
     // Only ADMIN can see all submissions
