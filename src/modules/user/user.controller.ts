@@ -23,7 +23,7 @@ export class UserController {
 
   @Get()
   async findAll(@Request() req) {
-    return this.userService.findAll(req.user.role, req.user.stateUt);
+    return this.userService.findAll(req.user.role, req.user.stateUt, req.user.id);
   }
 
   @Get("by-state/:stateUt")
@@ -31,7 +31,8 @@ export class UserController {
     return this.userService.getUsersByState(
       stateUt,
       req.user.role,
-      req.user.stateUt
+      req.user.stateUt,
+      req.user.id
     );
   }
 
@@ -45,7 +46,8 @@ export class UserController {
       role,
       stateUt,
       req.user.role,
-      req.user.stateUt
+      req.user.stateUt,
+      req.user.id
     );
   }
 

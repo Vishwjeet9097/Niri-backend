@@ -17,7 +17,11 @@ export class UserService {
     private userRepository: Repository<User>
   ) {}
 
-  async findAll(userRole: UserRole, userStateUt: string): Promise<User[]> {
+  async findAll(
+    userRole: UserRole,
+    userStateUt: string,
+    userId?: string
+  ): Promise<User[]> {
     let query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -35,6 +39,11 @@ export class UserService {
       .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
 
     // Hide ADMIN users from all roles (including ADMIN itself)
+
+    // Hide logged-in user from the list
+    if (userId) {
+      query = query.andWhere("user.id != :userId", { userId });
+    }
 
     // Only ADMIN can see all users, others can only see users from their state
     if (userRole !== UserRole.ADMIN) {
@@ -191,40 +200,47 @@ export class UserService {
   async getUsersByState(
     stateUt: string,
     userRole?: UserRole,
-    userStateUt?: string
+    userStateUt?: string,
+    userId?: string
   ): Promise<User[]> {
     // Only ADMIN can access users from any state, others can only access their own state
     if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
       throw new ForbiddenException("Access denied");
     }
 
-    return this.userRepository.find({
-      where: {
-        stateUt,
-        isActive: true,
-        role: Not(UserRole.ADMIN),
-      },
-      select: [
-        "id",
-        "email",
-        "firstName",
-        "lastName",
-        "contactNumber",
-        "role",
-        "stateUt",
-        "isActive",
-        "createdAt",
-      ],
-    });
+    let query = this.userRepository
+      .createQueryBuilder("user")
+      .select([
+        "user.id",
+        "user.email",
+        "user.firstName",
+        "user.lastName",
+        "user.contactNumber",
+        "user.role",
+        "user.stateUt",
+        "user.isActive",
+        "user.createdAt",
+      ])
+      .where("user.stateUt = :stateUt", { stateUt })
+      .andWhere("user.isActive = :isActive", { isActive: true })
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+
+    // Hide logged-in user from the list
+    if (userId) {
+      query = query.andWhere("user.id != :userId", { userId });
+    }
+
+    return query.getMany();
   }
 
   async getUsersByRole(
     role: UserRole,
     stateUt?: string,
     userRole?: UserRole,
-    userStateUt?: string
+    userStateUt?: string,
+    userId?: string
   ): Promise<User[]> {
-    const query = this.userRepository
+    let query = this.userRepository
       .createQueryBuilder("user")
       .select([
         "user.id",
@@ -240,6 +256,11 @@ export class UserService {
       .where("user.role = :role", { role })
       .andWhere("user.isActive = :isActive", { isActive: true })
       .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+
+    // Hide logged-in user from the list
+    if (userId) {
+      query = query.andWhere("user.id != :userId", { userId });
+    }
 
     if (stateUt) {
       // Only ADMIN can access users from any state, others can only access their own state
