@@ -7,24 +7,23 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+*.tsbuildinfo
 
-# Environment variables
+# Environment files
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
 # Logs
-logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
+logs/
+pids/
+*.pid
+*.seed
+*.pid.lock
 
 # Runtime data
-pids
+pids/
 *.pid
 *.seed
 *.pid.lock
@@ -37,11 +36,7 @@ coverage/
 .nyc_output
 
 # Dependency directories
-node_modules/
 jspm_packages/
-
-# TypeScript cache
-*.tsbuildinfo
 
 # Optional npm cache directory
 .npm
@@ -63,10 +58,6 @@ jspm_packages/
 
 # Yarn Integrity file
 .yarn-integrity
-
-# dotenv environment variables file
-.env
-.env.test
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -107,13 +98,37 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Database files
+# Database
 *.sqlite
 *.db
 
-# Uploads directory
-uploads/
+# Uploads and user content
+/uploads/
+public/uploads/
 
-# Server logs
-server.log
-debug.log
+# Documentation generated files
+docs-ai/
+
+# Test files (if not needed in production)
+test-results/
+coverage/
+
+# Custom config files (sensitive)
+src/database/data-source.ts
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# Lock files (optional - uncomment if you want to ignore)
+# package-lock.json
+# yarn.lock
+
+# IDE files
+*.sublime-project
+*.sublime-workspace
+
+# Local development files
+.local
+local/
