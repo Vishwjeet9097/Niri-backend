@@ -153,7 +153,11 @@ export class UserService {
       throw new ForbiddenException("Cannot change state/UT");
     }
 
-    await this.userRepository.update(id, updateUserDto);
+    // Filter out any invalid properties that don't exist in User entity
+    const updateData = { ...updateUserDto };
+    delete updateData.stateId; // Remove stateId if it exists, as User entity has stateUt
+    
+    await this.userRepository.update(id, updateData);
     return this.findOne(id, userRole, userStateUt);
   }
 
