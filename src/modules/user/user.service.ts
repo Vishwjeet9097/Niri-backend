@@ -43,12 +43,10 @@ export class UserService {
       query = query.andWhere("user.id != :userId", { userId });
     }
 
-    // Only ADMIN can see all users, others can only see users from their state
-    if (userRole !== UserRole.ADMIN) {
-      query = query.andWhere("user.stateUt = :stateUt", {
-        stateUt: userStateUt,
-      });
-    }
+    // All users can only see users from their state (including MoSPI roles)
+    query = query.andWhere("user.stateUt = :stateUt", {
+      stateUt: userStateUt,
+    });
 
     // STATE_APPROVER can only see NODAL_OFFICER users
     if (userRole === UserRole.STATE_APPROVER) {
@@ -285,8 +283,8 @@ export class UserService {
     userStateUt?: string,
     userId?: string
   ): Promise<User[]> {
-    // Only ADMIN can access users from any state, others can only access their own state
-    if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
+    // All users can only access users from their own state
+    if (userRole && stateUt !== userStateUt) {
       throw new ForbiddenException("Access denied");
     }
 
@@ -359,13 +357,13 @@ export class UserService {
     }
 
     if (stateUt) {
-      // Only ADMIN can access users from any state, others can only access their own state
-      if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
+      // All users can only access users from their own state
+      if (userRole && stateUt !== userStateUt) {
         throw new ForbiddenException("Access denied");
       }
       query.andWhere("user.stateUt = :stateUt", { stateUt });
-    } else if (userRole && userRole !== UserRole.ADMIN) {
-      // If no specific state requested and user is not ADMIN, restrict to their state
+    } else if (userRole) {
+      // If no specific state requested, restrict to their state
       query.andWhere("user.stateUt = :userStateUt", { userStateUt });
     }
 
