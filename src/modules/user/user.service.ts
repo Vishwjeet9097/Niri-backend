@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Repository, Not } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
@@ -31,7 +31,10 @@ export class UserService {
         "user.isActive",
         "user.createdAt",
       ])
-      .where("user.isActive = :isActive", { isActive: true });
+      .where("user.isActive = :isActive", { isActive: true })
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+
+    // Hide ADMIN users from all roles (including ADMIN itself)
 
     // Only ADMIN can see all users, others can only see users from their state
     if (userRole !== UserRole.ADMIN) {
@@ -64,6 +67,11 @@ export class UserService {
     });
 
     if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    // Hide ADMIN users from all roles (including ADMIN itself)
+    if (user.role === UserRole.ADMIN) {
       throw new NotFoundException("User not found");
     }
 
@@ -180,14 +188,22 @@ export class UserService {
     return result;
   }
 
-  async getUsersByState(stateUt: string, userRole?: UserRole, userStateUt?: string): Promise<User[]> {
+  async getUsersByState(
+    stateUt: string,
+    userRole?: UserRole,
+    userStateUt?: string
+  ): Promise<User[]> {
     // Only ADMIN can access users from any state, others can only access their own state
     if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
       throw new ForbiddenException("Access denied");
     }
 
     return this.userRepository.find({
-      where: { stateUt, isActive: true },
+      where: {
+        stateUt,
+        isActive: true,
+        role: Not(UserRole.ADMIN),
+      },
       select: [
         "id",
         "email",
@@ -202,7 +218,12 @@ export class UserService {
     });
   }
 
-  async getUsersByRole(role: UserRole, stateUt?: string, userRole?: UserRole, userStateUt?: string): Promise<User[]> {
+  async getUsersByRole(
+    role: UserRole,
+    stateUt?: string,
+    userRole?: UserRole,
+    userStateUt?: string
+  ): Promise<User[]> {
     const query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -217,7 +238,8 @@ export class UserService {
         "user.createdAt",
       ])
       .where("user.role = :role", { role })
-      .andWhere("user.isActive = :isActive", { isActive: true });
+      .andWhere("user.isActive = :isActive", { isActive: true })
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
 
     if (stateUt) {
       // Only ADMIN can access users from any state, others can only access their own state
