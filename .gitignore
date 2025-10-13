@@ -1,0 +1,54 @@
+# Node.js dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+logs/
+
+# Build output
+/dist
+/dist/tsconfig.tsbuildinfo
+/build
+
+# Database files
+*.sqlite
+*.db
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Uploaded files
+uploads/
+
+# Coverage reports
+coverage/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+
+# Docker
+*.pid
+docker-compose.override.yml
+
+# Misc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test output
+/test-results
+
+# TypeORM migration logs
+ormconfig.js
+ormconfig.json
+ormconfig.ts
+
+# S3 credentials (if any)
+aws-credentials.json
