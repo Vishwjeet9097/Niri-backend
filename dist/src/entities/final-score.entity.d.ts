@@ -8,6 +8,8 @@ export declare class FinalScore {
     scoreBreakdown: Record<string, any>;
     calculationMethodology: string;
     approvedBy: string;
+    categoryScores: Record<string, number>;
+    scoringVersion: string;
     createdAt: Date;
     updatedAt: Date;
 }

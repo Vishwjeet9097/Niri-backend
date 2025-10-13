@@ -58,59 +58,283 @@ let ScoringService = class ScoringService {
         const calculations = [];
         let totalScore = 0;
         let maxPossibleScore = 0;
-        const scoringRules = {
-            capexToGsdpRatio: {
-                weight: 0.25,
-                maxScore: 25,
-                calculation: (value) => Math.min(value * 10, 25),
-            },
-            infrastructureInvestment: {
-                weight: 0.2,
-                maxScore: 20,
-                calculation: (value) => Math.min(value * 2, 20),
-            },
-            projectCompletionRate: {
-                weight: 0.2,
-                maxScore: 20,
-                calculation: (value) => value * 0.2,
-            },
-            qualityIndex: {
-                weight: 0.15,
-                maxScore: 15,
-                calculation: (value) => value * 0.15,
-            },
-            sustainabilityScore: {
-                weight: 0.1,
-                maxScore: 10,
-                calculation: (value) => value * 0.1,
-            },
-            innovationIndex: {
-                weight: 0.1,
-                maxScore: 10,
-                calculation: (value) => value * 0.1,
-            },
-        };
-        Object.entries(scoringRules).forEach(([indicator, rule]) => {
-            const value = formData[indicator] || 0;
-            const score = rule.calculation(value);
-            calculations.push({
-                indicator,
-                value,
-                weight: rule.weight,
-                score,
-                maxScore: rule.maxScore,
-            });
-            totalScore += score;
-            maxPossibleScore += rule.maxScore;
-        });
+        const infraFinancingScore = this.calculateInfraFinancingScore(formData, calculations);
+        totalScore += infraFinancingScore;
+        maxPossibleScore += 250;
+        const infraDevelopmentScore = this.calculateInfraDevelopmentScore(formData, calculations);
+        totalScore += infraDevelopmentScore;
+        maxPossibleScore += 250;
+        const pppDevelopmentScore = this.calculatePPPDevelopmentScore(formData, calculations);
+        totalScore += pppDevelopmentScore;
+        maxPossibleScore += 250;
+        const infraEnablersScore = this.calculateInfraEnablersScore(formData, calculations);
+        totalScore += infraEnablersScore;
+        maxPossibleScore += 250;
         const percentage = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 100 : 0;
         return {
             totalScore: Math.round(totalScore * 100) / 100,
             maxPossibleScore,
             percentage: Math.round(percentage * 100) / 100,
             calculations,
-            methodology: 'NIRI Scoring Methodology v1.0 - Based on BRD requirements for infrastructure readiness assessment',
+            methodology: 'NIRI Scoring Methodology v2.0 - Based on detailed infrastructure readiness assessment rubric (1000 marks total)',
         };
+    }
+    calculateInfraFinancingScore(formData, calculations) {
+        let categoryScore = 0;
+        const capexAllocation = formData.capexAllocation || 0;
+        const gsdp = formData.gsdp || 0;
+        const capexToGsdpRatio = gsdp > 0 ? (capexAllocation / gsdp) * 100 : 0;
+        const capexToGsdpScore = Math.min(capexToGsdpRatio * 10, 50);
+        calculations.push({
+            indicator: '1.1 % of Capex to GSDP',
+            value: capexToGsdpRatio,
+            weight: 0.05,
+            score: capexToGsdpScore,
+            maxScore: 50,
+        });
+        categoryScore += capexToGsdpScore;
+        const actualCapex = formData.actualCapex || 0;
+        const stateCapexUtilisation = formData.stateCapexUtilisation || 0;
+        const capexUtilizationRatio = stateCapexUtilisation > 0 ? (actualCapex / stateCapexUtilisation) * 100 : 0;
+        const capexUtilizationScore = Math.min(capexUtilizationRatio + 2, 50);
+        calculations.push({
+            indicator: '1.2 % Capex Utilization',
+            value: capexUtilizationRatio,
+            weight: 0.05,
+            score: capexUtilizationScore,
+            maxScore: 50,
+        });
+        categoryScore += capexUtilizationScore;
+        const creditRatedULBs = formData.creditRatedULBs || 0;
+        const totalULBs = formData.totalULBs || 0;
+        const creditRatedRatio = totalULBs > 0 ? (creditRatedULBs / totalULBs) * 100 : 0;
+        const creditRatedScore = Math.min(creditRatedRatio + 2, 50);
+        calculations.push({
+            indicator: '1.3 % of Credit Rated ULBs',
+            value: creditRatedRatio,
+            weight: 0.05,
+            score: creditRatedScore,
+            maxScore: 50,
+        });
+        categoryScore += creditRatedScore;
+        const ulbsApprovedByMoSPI = formData.ulbsApprovedByMoSPI || 0;
+        const totalULBsEntered = formData.totalULBsEntered || 0;
+        const ulbsBondsRatio = totalULBsEntered > 0 ? (ulbsApprovedByMoSPI / totalULBsEntered) * 100 : 0;
+        const ulbsBondsScore = Math.min(ulbsBondsRatio * 2, 50);
+        calculations.push({
+            indicator: '1.4 % of ULBs Issuing Bonds',
+            value: ulbsBondsRatio,
+            weight: 0.05,
+            score: ulbsBondsScore,
+            maxScore: 50,
+        });
+        categoryScore += ulbsBondsScore;
+        const hasFinancialIntermediary = formData.hasFinancialIntermediary === 'Yes' &&
+            formData.financialIntermediaryDocUploaded === true;
+        const financialIntermediaryScore = hasFinancialIntermediary ? 50 : 0;
+        calculations.push({
+            indicator: '1.5 Functional Financial Intermediary',
+            value: hasFinancialIntermediary ? 1 : 0,
+            weight: 0.05,
+            score: financialIntermediaryScore,
+            maxScore: 50,
+        });
+        categoryScore += financialIntermediaryScore;
+        return categoryScore;
+    }
+    calculateInfraDevelopmentScore(formData, calculations) {
+        let categoryScore = 0;
+        const infraActSectors = formData.infraActSectors || [];
+        const hasOverarchingAct = formData.hasOverarchingAct === 'Overarching';
+        const infraActDocUploaded = formData.infraActDocUploaded === true;
+        let infraActScore = 0;
+        if (hasOverarchingAct && infraActDocUploaded) {
+            infraActScore = 50;
+        }
+        else {
+            const sectorsWithDocs = infraActSectors.filter(sector => sector.docUploaded).length;
+            infraActScore = Math.min(sectorsWithDocs * 10, 50);
+        }
+        calculations.push({
+            indicator: '2.1 Availability of Infrastructure Act/Policy',
+            value: infraActSectors.length,
+            weight: 0.05,
+            score: infraActScore,
+            maxScore: 50,
+        });
+        categoryScore += infraActScore;
+        const specializedEntitySectors = formData.specializedEntitySectors || [];
+        const sectorsWithDocs = specializedEntitySectors.filter(sector => sector.docUploaded).length;
+        const specializedEntityScore = Math.min(sectorsWithDocs * 10, 50);
+        calculations.push({
+            indicator: '2.2 Availability of Specialized Entity',
+            value: sectorsWithDocs,
+            weight: 0.05,
+            score: specializedEntityScore,
+            maxScore: 50,
+        });
+        categoryScore += specializedEntityScore;
+        const sectorPlanSectors = formData.sectorPlanSectors || [];
+        const hasOverarchingPlan = formData.hasOverarchingPlan === 'Overarching';
+        const sectorPlanDocUploaded = formData.sectorPlanDocUploaded === true;
+        let sectorPlanScore = 0;
+        if (hasOverarchingPlan && sectorPlanDocUploaded) {
+            sectorPlanScore = 50;
+        }
+        else {
+            const sectorsWithDocs = sectorPlanSectors.filter(sector => sector.docUploaded).length;
+            sectorPlanScore = Math.min(sectorsWithDocs * 10, 50);
+        }
+        calculations.push({
+            indicator: '2.3 Sector Infra Development Plan',
+            value: sectorPlanSectors.length,
+            weight: 0.05,
+            score: sectorPlanScore,
+            maxScore: 50,
+        });
+        categoryScore += sectorPlanScore;
+        const investmentProjects = formData.investmentProjects || [];
+        const validProjects = investmentProjects.filter(project => project.docUploaded).length;
+        const investmentProjectsScore = Math.min(validProjects * 10, 50);
+        calculations.push({
+            indicator: '2.4 Investment Ready Project Pipeline',
+            value: validProjects,
+            weight: 0.05,
+            score: investmentProjectsScore,
+            maxScore: 50,
+        });
+        categoryScore += investmentProjectsScore;
+        const assetMonetizationProjects = formData.assetMonetizationProjects || [];
+        const validAssets = assetMonetizationProjects.filter(asset => asset.docUploaded).length;
+        const assetMonetizationScore = Math.min(validAssets * 10, 50);
+        calculations.push({
+            indicator: '2.5 Asset Monetization Pipeline',
+            value: validAssets,
+            weight: 0.05,
+            score: assetMonetizationScore,
+            maxScore: 50,
+        });
+        categoryScore += assetMonetizationScore;
+        return categoryScore;
+    }
+    calculatePPPDevelopmentScore(formData, calculations) {
+        let categoryScore = 0;
+        const hasPPPAct = formData.hasPPPAct === 'Yes';
+        const pppActDocUploaded = formData.pppActDocUploaded === true;
+        const pppActScore = (hasPPPAct && pppActDocUploaded) ? 50 : 0;
+        calculations.push({
+            indicator: '3.1 Availability of PPP Act/Policy',
+            value: hasPPPAct ? 1 : 0,
+            weight: 0.05,
+            score: pppActScore,
+            maxScore: 50,
+        });
+        categoryScore += pppActScore;
+        const hasPPPCell = formData.hasPPPCell === 'Yes';
+        const pppCellDocUploaded = formData.pppCellDocUploaded === true;
+        const pppCellScore = (hasPPPCell && pppCellDocUploaded) ? 50 : 0;
+        calculations.push({
+            indicator: '3.2 Functional PPP Cell/Unit',
+            value: hasPPPCell ? 1 : 0,
+            weight: 0.05,
+            score: pppCellScore,
+            maxScore: 50,
+        });
+        categoryScore += pppCellScore;
+        const vgfProjects = formData.vgfProjects || [];
+        const validVGFProjects = vgfProjects.filter(project => project.docUploaded).length;
+        const vgfScore = Math.min(validVGFProjects * 5, 50);
+        calculations.push({
+            indicator: '3.3 Proposals under VGF/IIPDF',
+            value: validVGFProjects,
+            weight: 0.05,
+            score: vgfScore,
+            maxScore: 50,
+        });
+        categoryScore += vgfScore;
+        const totalCostBankablePPP = formData.totalCostBankablePPP || 0;
+        const totalCostAllInfraProjects = formData.totalCostAllInfraProjects || 0;
+        const pppProportionRatio = totalCostAllInfraProjects > 0 ? (totalCostBankablePPP / totalCostAllInfraProjects) * 100 : 0;
+        const pppProportionScore = Math.min(pppProportionRatio * 2, 100);
+        calculations.push({
+            indicator: '3.4 Proportion of TPC of PPP Projects',
+            value: pppProportionRatio,
+            weight: 0.1,
+            score: pppProportionScore,
+            maxScore: 100,
+        });
+        categoryScore += pppProportionScore;
+        return categoryScore;
+    }
+    calculateInfraEnablersScore(formData, calculations) {
+        let categoryScore = 0;
+        const allProjectsOnNIP = formData.allProjectsOnNIP === 'Yes';
+        const nipDocUploaded = formData.nipDocUploaded === true;
+        const nipScore = (allProjectsOnNIP && nipDocUploaded) ? 50 : 0;
+        calculations.push({
+            indicator: '4.1 All Eligible Infra Projects on NIP Portal',
+            value: allProjectsOnNIP ? 1 : 0,
+            weight: 0.05,
+            score: nipScore,
+            maxScore: 50,
+        });
+        categoryScore += nipScore;
+        const hasStatePMG = formData.hasStatePMG === 'Yes';
+        const pmgDocOrURLUploaded = formData.pmgDocOrURLUploaded === true;
+        const pmgScore = (hasStatePMG && pmgDocOrURLUploaded) ? 30 : 0;
+        calculations.push({
+            indicator: '4.2 Availability & Use of State/UT PMG',
+            value: hasStatePMG ? 1 : 0,
+            weight: 0.03,
+            score: pmgScore,
+            maxScore: 30,
+        });
+        categoryScore += pmgScore;
+        const gatiShaktiProjects = formData.gatiShaktiProjects || [];
+        const validGatiShaktiProjects = gatiShaktiProjects.filter(project => project.evidenceUploaded).length;
+        const gatiShaktiScore = Math.min(validGatiShaktiProjects * 5, 20);
+        calculations.push({
+            indicator: '4.3 Adoption of PM GatiShakti',
+            value: validGatiShaktiProjects,
+            weight: 0.02,
+            score: gatiShaktiScore,
+            maxScore: 20,
+        });
+        categoryScore += gatiShaktiScore;
+        const hasADR = formData.hasADR === 'Yes';
+        const adrDocUploaded = formData.adrDocUploaded === true;
+        const adrScore = (hasADR && adrDocUploaded) ? 50 : 0;
+        calculations.push({
+            indicator: '4.4 Adoption of ADR',
+            value: hasADR ? 1 : 0,
+            weight: 0.05,
+            score: adrScore,
+            maxScore: 50,
+        });
+        categoryScore += adrScore;
+        const innovativePractices = formData.innovativePractices || [];
+        const validPractices = innovativePractices.filter(practice => practice.evidenceUploaded).length;
+        const innovativeScore = Math.min(validPractices * 10, 50);
+        calculations.push({
+            indicator: '4.5 Innovative Practices',
+            value: validPractices,
+            weight: 0.05,
+            score: innovativeScore,
+            maxScore: 50,
+        });
+        categoryScore += innovativeScore;
+        const capacityBuildingOfficers = formData.capacityBuildingOfficers || [];
+        const validOfficers = capacityBuildingOfficers.filter(officer => officer.name && officer.designation && officer.participationDate).length;
+        const capacityBuildingScore = Math.min(validOfficers * 1, 50);
+        calculations.push({
+            indicator: '4.6 Capacity Building - Officer Participation',
+            value: validOfficers,
+            weight: 0.05,
+            score: capacityBuildingScore,
+            maxScore: 50,
+        });
+        categoryScore += capacityBuildingScore;
+        return categoryScore;
     }
     async getScoreRankings() {
         const scores = await this.finalScoreRepository
