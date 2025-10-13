@@ -7,7 +7,7 @@
 -- DELETE FROM users;
 
 -- Insert users with proper schema structure
-INSERT INTO users (id, email, password, "firstName", "lastName", "contactNumber", role, "stateUt", "isActive", "createdAt", "updatedAt") VALUES
+INSERT INTO users (id, email, password, "firstName", "lastName", "contact_number", role, "stateUt", "isActive", "createdAt", "updatedAt") VALUES
 
 -- Central Level Users (MoSPI)
 ('11111111-1111-1111-1111-111111111111', 'mospi.approver@niri.gov.in', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/8KzKz2K', 'MoSPI', 'Approver', '+91-9876543210', 'MOSPI_APPROVER', 'Central', true, NOW(), NOW()),
@@ -47,19 +47,19 @@ ON CONFLICT (id) DO NOTHING;
 SELECT 
     'Users seeded successfully!' as message,
     COUNT(*) as total_users,
-    COUNT(CASE WHEN role = 'MOSPI_APPROVER' THEN 1 END) as mospi_approvers,
-    COUNT(CASE WHEN role = 'MOSPI_REVIEWER' THEN 1 END) as mospi_reviewers,
-    COUNT(CASE WHEN role = 'NODAL_OFFICER' THEN 1 END) as nodal_officers,
-    COUNT(CASE WHEN role = 'STATE_APPROVER' THEN 1 END) as state_approvers;
+    COUNT(CASE WHEN "role" = 'MOSPI_APPROVER' THEN 1 END) as mospi_approvers,
+    COUNT(CASE WHEN "role" = 'MOSPI_REVIEWER' THEN 1 END) as mospi_reviewers,
+    COUNT(CASE WHEN "role" = 'NODAL_OFFICER' THEN 1 END) as nodal_officers,
+    COUNT(CASE WHEN "role" = 'STATE_APPROVER' THEN 1 END) as state_approvers;
 
 -- Show users by role
 SELECT 
     'Users by Role:' as category,
-    role,
+    "role",
     COUNT(*) as count
 FROM users 
-GROUP BY role 
-ORDER BY role;
+GROUP BY "role" 
+ORDER BY "role";
 
 -- Show users by state
 SELECT 
@@ -79,13 +79,13 @@ SELECT
     email,
     "firstName",
     "lastName",
-    "contactNumber",
-    role,
+    "contact_number",
+    "role",
     "stateUt",
     "isActive",
     "createdAt"
 FROM users 
-ORDER BY role, "stateUt", "createdAt";
+ORDER BY "role", "stateUt", "createdAt";
 
 -- ==========================================
 -- SUCCESS MESSAGE

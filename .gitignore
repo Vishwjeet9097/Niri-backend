@@ -114,7 +114,6 @@ test-results/
 coverage/
 
 # Custom config files (sensitive)
-src/config/database.config.ts
 src/database/data-source.ts
 
 # Backup files
