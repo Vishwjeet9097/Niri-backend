@@ -1,0 +1,270 @@
+# Comment API Examples - Both Methods
+
+# IMPORTANT: Run the registration steps (0.1-0.4) first if you encounter 401 Unauthorized errors
+
+### Step 0.1: Register NODAL_OFFICER user (if it doesn't exist)
+POST http://localhost            commentsByRole[role].push({
+                text: comment.text,
+                type: comment.type,
+                timestamp: new Date(comment.timestamp).toLocaleString(),
+                sectionId: comment.sectionId || null
+            });/auth/register
+Content-Type: application/json
+
+{
+  "email": "nodal@niri.gov.in",
+  "password": "Nodal@123",
+  "firstName": "Nodal",
+  "lastName": "Officer",
+  "role": "NODAL_OFFICER",
+  "stateUt": "Karnataka"
+}
+
+### Step 0.2: Register STATE_APPROVER user (if it doesn't exist)
+POST http://localhost:3000/auth/register
+Content-Type: application/json
+
+{
+  "email": "state@niri.gov.in",
+  "password": "State@123",
+  "firstName": "State",
+  "lastName": "Approver",
+  "role": "STATE_APPROVER",
+  "stateUt": "Karnataka"
+}
+
+### Step 0.3: Register MOSPI_REVIEWER user (if it doesn't exist)
+POST http://localhost:3000/auth/register
+Content-Type: application/json
+
+{
+  "email": "reviewer@niri.gov.in",
+  "password": "Reviewer@123",
+  "firstName": "MOSPI",
+  "lastName": "Reviewer",
+  "role": "MOSPI_REVIEWER",
+  "stateUt": "Delhi"
+}
+
+### Step 0.4: Register MOSPI_APPROVER user (if it doesn't exist)
+POST http://localhost:3000/auth/register
+Content-Type: application/json
+
+{
+  "email": "admin@niri.gov.in",
+  "password": "Admin@123",
+  "firstName": "MOSPI",
+  "lastName": "Approver",
+  "role": "MOSPI_APPROVER",
+  "stateUt": "Delhi"
+}
+
+@baseUrl = http://localhost:3000
+@nodalToken = {{nodalLogin.response.body.$.data.accessToken}}
+@stateApproverToken = {{stateLogin.response.body.$.data.accessToken}}
+@reviewerToken = {{reviewerLogin.response.body.$.data.accessToken}}
+@approverToken = {{approverLogin.response.body.$.data.accessToken}}
+@submissionId = {{createSubmission.response.body.$.data.id}}
+
+### Step 1: Login as NODAL_OFFICER
+# @name nodalLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nodal@niri.gov.in",
+  "password": "Nodal@123"
+}
+
+### Step 2: Login as STATE_APPROVER
+# @name stateLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "state@niri.gov.in",
+  "password": "State@123"
+}
+
+### Step 3: Login as MOSPI_REVIEWER
+# @name reviewerLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "reviewer@niri.gov.in",
+  "password": "Reviewer@123"
+}
+
+### Step 4: Login as MOSPI_APPROVER
+# @name approverLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@niri.gov.in",
+  "password": "Admin@123"
+}
+
+### Step 5: Create a submission as NODAL_OFFICER
+# @name createSubmission
+POST {{baseUrl}}/submission
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "submissionId": "TEST-SUB-{{$timestamp}}",
+  "formData": {
+    "infrastructureMetrics": {
+      "qualityIndex": 8.5,
+      "socialImpact": 7.8
+    }
+  }
+}
+
+### CASE 1: Direct Comments (Without Submit Button)
+### ------------------------------------------
+
+### Step 6: Add a comment as STATE_APPROVER
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{stateApproverToken}}
+
+{
+  "text": "This is a comment from STATE_APPROVER",
+  "type": "comment",
+  "sectionId": "general"
+}
+
+### Step 6.1: Add a standalone comment with sectionId as STATE_APPROVER
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{stateApproverToken}}
+
+{
+  "text": "This comment is specific to the infrastructure metrics section",
+  "type": "comment",
+  "sectionId": "infrastructureMetrics"
+}
+
+### Step 7: Add a comment as MOSPI_REVIEWER
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{reviewerToken}}
+
+{
+  "text": "This is a comment from MOSPI_REVIEWER",
+  "type": "comment",
+  "sectionId": "general"
+}
+
+### Step 7.1: Add a standalone comment with sectionId as MOSPI_REVIEWER
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{reviewerToken}}
+
+{
+  "text": "This comment is specific to the economic indicators section",
+  "type": "comment",
+  "sectionId": "economicIndicators"
+}
+
+### Step 8: Add a comment as MOSPI_APPROVER
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{approverToken}}
+
+{
+  "text": "This is a comment from MOSPI_APPROVER",
+  "type": "comment",
+  "sectionId": "general"
+}
+
+### CASE 2: Comments with Status Change (With Submit Button)
+### ------------------------------------------------------
+
+### Step 9: Submit to state with comment (NODAL_OFFICER)
+POST {{baseUrl}}/submission/submit-to-state/{{submissionId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "comment": "Submitting to state for review"
+}
+
+### Step 10: Forward to MOSPI reviewer with comment (STATE_APPROVER)
+POST {{baseUrl}}/submission/forward-to-mospi/{{submissionId}}
+Content-Type: application/json
+Authorization: Bearer {{stateApproverToken}}
+
+{
+  "status": "SUBMITTED_TO_MOSPI_REVIEWER",
+  "comment": "Forwarding to MOSPI reviewer for further review",
+  "sectionId": "general"
+}
+
+### Step 11: Forward to MOSPI approver with comment (MOSPI_REVIEWER)
+POST {{baseUrl}}/submission/forward-to-mospi-approver/{{submissionId}}
+Content-Type: application/json
+Authorization: Bearer {{reviewerToken}}
+
+{
+  "status": "SUBMITTED_TO_MOSPI_APPROVER",
+  "comment": "Reviewed and forwarding for final approval",
+  "sectionId": "general"
+}
+
+### Step 12: Get the submission with all comments
+GET {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{approverToken}}
+
+### Step 13: View comments formatted by role
+# @name extractComments
+GET {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{approverToken}}
+
+> {%
+    const response = JSON.parse(responseBody);
+    if (response && response.data && response.data.reviewComments) {
+        const comments = response.data.reviewComments;
+        
+        // Create a formatted display of comments by role and type
+        let commentsByRole = {};
+        
+        comments.forEach(comment => {
+            if (!commentsByRole[comment.role]) {
+                commentsByRole[comment.role] = [];
+            }
+            commentsByRole[comment.role].push({
+                text: comment.text,
+                type: comment.type,
+                timestamp: new Date(comment.timestamp).toLocaleString()
+            });
+        });
+        
+        // Output the comments grouped by role
+        console.log("=== COMMENTS BY ROLE ===");
+        for (const role in commentsByRole) {
+            console.log(`\n## ${role} COMMENTS:`);
+            commentsByRole[role].forEach((comment, index) => {
+                console.log(`${index + 1}. [${comment.type.toUpperCase()}] ${comment.text}${comment.sectionId ? ' [Section: ' + comment.sectionId + ']' : ''}`);
+                console.log(`   Added: ${comment.timestamp}`);
+            });
+        }
+
+        // Separate direct comments from status change comments
+        console.log("\n\n=== COMMENTS BY TYPE ===");
+        console.log("\n## DIRECT COMMENTS (without status change):");
+        comments.filter(c => c.type === 'comment').forEach((comment, index) => {
+            console.log(`${index + 1}. [${comment.role}] ${comment.text}${comment.sectionId ? ' [Section: ' + comment.sectionId + ']' : ''}`);
+        });
+        
+        console.log("\n## STATUS CHANGE COMMENTS:");
+        comments.filter(c => c.type === 'status-change' || c.type === 'submit' || 
+                      c.type === 'forward' || c.type === 'resubmit').forEach((comment, index) => {
+            console.log(`${index + 1}. [${comment.role}] ${comment.text}`);
+        });
+    } else {
+        console.log("No comments found in the response");
+    }
+%}

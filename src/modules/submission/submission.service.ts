@@ -28,6 +28,8 @@ import {
   ForwardToMoSPIReviewerDto,
   ForwardToMoSPIApproverDto,
   SendBackToStateDto,
+  SubmitWithSectionCommentsDto,
+  SectionComment,
   StateRejectDto,
   FinalRejectDto,
   ResubmitDto,
@@ -47,6 +49,31 @@ export class SubmissionService {
     private scoringService: ScoringService,
     private storageService: StorageService
   ) {}
+
+  // Helper function to create comments with appropriate section ID
+  private createComment(
+    text: string,
+    type: "comment" | "rejection" | "approval",
+    userRole: UserRole,
+    userId: string,
+    sectionId?: string
+  ): ReviewComment {
+    return {
+      timestamp: new Date(),
+      role: userRole,
+      userId,
+      text,
+      type,
+      // If sectionId is provided, use it; otherwise use a default based on comment type
+      sectionId:
+        sectionId ||
+        (type === "comment"
+          ? "general"
+          : type === "rejection"
+            ? "rejection"
+            : "approval"),
+    };
+  }
 
   async create(
     createSubmissionDto: CreateSubmissionDto,
@@ -156,18 +183,8 @@ export class SubmissionService {
 
     // Apply role-based filtering
     if (userRole === UserRole.NODAL_OFFICER) {
-      // Special case for Delhi state - show all Delhi submissions regardless of who submitted
-      if (userStateUt === "Delhi") {
-        query.andWhere("submission.stateUt = :stateUt", {
-          stateUt: userStateUt,
-        });
-        // Remove the submittedBy filter for Delhi state to show all Delhi submissions
-      } else {
-        query.andWhere("submission.stateUt = :stateUt", {
-          stateUt: userStateUt,
-        });
-        query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
-      }
+      query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
+      query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
     } else if (userRole === UserRole.STATE_APPROVER) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
     }
@@ -352,17 +369,17 @@ export class SubmissionService {
       const submission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(`Found submission with status: ${submission.status}`);
 
-      // Step 2: Create comment
-      const comment: ReviewComment = {
-        timestamp: new Date(),
-        role: userRole,
+      // Step 2: Create comment using helper function
+      const comment = this.createComment(
+        addCommentDto.text,
+        addCommentDto.type,
+        userRole,
         userId,
-        text: addCommentDto.text,
-        type: addCommentDto.type,
-      };
+        addCommentDto.sectionId
+      );
 
       this.logger.log(
-        `Adding comment: ${addCommentDto.text} (Type: ${addCommentDto.type})`
+        `Adding comment: ${addCommentDto.text} (Type: ${addCommentDto.type}) for section: ${addCommentDto.sectionId}`
       );
 
       // Step 3: Update comments
@@ -453,6 +470,127 @@ export class SubmissionService {
     }
   }
 
+  async submitWithSectionComments(
+    id: string,
+    submitDto: SubmitWithSectionCommentsDto,
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    try {
+      this.logger.log(`=== SUBMIT WITH SECTION COMMENTS START ===`);
+      this.logger.log(
+        `ID: ${id}, UserId: ${userId}, UserRole: ${userRole}, StateUt: ${userStateUt}`
+      );
+      this.logger.log(
+        `SubmitDto formData keys: ${Object.keys(submitDto.formData)}`
+      );
+      this.logger.log(
+        `Section comments count: ${submitDto.sectionComments?.length || 0}`
+      );
+
+      // Step 1: Validate user role
+      if (userRole !== UserRole.NODAL_OFFICER) {
+        this.logger.error(
+          `Invalid user role: ${userRole}. Expected: NODAL_OFFICER`
+        );
+        throw new ForbiddenException(
+          "Only Nodal Officers can submit with section comments"
+        );
+      }
+
+      // Step 2: Find submission
+      const submission = await this.findOne(id, userRole, userStateUt);
+      this.logger.log(`Found submission with status: ${submission.status}`);
+
+      // Step 3: Validate submission status
+      if (submission.status !== SubmissionStatus.DRAFT) {
+        this.logger.error(
+          `Invalid status for submit with comments: ${submission.status}. Expected: DRAFT`
+        );
+        throw new BadRequestException(
+          "Submission must be in draft status to submit with comments"
+        );
+      }
+
+      // Use transaction to ensure all updates are atomic
+      return this.dataSource.transaction(async (manager) => {
+        // Step 4: Update form data
+        await manager.update(Submission, id, {
+          formData: submitDto.formData,
+          updatedAt: new Date(),
+        });
+
+        // Step 5: Add section comments if provided
+        let updatedComments = [...submission.reviewComments];
+
+        if (submitDto.sectionComments && submitDto.sectionComments.length > 0) {
+          for (const sectionComment of submitDto.sectionComments) {
+            const comment: ReviewComment = {
+              timestamp: new Date(),
+              role: userRole,
+              userId,
+              text: sectionComment.text,
+              type: sectionComment.type,
+              sectionId: sectionComment.sectionId,
+            };
+
+            updatedComments.push(comment);
+            this.logger.log(
+              `Added comment for section ${sectionComment.sectionId}: ${sectionComment.text}`
+            );
+          }
+        }
+
+        // Step 6: Add overall comment if provided
+        if (submitDto.overallComment) {
+          const overallComment: ReviewComment = {
+            timestamp: new Date(),
+            role: userRole,
+            userId,
+            text: submitDto.overallComment,
+            type: "comment",
+            sectionId: "overall", // Using "overall" as the section ID for overall comments
+          };
+
+          updatedComments.push(overallComment);
+          this.logger.log(`Added overall comment: ${submitDto.overallComment}`);
+        }
+
+        // Step 7: Update status and comments
+        this.logger.log(`Updating submission status to: SUBMITTED_TO_STATE`);
+        this.logger.log(`Updating owner role to: STATE_APPROVER`);
+        await manager.update(Submission, id, {
+          status: SubmissionStatus.SUBMITTED_TO_STATE,
+          currentOwnerRole: UserRole.STATE_APPROVER,
+          reviewComments: updatedComments,
+        });
+
+        // Step 8: Return updated submission
+        const updatedSubmission = await this.findOne(id, userRole, userStateUt);
+        this.logger.log(
+          `Submission with section comments submitted successfully: ${updatedSubmission.id}`
+        );
+        this.logger.log(
+          `Final Status: ${updatedSubmission.status}, Owner: ${updatedSubmission.currentOwnerRole}`
+        );
+        this.logger.log(
+          `Total comments: ${updatedSubmission.reviewComments.length}`
+        );
+        this.logger.log(`=== SUBMIT WITH SECTION COMMENTS SUCCESS ===`);
+
+        return updatedSubmission;
+      });
+    } catch (error) {
+      this.logger.error(`=== SUBMIT WITH SECTION COMMENTS ERROR ===`);
+      this.logger.error(
+        `Error submitting with section comments ${id}: ${error.message}`
+      );
+      this.logger.error(`Stack trace: ${error.stack}`);
+      throw error;
+    }
+  }
+
   async forwardToMoSPI(
     id: string,
     forwardDto: ForwardToMoSPIDto,
@@ -515,16 +653,16 @@ export class SubmissionService {
       }
 
       console.log("Status check passed, processing comments...");
-      // Add comment if provided
+      // Add comment if provided using helper function
       let updatedComments = [...submission.reviewComments];
       if (forwardDto.comment) {
-        const comment: ReviewComment = {
-          timestamp: new Date(),
-          role: userRole,
+        const comment = this.createComment(
+          forwardDto.comment,
+          "comment",
+          userRole,
           userId,
-          text: forwardDto.comment,
-          type: "comment",
-        };
+          "status-change" // Using status-change as the section ID for status change comments
+        );
         updatedComments.push(comment);
         console.log("Comment added:", comment);
       }
@@ -657,14 +795,13 @@ export class SubmissionService {
         `Processing state rejection with comment: ${rejectDto.comment}`
       );
       return this.dataSource.transaction(async (manager) => {
-        // Add rejection comment
-        const comment: ReviewComment = {
-          timestamp: new Date(),
-          role: userRole,
-          userId,
-          text: rejectDto.comment,
-          type: "rejection",
-        };
+        // Add rejection comment using helper function
+        const comment = this.createComment(
+          rejectDto.comment,
+          "rejection",
+          userRole,
+          userId
+        );
 
         this.logger.log(`Adding rejection comment: ${rejectDto.comment}`);
 
@@ -773,14 +910,13 @@ export class SubmissionService {
         `Processing final rejection with comment: ${rejectDto.comment}`
       );
       return this.dataSource.transaction(async (manager) => {
-        // Add rejection comment
-        const comment: ReviewComment = {
-          timestamp: new Date(),
-          role: userRole,
-          userId,
-          text: rejectDto.comment,
-          type: "rejection",
-        };
+        // Add rejection comment using helper function
+        const comment = this.createComment(
+          rejectDto.comment,
+          "rejection",
+          userRole,
+          userId
+        );
 
         this.logger.log(`Adding final rejection comment: ${rejectDto.comment}`);
 
@@ -859,13 +995,13 @@ export class SubmissionService {
         // Add resubmission comment if provided
         let updatedComments = submission.reviewComments;
         if (resubmitDto.comment) {
-          const comment: ReviewComment = {
-            timestamp: new Date(),
-            role: userRole,
+          const comment = this.createComment(
+            resubmitDto.comment,
+            "comment",
+            userRole,
             userId,
-            text: resubmitDto.comment,
-            type: "comment",
-          };
+            "resubmission"
+          );
           updatedComments = [...updatedComments, comment];
           this.logger.log(
             `Adding resubmission comment: ${resubmitDto.comment}`
@@ -958,14 +1094,13 @@ export class SubmissionService {
         );
       }
 
-      // Step 6: Add approval comment
-      const comment: ReviewComment = {
-        timestamp: new Date(),
-        role: userRole,
-        userId,
-        text: approveDto.comment || "Submission approved",
-        type: "approval",
-      };
+      // Step 6: Add approval comment using helper function
+      const comment = this.createComment(
+        approveDto.comment || "Submission approved",
+        "approval",
+        userRole,
+        userId
+      );
 
       // Step 7: Prepare updated comments
       const updatedComments = [...submission.reviewComments, comment];
@@ -1176,16 +1311,16 @@ export class SubmissionService {
 
       const newOwnerRole = this.getOwnerRoleFromStatus(updateStatusDto.status);
 
-      // Add comment if provided
+      // Add comment if provided using helper function
       let updatedComments = [...submission.reviewComments];
       if (updateStatusDto.comment) {
-        const comment: ReviewComment = {
-          timestamp: new Date(),
-          role: userRole,
+        const comment = this.createComment(
+          updateStatusDto.comment,
+          "comment",
+          userRole,
           userId,
-          text: updateStatusDto.comment,
-          type: "comment",
-        };
+          "status-change"
+        );
         updatedComments.push(comment);
       }
 
@@ -1266,13 +1401,13 @@ export class SubmissionService {
       let updatedComments = [...submission.reviewComments];
       if (forwardDto.comment) {
         this.logger.log(`Adding comment: ${forwardDto.comment}`);
-        const comment: ReviewComment = {
-          timestamp: new Date(),
-          role: userRole,
+        const comment = this.createComment(
+          forwardDto.comment,
+          "comment",
+          userRole,
           userId,
-          text: forwardDto.comment,
-          type: "comment",
-        };
+          forwardDto.sectionId
+        );
         updatedComments.push(comment);
       }
 
@@ -1354,13 +1489,13 @@ export class SubmissionService {
       // Add comment if provided
       let updatedComments = [...submission.reviewComments];
       if (forwardDto.comment) {
-        const comment: ReviewComment = {
-          timestamp: new Date(),
-          role: userRole,
+        const comment = this.createComment(
+          forwardDto.comment,
+          "comment",
+          userRole,
           userId,
-          text: forwardDto.comment,
-          type: "comment",
-        };
+          forwardDto.sectionId
+        );
         updatedComments.push(comment);
       }
 
@@ -1414,13 +1549,13 @@ export class SubmissionService {
       // Add comment if provided
       let updatedComments = [...submission.reviewComments];
       if (sendBackDto.comment) {
-        const comment: ReviewComment = {
-          timestamp: new Date(),
-          role: userRole,
+        const comment = this.createComment(
+          sendBackDto.comment,
+          "comment",
+          userRole,
           userId,
-          text: sendBackDto.comment,
-          type: "comment",
-        };
+          sendBackDto.sectionId
+        );
         updatedComments.push(comment);
       }
 
