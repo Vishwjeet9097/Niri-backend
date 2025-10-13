@@ -40,6 +40,12 @@ export class FinalScore {
   @Column({ name: 'approved_by' })
   approvedBy: string;
 
+  @Column({ name: 'category_scores', type: 'jsonb', nullable: true })
+  categoryScores: Record<string, number>;
+
+  @Column({ name: 'scoring_version', type: 'varchar', default: '2.0' })
+  scoringVersion: string;
+
   @CreateDateColumn()
   createdAt: Date;
 
