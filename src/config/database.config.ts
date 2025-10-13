@@ -19,7 +19,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       port: parseInt(this.configService.get("DB_PORT") || "5432", 10),
       username: this.configService.get("DB_USERNAME"),
       password: this.configService.get("DB_PASSWORD"),
-      database: this.configService.get("DB_NAME"),
+      database: this.configService.get("DB_DATABASE"),
       ssl: isProduction ? { rejectUnauthorized: false } : false,
       extra: isProduction
         ? {
