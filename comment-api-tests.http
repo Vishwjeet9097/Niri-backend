@@ -1,0 +1,133 @@
+# Comment API Test Guide for NIRI Backend
+
+# This file demonstrates how to:
+# 1. Create a submission as NODAL_OFFICER
+# 2. Add comments as MOSPI_APPROVER
+# 3. View all comments with their respective roles
+
+# Set environment variables
+@baseUrl = http://localhost:3000
+@nodalToken = {{nodalLogin.response.body.$.data.accessToken}}
+@approverToken = {{adminLogin.response.body.$.data.accessToken}}
+@submissionId = {{createSubmission.response.body.$.data.id}}
+
+### Step 1: Login as NODAL_OFFICER
+# @name nodalLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nodal@niri.gov.in",
+  "password": "Nodal@123"
+}
+
+### Step 2: Create a submission as NODAL_OFFICER
+# @name createSubmission
+POST {{baseUrl}}/submission
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "submissionId": "TEST-SUB-{{$timestamp}}",
+  "formData": {
+    "infrastructureMetrics": {
+      "qualityIndex": 8.5,
+      "socialImpact": 7.8
+    }
+  }
+}
+
+### Step 3: Login as MOSPI_APPROVER (admin)
+# @name adminLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@niri.gov.in",
+  "password": "Admin@123"
+}
+
+### Step 4: Add a regular comment to the submission
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{approverToken}}
+
+{
+  "text": "This is a regular comment",
+  "type": "comment"
+}
+
+### Step 5: Add a rejection comment
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{approverToken}}
+
+{
+  "text": "Rejecting this submission due to incomplete data",
+  "type": "rejection"
+}
+
+### Step 6: Add an approval comment
+POST {{baseUrl}}/submission/{{submissionId}}/comment
+Content-Type: application/json
+Authorization: Bearer {{approverToken}}
+
+{
+  "text": "All criteria met, approving the submission",
+  "type": "approval"
+}
+
+### Step 7: Get the submission with comments (includes role information)
+GET {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{approverToken}}
+
+# The response will include a "reviewComments" array containing:
+# [
+#   {
+#     "role": "MOSPI_APPROVER",  // The role of the user who added the comment
+#     "text": "Comment text",
+#     "type": "comment",         // "comment", "rejection", or "approval"
+#     "userId": "user-uuid",
+#     "timestamp": "2025-10-13T10:45:20.565Z"
+#   },
+#   ...
+# ]
+
+### Step 8: Extract and display only the comments with roles (using JavaScript)
+# @name extractComments
+GET {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{approverToken}}
+
+> {%
+    // This script extracts and formats just the comment data
+    const response = JSON.parse(responseBody);
+    if (response && response.data && response.data.reviewComments) {
+        const comments = response.data.reviewComments;
+        
+        // Create a formatted display of comments by role
+        let commentsByRole = {};
+        
+        comments.forEach(comment => {
+            if (!commentsByRole[comment.role]) {
+                commentsByRole[comment.role] = [];
+            }
+            commentsByRole[comment.role].push({
+                text: comment.text,
+                type: comment.type,
+                timestamp: new Date(comment.timestamp).toLocaleString()
+            });
+        });
+        
+        // Output the comments grouped by role
+        console.log("=== COMMENTS BY ROLE ===");
+        for (const role in commentsByRole) {
+            console.log(`\n## ${role} COMMENTS:`);
+            commentsByRole[role].forEach((comment, index) => {
+                console.log(`${index + 1}. [${comment.type.toUpperCase()}] ${comment.text}`);
+                console.log(`   Added: ${comment.timestamp}`);
+            });
+        }
+    } else {
+        console.log("No comments found in the response");
+    }
+%}
