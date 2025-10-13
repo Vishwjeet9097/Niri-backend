@@ -27,6 +27,8 @@ import {
   FinalRejectDto,
   ResubmitDto,
   SubmissionQueryDto,
+  SubmitWithSectionCommentsDto,
+  SectionComment,
 } from './dto/submission.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
@@ -268,6 +270,24 @@ export class SubmissionController {
   @HttpCode(HttpStatus.OK)
   async submitToState(@Param('id') id: string, @Request() req) {
     return this.submissionService.submitToState(id, req.user.id, req.user.role, req.user.stateUt);
+  }
+  
+  @Post('submit-with-comments/:id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.NODAL_OFFICER)
+  @HttpCode(HttpStatus.OK)
+  async submitWithSectionComments(
+    @Param('id') id: string, 
+    @Body() submitDto: SubmitWithSectionCommentsDto, 
+    @Request() req
+  ) {
+    return this.submissionService.submitWithSectionComments(
+      id,
+      submitDto,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt,
+    );
   }
 
   @Post('approve/:id')

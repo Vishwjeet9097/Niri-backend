@@ -98,7 +98,8 @@ Authorization: Bearer {{approverToken}}
 
 {
   "text": "This is a regular comment",
-  "type": "comment"
+  "type": "comment",
+  "sectionId": "general"
 }
 
 ### Step 5: Add a rejection comment
@@ -108,7 +109,8 @@ Authorization: Bearer {{approverToken}}
 
 {
   "text": "Rejecting this submission due to incomplete data",
-  "type": "rejection"
+  "type": "rejection",
+  "sectionId": "rejection-reason"
 }
 
 ### Step 6: Add an approval comment
@@ -118,7 +120,8 @@ Authorization: Bearer {{approverToken}}
 
 {
   "text": "All criteria met, approving the submission",
-  "type": "approval"
+  "type": "approval",
+  "sectionId": "approval-reason"
 }
 
 ### Step 7: Login as MOSPI_REVIEWER 
@@ -139,7 +142,8 @@ Authorization: Bearer {{reviewerLogin.response.body.$.data.accessToken}}
 
 {
   "text": "This is a reviewer comment from MOSPI_REVIEWER",
-  "type": "comment"
+  "type": "comment",
+  "sectionId": "general"
 }
 
 # Note: If you get a 401 Unauthorized error, make sure you've registered the user

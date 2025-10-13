@@ -1,0 +1,139 @@
+# Section Comment API Example
+
+@baseUrl = http://localhost:3000
+@nodalToken = {{nodalLogin.response.body.$.data.accessToken}}
+@submissionId = {{createSubmission.response.body.$.data.id}}
+
+### Step 1: Register NODAL_OFFICER user (if it doesn't exist)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "nodal@niri.gov.in",
+  "password": "Nodal@123",
+  "firstName": "Nodal",
+  "lastName": "Officer",
+  "role": "NODAL_OFFICER",
+  "stateUt": "Karnataka"
+}
+
+### Step 2: Login as NODAL_OFFICER
+# @name nodalLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nodal@niri.gov.in",
+  "password": "Nodal@123"
+}
+
+### Step 3: Create a new draft submission
+# @name createSubmission
+POST {{baseUrl}}/submission
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "submissionId": "TEST-SECTIONS-{{$timestamp}}",
+  "formData": {
+    "infrastructureMetrics": {
+      "qualityIndex": 8.5,
+      "socialImpact": 7.8
+    },
+    "economicIndicators": {
+      "gdpGrowth": 5.2,
+      "unemployment": 3.7
+    },
+    "healthcareMetrics": {
+      "hospitalBeds": 340,
+      "doctorsPerCapita": 2.3
+    }
+  }
+}
+
+### Step 4: Submit form with section-specific comments
+POST {{baseUrl}}/submission/submit-with-comments/{{submissionId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {
+    "infrastructureMetrics": {
+      "qualityIndex": 8.5,
+      "socialImpact": 7.8,
+      "publicTransport": 6.2
+    },
+    "economicIndicators": {
+      "gdpGrowth": 5.2,
+      "unemployment": 3.7,
+      "inflation": 4.1
+    },
+    "healthcareMetrics": {
+      "hospitalBeds": 340,
+      "doctorsPerCapita": 2.3,
+      "lifeExpectancy": 74.5
+    }
+  },
+  "sectionComments": [
+    {
+      "sectionId": "infrastructureMetrics",
+      "text": "Added public transport metrics as requested",
+      "type": "comment"
+    },
+    {
+      "sectionId": "economicIndicators",
+      "text": "Included inflation data from most recent quarter",
+      "type": "comment"
+    },
+    {
+      "sectionId": "healthcareMetrics",
+      "text": "Life expectancy data is from the latest census",
+      "type": "comment"
+    }
+  ],
+  "overallComment": "Completed all sections with the latest available data"
+}
+
+### Step 5: View submission with section comments
+GET {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{nodalToken}}
+
+### Step 6: Extract and format section comments
+# @name extractSectionComments
+GET {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{nodalToken}}
+
+> {%
+    const response = JSON.parse(responseBody);
+    if (response && response.data && response.data.reviewComments) {
+        const comments = response.data.reviewComments;
+        
+        // Group comments by section
+        let commentsBySection = {};
+        
+        comments.forEach(comment => {
+            const sectionId = comment.sectionId || "general";
+            if (!commentsBySection[sectionId]) {
+                commentsBySection[sectionId] = [];
+            }
+            commentsBySection[sectionId].push({
+                role: comment.role,
+                text: comment.text,
+                type: comment.type,
+                timestamp: new Date(comment.timestamp).toLocaleString()
+            });
+        });
+        
+        // Output the comments grouped by section
+        console.log("=== COMMENTS BY SECTION ===");
+        for (const section in commentsBySection) {
+            console.log(`\n## ${section.toUpperCase()} SECTION:`);
+            commentsBySection[section].forEach((comment, index) => {
+                console.log(`${index + 1}. [${comment.role}] ${comment.text}`);
+                console.log(`   Type: ${comment.type}, Added: ${comment.timestamp}`);
+            });
+        }
+    } else {
+        console.log("No comments found in the response");
+    }
+%}
