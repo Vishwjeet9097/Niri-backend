@@ -20,6 +20,7 @@ export class UserService {
         'user.email',
         'user.firstName',
         'user.lastName',
+        'user.contactNumber',
         'user.role',
         'user.stateUt',
         'user.isActive',
@@ -154,7 +155,7 @@ export class UserService {
   async getUsersByState(stateUt: string): Promise<User[]> {
     return this.userRepository.find({
       where: { stateUt, isActive: true },
-      select: ['id', 'email', 'firstName', 'lastName', 'role', 'stateUt', 'isActive', 'createdAt'],
+      select: ['id', 'email', 'firstName', 'lastName', 'contactNumber', 'role', 'stateUt', 'isActive', 'createdAt'],
     });
   }
 
@@ -166,6 +167,7 @@ export class UserService {
         'user.email',
         'user.firstName',
         'user.lastName',
+        'user.contactNumber',
         'user.role',
         'user.stateUt',
         'user.isActive',
@@ -191,7 +193,7 @@ export class UserService {
     approverRole: UserRole,
     approverState: string,
   ): Promise<{ user: Partial<User>; message: string }> {
-    const { email, password, firstName, lastName, role, stateUt } = createUserDto;
+    const { email, password, firstName, lastName, contactNumber, role, stateUt } = createUserDto;
 
     // Debug logging
     console.log('🔍 Debug - User Creation:');
@@ -199,6 +201,8 @@ export class UserService {
     console.log('Approver State:', approverState);
     console.log('Requested State:', stateUt);
     console.log('Role Check:', approverRole === UserRole.STATE_APPROVER);
+    console.log('Contact Number:', contactNumber);
+    console.log('Full DTO:', createUserDto);
 
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({ where: { email } });
@@ -231,6 +235,7 @@ export class UserService {
       password: hashedPassword,
       firstName,
       lastName,
+      contactNumber,
       role,
       stateUt,
     });

@@ -16,6 +16,10 @@ export class CreateUserDto {
   @IsString()
   lastName: string;
 
+  @IsOptional()
+  @IsString()
+  contactNumber?: string;
+
   @IsEnum(UserRole)
   role: UserRole;
 
