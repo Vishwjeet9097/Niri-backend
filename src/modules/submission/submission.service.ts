@@ -181,14 +181,14 @@ export class SubmissionService {
       .leftJoinAndSelect("submission.user", "user")
       .leftJoinAndSelect("submission.finalScore", "finalScore");
 
-    // Apply role-based filtering - all users can only see submissions from their state
+    // Apply role-based filtering
     if (userRole === UserRole.NODAL_OFFICER) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
       query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
-    } else {
-      // All other roles (STATE_APPROVER, MOSPI_REVIEWER, MOSPI_APPROVER) can only see submissions from their state
+    } else if (userRole === UserRole.STATE_APPROVER) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
     }
+    // ADMIN and MoSPI roles can see all submissions
 
     // Apply filters
     if (status) {
@@ -205,9 +205,11 @@ export class SubmissionService {
       }
     }
     if (stateUt) {
-      // All users can only filter by their own state
-      if (stateUt !== userStateUt) {
-        throw new ForbiddenException("Access denied - can only filter by your own state");
+      // Only ADMIN and MoSPI roles can filter by any state
+      if (![UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN].includes(userRole)) {
+        throw new ForbiddenException(
+          "Access denied - can only filter by your own state"
+        );
       }
       query.andWhere("submission.stateUt = :stateUt", { stateUt });
     }
