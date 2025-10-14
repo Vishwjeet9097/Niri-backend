@@ -24,8 +24,15 @@ export class AuthService {
   async register(
     createUserDto: CreateUserDto
   ): Promise<{ user: Partial<User>; accessToken: string }> {
-    const { email, password, firstName, lastName, role, stateUt } =
-      createUserDto;
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      contactNumber,
+      role,
+      stateUt,
+    } = createUserDto;
 
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({
@@ -45,6 +52,7 @@ export class AuthService {
       password: hashedPassword,
       firstName,
       lastName,
+      contactNumber,
       role,
       stateUt,
     });

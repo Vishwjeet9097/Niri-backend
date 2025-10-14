@@ -12,17 +12,23 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
   constructor(private configService: ConfigService) {}
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
+    const isProduction = this.configService.get("NODE_ENV") === "production";
+    const dbHost = this.configService.get("DB_HOST");
+    
+    // Only use SSL for production or when explicitly configured
+    const sslConfig = isProduction || dbHost !== "localhost" 
+      ? { rejectUnauthorized: false } 
+      : false;
+
     return {
       type: "postgres",
-      host: this.configService.get("DB_HOST"),
+      host: dbHost,
       port: parseInt(this.configService.get("DB_PORT") || "5432", 10),
       username: this.configService.get("DB_USERNAME"),
       password: this.configService.get("DB_PASSWORD"),
       database: this.configService.get("DB_NAME"),
-      ssl: { rejectUnauthorized: false },
-      extra: {
-        ssl: { rejectUnauthorized: false },
-      },
+      ssl: sslConfig,
+      extra: sslConfig ? { ssl: sslConfig } : {},
       synchronize: false,
       autoLoadEntities: true,
     };
