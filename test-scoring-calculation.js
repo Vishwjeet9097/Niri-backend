@@ -536,3 +536,5 @@ console.log(`✓ Array processing working (Projects: ${testFormData.infraDevelop
 console.log(`✓ Percentage calculations working (Capex to GSDP: ${testFormData.infraFinancing.capexToGSDP.percentage}% = ${Math.min(testFormData.infraFinancing.capexToGSDP.percentage * 10, 50)} marks)`);
 
 
+
+
