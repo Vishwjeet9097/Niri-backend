@@ -2,10 +2,301 @@
 # This file contains HTTP requests to test the NIRI backend API
 # You can run these requests using the REST Client extension for VS Code
 
+# IMPORTANT USAGE INSTRUCTIONS:
+# 1. Run the requests in sequential order for proper variable passing
+# 2. IMPORTANT: The API endpoints require the database UUID, not your custom submissionId!
+#    - When you create a submission, it returns both an "id" (UUID) and a "submissionId" (string)
+#    - You must use the "id" (UUID) field in URL paths like /submission/:id
+#    - Example UUID format: 123e4567-e89b-12d3-a456-426614174000
+#    - NEVER use values like "TEST-EDIT-API-001" in the URL path
+# 3. Always run the login request first (Step 1) before attempting protected endpoints
+# 4. Variables are only populated when requests are run in the same session
+# 5. Look for "Alternative" steps that use hardcoded UUIDs if you want to skip sequence
+
 # Environment variables
 @baseUrl = http://localhost:3000
 @authToken = {{login.response.body.$.data.accessToken}}
+# This is a global submission ID variable, use the specific ones defined below for tests
 @submissionId = {{createSubmission.response.body.$.data.id}}
+
+#################################################################
+# FORM EDIT API TEST FLOW
+#################################################################
+
+### Step 0: Find all submission UUIDs in the system (useful for getting valid UUIDs)
+### Run this after login to get a list of valid UUIDs to use in your tests
+GET {{baseUrl}}/submission/list
+Authorization: Bearer {{nodalToken}}
+
+### Step 1: Login as NODAL_OFFICER
+# @name nodalLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nodal@niri.gov.in",
+  "password": "Nodal@123"
+}
+
+### Store the NODAL_OFFICER token
+@nodalToken = {{nodalLogin.response.body.$.data.accessToken}}
+
+### Step 2: Create a test submission
+# @name testSubmission
+POST {{baseUrl}}/submission
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "submissionId": "TEST-EDIT-API-001",
+  "formData": {
+    "generalInformation": {
+      "title": "Test Submission for Edit API",
+      "department": "Infrastructure",
+      "referenceNumber": "TEST-EDIT-API-2025",
+      "submissionDate": "2025-10-14"
+    },
+    "infrastructureMetrics": {
+      "qualityIndex": 7.5,
+      "projectCompletionRate": 65
+    }
+  }
+}
+
+### Store the test submission ID (only works if Step 2 was run in the same session)
+# If running requests individually, you'll need to use one of the alternative steps with YOUR-SUBMISSION-ID
+@testSubmissionId = {{testSubmission.response.body.$.data.id}}
+
+### Step 3: Verify the submission exists and check current data
+GET {{baseUrl}}/submission/{{testSubmissionId}}
+Authorization: Bearer {{nodalToken}}
+
+### Step 3.1: Alternative - Get a specific submission by manually entering ID
+# Replace with an actual UUID from your database (must be a valid UUID, not a custom submission ID)
+GET {{baseUrl}}/submission/123e4567-e89b-12d3-a456-426614174000
+Authorization: Bearer {{nodalToken}}
+
+### Step 4: Edit the submission form data
+# @name editSubmission
+PUT {{baseUrl}}/submission/{{testSubmissionId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+### Step 4.1: Alternative - Edit a specific submission by manually entering ID
+# Replace with an actual UUID from your database (must be a valid UUID, not a custom submission ID)
+PUT {{baseUrl}}/submission/123e4567-e89b-12d3-a456-426614174000
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {
+    "generalInformation": {
+      "title": "Updated Test Submission",
+      "department": "Infrastructure",
+      "referenceNumber": "TEST-EDIT-API-2025-UPDATED",
+      "submissionDate": "2025-10-14"
+    },
+    "infrastructureMetrics": {
+      "qualityIndex": 9.0,
+      "socialImpact": 8.5,
+      "projectCompletionRate": 75
+    },
+    "additionalDetails": {
+      "notes": "This section was added during the edit operation",
+      "priority": "High"
+    }
+  }
+}
+
+### Step 5: Verify the updated submission data
+GET {{baseUrl}}/submission/{{testSubmissionId}}
+Authorization: Bearer {{nodalToken}}
+
+### Step 6: Update just specific fields
+PUT {{baseUrl}}/submission/{{testSubmissionId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {
+    "infrastructureMetrics": {
+      "qualityIndex": 9.8
+    }
+  }
+}
+
+### Verify the specific field update
+GET {{baseUrl}}/submission/{{testSubmissionId}}
+Authorization: Bearer {{nodalToken}}
+
+### Step 7: Test error cases
+
+### Test unauthorized access (wrong role)
+# First, login as a different role (STATE_APPROVER)
+# @name stateLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "state@niri.gov.in",
+  "password": "State@123"
+}
+
+@stateToken = {{stateLogin.response.body.$.data.accessToken}}
+
+### Attempt edit with wrong role (should fail)
+PUT {{baseUrl}}/submission/{{testSubmissionId}}
+Content-Type: application/json
+Authorization: Bearer {{stateToken}}
+
+{
+  "formData": {
+    "generalInformation": {
+      "title": "This should fail - wrong role"
+    }
+  }
+}
+
+### Test non-existent submission
+PUT {{baseUrl}}/submission/non-existent-id
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {
+    "generalInformation": {
+      "title": "This should fail - submission doesn't exist"
+    }
+  }
+}
+
+### Step 8: Test submission status constraints
+
+### Submit to state approver (changes status from DRAFT)
+POST {{baseUrl}}/submission/submit-to-state/{{testSubmissionId}}
+Authorization: Bearer {{nodalToken}}
+
+### Try to edit after submission (should fail)
+PUT {{baseUrl}}/submission/{{testSubmissionId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {
+    "generalInformation": {
+      "title": "This should fail - submission not in DRAFT status"
+    }
+  }
+}
+
+### Step 9: Create a new draft submission for more testing
+# @name newDraftSubmission
+POST {{baseUrl}}/submission
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "submissionId": "TEST-EDIT-API-002",
+  "formData": {
+    "generalInformation": {
+      "title": "Another Test Submission",
+      "department": "Education",
+      "referenceNumber": "TEST-EDIT-API-2025-2",
+      "submissionDate": "2025-10-14"
+    }
+  }
+}
+
+### Store the new draft submission ID (only works if Step 9 was run in the same session)
+# If running requests individually, you'll need to use the alternative step with YOUR-SUBMISSION-ID
+@newDraftId = {{newDraftSubmission.response.body.$.data.id}}
+
+### Step 10: Test complex nested data update
+PUT {{baseUrl}}/submission/{{newDraftId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+### Step 10.1: Alternative - Test complex nested data update with manual ID
+# Replace YOUR-SUBMISSION-ID with an actual UUID from your database
+PUT {{baseUrl}}/submission/YOUR-SUBMISSION-ID
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {
+    "educationMetrics": {
+      "schoolData": {
+        "primarySchools": {
+          "count": 1250,
+          "studentEnrollment": 45000,
+          "teacherCount": 2200
+        },
+        "secondarySchools": {
+          "count": 850,
+          "studentEnrollment": 32000,
+          "teacherCount": 1800
+        }
+      },
+      "performanceIndicators": {
+        "literacyRate": 92.5,
+        "graduationRate": 78.3,
+        "dropoutRate": 3.2
+      }
+    }
+  }
+}
+
+### Verify complex nested data
+GET {{baseUrl}}/submission/{{newDraftId}}
+Authorization: Bearer {{nodalToken}}
+
+### Step 10: Test edge cases
+
+### Empty form data (should still work)
+PUT {{baseUrl}}/submission/{{newDraftId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {}
+}
+
+### Very large nested data structure
+PUT {{baseUrl}}/submission/{{newDraftId}}
+Content-Type: application/json
+Authorization: Bearer {{nodalToken}}
+
+{
+  "formData": {
+    "comprehensiveData": {
+      "section1": { "field1": "value1", "field2": "value2" },
+      "section2": { "field1": "value1", "field2": "value2" },
+      "section3": { "field1": "value1", "field2": "value2" },
+      "section4": { 
+        "subsection1": {
+          "field1": "value1",
+          "field2": "value2",
+          "deeplyNested": {
+            "level1": {
+              "level2": {
+                "level3": "deep value"
+              }
+            }
+          }
+        }
+      },
+      "arrayData": [
+        {"item": 1, "value": "first"},
+        {"item": 2, "value": "second"},
+        {"item": 3, "value": "third"}
+      ]
+    }
+  }
+}
+
+### Final verification of all changes
+GET {{baseUrl}}/submission/{{newDraftId}}
+Authorization: Bearer {{nodalToken}}
 
 #################################################################
 # CONNECTIVITY TESTS
@@ -114,7 +405,10 @@ Content-Type: application/json
 GET {{baseUrl}}/submission/{{submissionId}}
 Authorization: Bearer {{authToken}}
 
-### Update a submission
+### Update a submission (Form Edit API)
+# This is the primary Form Edit API endpoint
+# It allows updating the form data of a submission that is in DRAFT status
+# Only NODAL_OFFICER role can edit their own submissions
 PUT {{baseUrl}}/submission/{{submissionId}}
 Authorization: Bearer {{authToken}}
 Content-Type: application/json
@@ -144,6 +438,90 @@ Content-Type: application/json
       "completedProjects": 22,
       "ongoingProjects": 4,
       "plannedProjects": 2
+    }
+  }
+}
+
+#################################################################
+# FORM EDITING ENDPOINTS
+#################################################################
+# Form editing uses the PUT method to update submission form data
+# Permissions:
+# - Only NODAL_OFFICER role can edit forms
+# - Only forms in DRAFT status can be edited
+# - User can only edit their own submissions
+# - The endpoint accepts complete or partial updates to formData structure
+
+### Update a specific section in a form
+PUT {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "formData": {
+    "demographicData": {
+      "population": 5000000,
+      "urbanRatio": 65.2,
+      "literacyRate": 88.5
+    }
+  }
+}
+
+### Example: Form Update with Specific Fields
+# This will update just the qualityIndex field in the form
+PUT {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "formData": {
+    "infrastructureMetrics": {
+      "qualityIndex": 9.5
+    }
+  }
+}
+
+### Update multiple sections in a form
+PUT {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "formData": {
+    "healthMetrics": {
+      "hospitalBeds": 12500,
+      "doctorsPerThousand": 2.8,
+      "immunizationRate": 92.1
+    },
+    "educationMetrics": {
+      "schoolEnrollment": 98.5,
+      "teacherStudentRatio": "1:24",
+      "graduationRate": 78.3
+    }
+  }
+}
+
+### Complex Form Update with Section-Specific Data
+PUT {{baseUrl}}/submission/{{submissionId}}
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "formData": {
+    "infrastructureDevelopment": {
+      "roadNetwork": {
+        "nationalHighways": 850,
+        "stateHighways": 1240,
+        "ruralRoads": 5680
+      },
+      "powerSupply": {
+        "totalCapacity": 12500,
+        "renewablePercentage": 42,
+        "distribution": {
+          "urban": 98.5,
+          "rural": 92.3
+        }
+      }
     }
   }
 }
