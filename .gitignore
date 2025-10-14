@@ -150,4 +150,3 @@ src/database/data-source.ts
 # Local development files
 .local
 local/
-src/config/database.config.ts
