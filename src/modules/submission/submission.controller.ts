@@ -14,9 +14,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { SubmissionService } from "./submission.service";
-  Put,
-} from '@nestjs/common';
-import { SubmissionService } from './submission.service';
+import { Put } from "@nestjs/common";
 import {
   CreateSubmissionDto,
   UpdateSubmissionDto,
@@ -168,9 +166,11 @@ export class SubmissionController {
   @Post(":id/comment")
   @UseGuards(RolesGuard)
   @Roles(
+    UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
   )
   async addComment(
     @Param("id") id: string,
@@ -319,7 +319,7 @@ export class SubmissionController {
 
   @Post("resubmit/:id")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.NODAL_OFFICER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
   @HttpCode(HttpStatus.OK)
   async resubmit(
     @Param("id") id: string,
