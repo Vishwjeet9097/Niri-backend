@@ -968,11 +968,16 @@ export class SubmissionService {
       this.logger.log(`ResubmitDto: ${JSON.stringify(resubmitDto)}`);
 
       // Step 1: Validate user role
-      if (userRole !== UserRole.NODAL_OFFICER) {
+      if (
+        userRole !== UserRole.NODAL_OFFICER &&
+        userRole !== UserRole.STATE_APPROVER
+      ) {
         this.logger.error(
-          `Invalid user role: ${userRole}. Expected: NODAL_OFFICER`
+          `Invalid user role: ${userRole}. Expected: NODAL_OFFICER or STATE_APPROVER`
         );
-        throw new ForbiddenException("Only Nodal Officers can resubmit");
+        throw new ForbiddenException(
+          "Only Nodal Officers or State Approvers can resubmit"
+        );
       }
 
       // Step 2: Find submission
@@ -980,19 +985,51 @@ export class SubmissionService {
       this.logger.log(`Found submission with status: ${submission.status}`);
 
       // Step 3: Validate ownership
-      if (submission.submittedBy !== userId) {
+      // NODAL_OFFICER can only resubmit their own submissions
+      // STATE_APPROVER can resubmit submissions from their state
+      if (
+        userRole === UserRole.NODAL_OFFICER &&
+        submission.submittedBy !== userId
+      ) {
         this.logger.error(
-          `Invalid ownership. SubmittedBy: ${submission.submittedBy}, CurrentUser: ${userId}`
+          `Invalid ownership for NODAL_OFFICER. SubmittedBy: ${submission.submittedBy}, CurrentUser: ${userId}`
         );
-        throw new ForbiddenException("Can only resubmit your own submissions");
+        throw new ForbiddenException(
+          "Nodal Officers can only resubmit their own submissions"
+        );
+      }
+
+      if (
+        userRole === UserRole.STATE_APPROVER &&
+        submission.stateUt !== userStateUt
+      ) {
+        this.logger.error(
+          `Invalid state access for STATE_APPROVER. SubmissionState: ${submission.stateUt}, UserState: ${userStateUt}`
+        );
+        throw new ForbiddenException(
+          "State Approvers can only resubmit submissions from their state"
+        );
       }
 
       // Step 4: Validate submission status
-      if (submission.status !== SubmissionStatus.REJECTED) {
+      // Allow resubmission for all statuses except already approved or final rejected ones
+      const allowedStatuses = [
+        SubmissionStatus.REJECTED,
+        SubmissionStatus.DRAFT,
+        SubmissionStatus.SUBMITTED_TO_STATE,
+        SubmissionStatus.RETURNED_FROM_STATE,
+        SubmissionStatus.RETURNED_FROM_MOSPI,
+        SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+        SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+      ];
+
+      if (!allowedStatuses.includes(submission.status)) {
         this.logger.error(
-          `Invalid status for resubmit: ${submission.status}. Expected: REJECTED`
+          `Invalid status for resubmit: ${submission.status}. Allowed statuses: ${allowedStatuses.join(", ")}`
         );
-        throw new BadRequestException("Can only resubmit rejected submissions");
+        throw new BadRequestException(
+          `Cannot resubmit submissions with status: ${submission.status}`
+        );
       }
 
       // Step 5: Process resubmission in transaction
