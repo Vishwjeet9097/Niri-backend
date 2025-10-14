@@ -16,13 +16,13 @@ export declare class ScoringController {
     }>;
     getStateScore(stateUt: string, req: any): Promise<{
         status: boolean;
-        data: import("../../entities/final-score.entity").FinalScore;
+        data: any;
         message: string;
         timestamp: string;
     }>;
     calculateScore(submissionId: string, req: any): Promise<{
         status: boolean;
-        data: import("../../entities/final-score.entity").FinalScore;
+        data: import("./scoring.service").ScoreBreakdown;
         message: string;
         timestamp: string;
     }>;

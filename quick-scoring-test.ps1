@@ -38,3 +38,5 @@ Write-Host "`n🎯 Quick test completed!" -ForegroundColor Green
 Write-Host "For full testing, run: .\test-scoring-flow.ps1" -ForegroundColor Cyan
 
 
+
+

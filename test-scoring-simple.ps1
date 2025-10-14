@@ -30,16 +30,71 @@ Write-Host "`n2. Creating test submission..." -ForegroundColor Yellow
 
 $testFormData = @{
     # Infra Financing Data
-    capexAllocation = 50000000000  # 50,000 crores
-    gsdp = 2000000000000  # 20,00,000 crores (2.5% ratio)
-    actualCapex = 45000000000  # 45,000 crores
-    stateCapexUtilisation = 50000000000  # 50,000 crores (90% utilization)
-    creditRatedULBs = 45
-    totalULBs = 100  # 45% credit rated
-    ulbsApprovedByMoSPI = 30
-    totalULBsEntered = 100  # 30% issuing bonds
-    hasFinancialIntermediary = "Yes"
-    financialIntermediaryDocUploaded = $true
+    infraFinancing = @{
+        section1_1 = @{
+            year = "2025"
+            gsdpForFY = "54445"
+            percentage = 834.87
+            stateCapex = "544654"
+            marksObtained = 50
+            allocationToGSDP = "6665"
+            capitalAllocation = "454545"
+            capexToCapexActuals = "98"
+            stateCapexUtilisation = "44455"
+        }
+        section1_2 = @{
+            year = "2052"
+            gsdpForFY = "2587"
+            percentage = 9.88
+            actualCapex = "7699"
+            marksObtained = 4.94
+            budgetaryCapex = "77888"
+            capexActualsToGSDP = "52"
+            stateCapexUtilisation = "154452"
+        }
+        section1_3 = @(
+            @{
+                id = "1760375395502"
+                ulb = "Nagpur Municipal Corporation"
+                rating = "AA"
+                cityName = "Mumbai"
+                ratingDate = "2025-10-15T18:30:00.000Z"
+            },
+            @{
+                id = "1760417486705"
+                ulb = "Mumbai Municipal Corporation"
+                rating = "A+"
+                cityName = "Delhi"
+                ratingDate = "2025-10-14T18:30:00.000Z"
+            }
+        )
+        section1_4 = @(
+            @{
+                id = "1760375414072"
+                value = "520"
+                bondType = "Infrastructure bond"
+                cityName = "Pune"
+                issuingAuthority = "Municipal Corporation"
+            },
+            @{
+                id = "1760417502026"
+                value = "998"
+                bondType = "Revenue bond"
+                cityName = "Nagpur"
+                issuingAuthority = "Development Authority"
+            }
+        )
+        section1_5 = @(
+            @{
+                id = "1760375426241"
+                website = "knjsadkjask"
+                totalFunding = "123"
+                yearEstablished = "2015"
+                organisationName = "test"
+                organisationType = "Development Authority"
+            }
+        )
+    }
     
     # Infra Development Data
     infraActSectors = @(
