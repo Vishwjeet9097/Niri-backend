@@ -17,10 +17,10 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       port: parseInt(this.configService.get("DB_PORT") || "5432", 10),
       username: this.configService.get("DB_USERNAME"),
       password: this.configService.get("DB_PASSWORD"),
-      database: this.configService.get("DB_DATABASE"),
-      ssl: false,
+      database: this.configService.get("DB_NAME"),
+      ssl: { rejectUnauthorized: false },
       extra: {
-        ssl: false,
+        ssl: { rejectUnauthorized: false },
       },
       synchronize: false,
       autoLoadEntities: true,
