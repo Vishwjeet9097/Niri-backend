@@ -55,6 +55,11 @@ export class UserService {
       query = query.andWhere("user.role != :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
+    } else {
+      // STATE_APPROVER can only see NODAL_OFFICER users
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
     }
 
     return query.getMany();
@@ -317,6 +322,11 @@ export class UserService {
       query = query.andWhere("user.role != :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
+    } else {
+      // STATE_APPROVER can only see NODAL_OFFICER users
+      query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
     }
 
     return query.getMany();
@@ -354,6 +364,11 @@ export class UserService {
     // Only STATE_APPROVER can see NODAL_OFFICER users, others cannot see them
     if (userRole !== UserRole.STATE_APPROVER) {
       query = query.andWhere("user.role != :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
+    } else {
+      // STATE_APPROVER can only see NODAL_OFFICER users
+      query = query.andWhere("user.role = :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
     }
