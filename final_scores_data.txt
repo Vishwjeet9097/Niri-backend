@@ -1,0 +1,4 @@
+ id | submission_id | state_ut | total_score | score_breakdown | calculation_methodology | approved_by | createdAt | updatedAt 
+----+---------------+----------+-------------+-----------------+-------------------------+-------------+-----------+-----------
+(0 rows)
+

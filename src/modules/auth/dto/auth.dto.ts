@@ -1,5 +1,6 @@
-import { IsEmail, IsString, IsEnum, IsOptional, MinLength } from 'class-validator';
+import { IsEmail, IsString, IsEnum, IsOptional, MinLength, IsIn } from 'class-validator';
 import { UserRole } from '../../../entities/user.entity';
+import { INDIAN_STATES_AND_UTS } from '../../../constants/states';
 
 export class CreateUserDto {
   @IsEmail()
@@ -15,10 +16,15 @@ export class CreateUserDto {
   @IsString()
   lastName: string;
 
+  @IsOptional()
+  @IsString()
+  contactNumber?: string;
+
   @IsEnum(UserRole)
   role: UserRole;
 
   @IsString()
+  @IsIn(INDIAN_STATES_AND_UTS, { message: 'Please select a valid state/UT' })
   stateUt: string;
 }
 
@@ -49,6 +55,7 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  @IsIn(INDIAN_STATES_AND_UTS, { message: 'Please select a valid state/UT' })
   stateUt?: string;
 
   @IsOptional()

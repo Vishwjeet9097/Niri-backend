@@ -49,9 +49,15 @@ export class SubmissionService {
     private scoringService: ScoringService,
     private storageService: StorageService
   ) {}
-  
+
   // Helper function to create comments with appropriate section ID
-  private createComment(text: string, type: 'comment' | 'rejection' | 'approval', userRole: UserRole, userId: string, sectionId?: string): ReviewComment {
+  private createComment(
+    text: string,
+    type: "comment" | "rejection" | "approval",
+    userRole: UserRole,
+    userId: string,
+    sectionId?: string
+  ): ReviewComment {
     return {
       timestamp: new Date(),
       role: userRole,
@@ -59,7 +65,13 @@ export class SubmissionService {
       text,
       type,
       // If sectionId is provided, use it; otherwise use a default based on comment type
-      sectionId: sectionId || (type === 'comment' ? 'general' : type === 'rejection' ? 'rejection' : 'approval')
+      sectionId:
+        sectionId ||
+        (type === "comment"
+          ? "general"
+          : type === "rejection"
+            ? "rejection"
+            : "approval"),
     };
   }
 
@@ -175,8 +187,13 @@ export class SubmissionService {
       query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
     } else if (userRole === UserRole.STATE_APPROVER) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
+    } else if (
+      userRole === UserRole.MOSPI_REVIEWER ||
+      userRole === UserRole.MOSPI_APPROVER
+    ) {
+      query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
     }
-    // MoSPI roles can see all submissions
+    // Only ADMIN can see all submissions
 
     // Apply filters
     if (status) {
@@ -192,10 +209,13 @@ export class SubmissionService {
         });
       }
     }
-    if (
-      stateUt &&
-      [UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER].includes(userRole)
-    ) {
+    if (stateUt) {
+      // Only ADMIN can filter by any state
+      if (userRole !== UserRole.ADMIN) {
+        throw new ForbiddenException(
+          "Access denied - can only filter by your own state"
+        );
+      }
       query.andWhere("submission.stateUt = :stateUt", { stateUt });
     }
     if (currentOwnerRole) {
@@ -1304,7 +1324,7 @@ export class SubmissionService {
       if (updateStatusDto.comment) {
         const comment = this.createComment(
           updateStatusDto.comment,
-          "comment", 
+          "comment",
           userRole,
           userId,
           "status-change"
