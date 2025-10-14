@@ -12,6 +12,7 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  Put,
 } from '@nestjs/common';
 import { SubmissionService } from './submission.service';
 import {
@@ -97,7 +98,7 @@ export class SubmissionController {
     return this.submissionService.findOne(id, req.user.role, req.user.stateUt);
   }
 
-  @Patch(':id')
+  @Put(':id')
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
   async update(
