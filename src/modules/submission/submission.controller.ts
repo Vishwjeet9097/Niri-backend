@@ -40,6 +40,34 @@ import { SubmissionStatus } from "../../entities/submission.entity";
 @UseGuards(JwtAuthGuard)
 export class SubmissionController {
   constructor(private readonly submissionService: SubmissionService) {}
+  
+  // Testing endpoint for comment grouping
+  @Get("test/comments/:id")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async testCommentGrouping(@Param("id") id: string, @Request() req) {
+    const submission = await this.submissionService.findOne(id, req.user.role, req.user.stateUt);
+    
+    // Create a response object with just the comments
+    const response = {
+      id: submission.id,
+      status: submission.status,
+      reviewComments: submission.reviewComments,
+      commentsBySection: {}
+    };
+    
+    // Group comments by section if they exist
+    if (submission.reviewComments && Array.isArray(submission.reviewComments) && submission.reviewComments.length > 0) {
+      response.commentsBySection = this.submissionService.groupCommentsBySection(submission.reviewComments);
+    }
+    
+    return response;
+  }
 
   @Post()
   @UseGuards(RolesGuard)
@@ -143,7 +171,19 @@ export class SubmissionController {
     UserRole.MOSPI_APPROVER
   )
   async findOne(@Param("id") id: string, @Request() req) {
-    return this.submissionService.findOne(id, req.user.role, req.user.stateUt);
+    const submission = await this.submissionService.findOne(id, req.user.role, req.user.stateUt);
+    
+    // Group comments by section for the response
+    if (submission.reviewComments && Array.isArray(submission.reviewComments) && submission.reviewComments.length > 0) {
+      const originalComments = [...submission.reviewComments];
+      // We need to preserve the original array in the database but transform it for the response
+      const groupedComments = this.submissionService.groupCommentsBySection(originalComments);
+      
+      // Add the grouped comments as a separate property to avoid type conflicts
+      submission['commentsBySection'] = groupedComments;
+    }
+    
+    return submission;
   }
 
   @Put(':id')
