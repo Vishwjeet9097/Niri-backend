@@ -50,7 +50,7 @@ export class UserService {
       });
     }
 
-    // STATE_APPROVER can only see NODAL_OFFICER users
+    // STATE_APPROVER can only see NODAL_OFFICER Users
     if (userRole === UserRole.STATE_APPROVER) {
       query = query.andWhere("user.role = :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
