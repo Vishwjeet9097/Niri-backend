@@ -8,22 +8,27 @@ import { FinalScore } from "../entities/final-score.entity";
 
 @Injectable()
 export class DatabaseConfig implements TypeOrmOptionsFactory {
-  constructor(private configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) {}
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
-    const isProduction = this.configService.get("NODE_ENV") === "production";
-
     return {
       type: "postgres",
-      host: this.configService.get("DB_HOST"),
-      port: parseInt(this.configService.get("DB_PORT") || "5432", 10),
-      username: this.configService.get("DB_USERNAME"),
-      password: this.configService.get("DB_PASSWORD"),
-      database: this.configService.get("DB_DATABASE"),
+      host: this.configService.get<string>("DB_HOST"),
+      port: parseInt(this.configService.get<string>("DB_PORT") || "5432", 10),
+      username: this.configService.get<string>("DB_USERNAME"),
+      password: this.configService.get<string>("DB_PASSWORD"),
+      database: this.configService.get<string>("DB_DATABASE"),
+
       ssl: false,
-      extra: {},
-      synchronize: false,
+      extra: {
+        ssl: false,
+        connectionTimeoutMillis: 10000,
+      },
+
+      entities: [User, Submission, AuditLog, FinalScore],
       autoLoadEntities: true,
+      synchronize: false,
+      logging: true,
     };
   }
 }
