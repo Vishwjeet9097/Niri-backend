@@ -7,8 +7,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install all dependencies (including dev)
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -16,8 +16,11 @@ COPY . .
 # Build the application
 RUN npm run build
 
+# Remove dev dependencies (optional, reduces image size)
+RUN npm prune --production
+
 # Expose port
 EXPOSE 3000
 
 # Start the application
-CMD ["npm", "run", "start:prod"]
+CMD ["node", "dist/src/main.js"]

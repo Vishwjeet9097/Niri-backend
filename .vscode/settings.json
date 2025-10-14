@@ -1,0 +1,5 @@
+{
+  "http.proxySupport": "off",
+  "rest-client.previewResponseInUntitledDocument": true,
+  "rest-client.timeoutinmilliseconds": 15000
+}
