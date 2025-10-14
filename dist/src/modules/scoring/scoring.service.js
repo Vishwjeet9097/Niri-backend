@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var ScoringService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ScoringService = void 0;
 const common_1 = require("@nestjs/common");
@@ -18,41 +19,42 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const submission_entity_1 = require("../../entities/submission.entity");
 const final_score_entity_1 = require("../../entities/final-score.entity");
-let ScoringService = class ScoringService {
+let ScoringService = ScoringService_1 = class ScoringService {
     constructor(submissionRepository, finalScoreRepository) {
         this.submissionRepository = submissionRepository;
         this.finalScoreRepository = finalScoreRepository;
+        this.logger = new common_1.Logger(ScoringService_1.name);
     }
-    async calculateScore(submissionId, approvedBy) {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!uuidRegex.test(submissionId)) {
-            throw new Error(`Invalid submission ID format: ${submissionId}`);
-        }
+    async calculateScore(submissionId, userId) {
+        this.logger.log(`Calculating score for submission: ${submissionId}`);
         const submission = await this.submissionRepository.findOne({
             where: { id: submissionId },
         });
         if (!submission) {
-            throw new Error(`Submission not found with ID: ${submissionId}`);
+            throw new common_1.NotFoundException(`Submission with ID ${submissionId} not found`);
         }
-        if (submission.status !== submission_entity_1.SubmissionStatus.APPROVED) {
-            throw new Error(`Can only calculate score for approved submissions. Current status: ${submission.status}`);
+        if (submission.status !== 'APPROVED') {
+            throw new Error(`Submission must be APPROVED to calculate score. Current status: ${submission.status}`);
         }
         const existingScore = await this.finalScoreRepository.findOne({
             where: { submissionId },
         });
         if (existingScore) {
-            return existingScore;
+            this.logger.log(`Score already exists for submission: ${submissionId}`);
+            return existingScore.scoreBreakdown;
         }
         const scoreBreakdown = this.performScoreCalculation(submission.formData);
         const finalScore = this.finalScoreRepository.create({
             submissionId,
             stateUt: submission.stateUt,
             totalScore: scoreBreakdown.totalScore,
-            scoreBreakdown: scoreBreakdown,
+            scoreBreakdown,
             calculationMethodology: scoreBreakdown.methodology,
-            approvedBy,
+            approvedBy: userId,
         });
-        return this.finalScoreRepository.save(finalScore);
+        await this.finalScoreRepository.save(finalScore);
+        this.logger.log(`Score calculated and saved for submission: ${submissionId}, Score: ${scoreBreakdown.totalScore}`);
+        return scoreBreakdown;
     }
     performScoreCalculation(formData) {
         const calculations = [];
@@ -81,10 +83,11 @@ let ScoringService = class ScoringService {
     }
     calculateInfraFinancingScore(formData, calculations) {
         let categoryScore = 0;
-        const capexAllocation = formData.capexAllocation || 0;
-        const gsdp = formData.gsdp || 0;
+        const section1_1 = formData.infraFinancing?.section1_1 || {};
+        const capexAllocation = parseFloat(section1_1.capitalAllocation) || 0;
+        const gsdp = parseFloat(section1_1.gsdpForFY) || 0;
         const capexToGsdpRatio = gsdp > 0 ? (capexAllocation / gsdp) * 100 : 0;
-        const capexToGsdpScore = Math.min(capexToGsdpRatio * 10, 50);
+        const capexToGsdpScore = Math.min(capexToGsdpRatio * 0.5, 50);
         calculations.push({
             indicator: '1.1 % of Capex to GSDP',
             value: capexToGsdpRatio,
@@ -93,10 +96,11 @@ let ScoringService = class ScoringService {
             maxScore: 50,
         });
         categoryScore += capexToGsdpScore;
-        const actualCapex = formData.actualCapex || 0;
-        const stateCapexUtilisation = formData.stateCapexUtilisation || 0;
+        const section1_2 = formData.infraFinancing?.section1_2 || {};
+        const actualCapex = parseFloat(section1_2.actualCapex) || 0;
+        const stateCapexUtilisation = parseFloat(section1_2.stateCapexUtilisation) || 0;
         const capexUtilizationRatio = stateCapexUtilisation > 0 ? (actualCapex / stateCapexUtilisation) * 100 : 0;
-        const capexUtilizationScore = Math.min(capexUtilizationRatio + 2, 50);
+        const capexUtilizationScore = Math.min(capexUtilizationRatio * 0.5, 50);
         calculations.push({
             indicator: '1.2 % Capex Utilization',
             value: capexUtilizationRatio,
@@ -105,10 +109,11 @@ let ScoringService = class ScoringService {
             maxScore: 50,
         });
         categoryScore += capexUtilizationScore;
-        const creditRatedULBs = formData.creditRatedULBs || 0;
-        const totalULBs = formData.totalULBs || 0;
-        const creditRatedRatio = totalULBs > 0 ? (creditRatedULBs / totalULBs) * 100 : 0;
-        const creditRatedScore = Math.min(creditRatedRatio + 2, 50);
+        const section1_3 = formData.infraFinancing?.section1_3 || [];
+        const creditRatedULBs = section1_3.length;
+        const totalULBs = 10;
+        const creditRatedRatio = (creditRatedULBs / totalULBs) * 100;
+        const creditRatedScore = Math.min(creditRatedRatio * 0.5, 50);
         calculations.push({
             indicator: '1.3 % of Credit Rated ULBs',
             value: creditRatedRatio,
@@ -117,10 +122,11 @@ let ScoringService = class ScoringService {
             maxScore: 50,
         });
         categoryScore += creditRatedScore;
-        const ulbsApprovedByMoSPI = formData.ulbsApprovedByMoSPI || 0;
-        const totalULBsEntered = formData.totalULBsEntered || 0;
-        const ulbsBondsRatio = totalULBsEntered > 0 ? (ulbsApprovedByMoSPI / totalULBsEntered) * 100 : 0;
-        const ulbsBondsScore = Math.min(ulbsBondsRatio * 2, 50);
+        const section1_4 = formData.infraFinancing?.section1_4 || [];
+        const ulbsIssuingBonds = section1_4.length;
+        const totalULBsEntered = 10;
+        const ulbsBondsRatio = (ulbsIssuingBonds / totalULBsEntered) * 100;
+        const ulbsBondsScore = Math.min(ulbsBondsRatio * 0.5, 50);
         calculations.push({
             indicator: '1.4 % of ULBs Issuing Bonds',
             value: ulbsBondsRatio,
@@ -129,8 +135,8 @@ let ScoringService = class ScoringService {
             maxScore: 50,
         });
         categoryScore += ulbsBondsScore;
-        const hasFinancialIntermediary = formData.hasFinancialIntermediary === 'Yes' &&
-            formData.financialIntermediaryDocUploaded === true;
+        const section1_5 = formData.infraFinancing?.section1_5 || [];
+        const hasFinancialIntermediary = section1_5.length > 0;
         const financialIntermediaryScore = hasFinancialIntermediary ? 50 : 0;
         calculations.push({
             indicator: '1.5 Functional Financial Intermediary',
@@ -144,72 +150,56 @@ let ScoringService = class ScoringService {
     }
     calculateInfraDevelopmentScore(formData, calculations) {
         let categoryScore = 0;
-        const infraActSectors = formData.infraActSectors || [];
-        const hasOverarchingAct = formData.hasOverarchingAct === 'Overarching';
-        const infraActDocUploaded = formData.infraActDocUploaded === true;
-        let infraActScore = 0;
-        if (hasOverarchingAct && infraActDocUploaded) {
-            infraActScore = 50;
-        }
-        else {
-            const sectorsWithDocs = infraActSectors.filter(sector => sector.docUploaded).length;
-            infraActScore = Math.min(sectorsWithDocs * 10, 50);
-        }
+        const section2_1 = formData.infraDevelopment?.section2_1 || [];
+        const hasInfraAct = section2_1.length > 0 && section2_1.some(item => item.files && item.files.length > 0);
+        const infraActScore = hasInfraAct ? 50 : 0;
         calculations.push({
             indicator: '2.1 Availability of Infrastructure Act/Policy',
-            value: infraActSectors.length,
+            value: hasInfraAct ? 1 : 0,
             weight: 0.05,
             score: infraActScore,
             maxScore: 50,
         });
         categoryScore += infraActScore;
-        const specializedEntitySectors = formData.specializedEntitySectors || [];
-        const sectorsWithDocs = specializedEntitySectors.filter(sector => sector.docUploaded).length;
-        const specializedEntityScore = Math.min(sectorsWithDocs * 10, 50);
+        const section2_2 = formData.infraDevelopment?.section2_2 || [];
+        const hasSpecializedEntity = section2_2.length > 0 && section2_2.some(item => item.files && item.files.length > 0);
+        const specializedEntityScore = hasSpecializedEntity ? 50 : 0;
         calculations.push({
             indicator: '2.2 Availability of Specialized Entity',
-            value: sectorsWithDocs,
+            value: hasSpecializedEntity ? 1 : 0,
             weight: 0.05,
             score: specializedEntityScore,
             maxScore: 50,
         });
         categoryScore += specializedEntityScore;
-        const sectorPlanSectors = formData.sectorPlanSectors || [];
-        const hasOverarchingPlan = formData.hasOverarchingPlan === 'Overarching';
-        const sectorPlanDocUploaded = formData.sectorPlanDocUploaded === true;
-        let sectorPlanScore = 0;
-        if (hasOverarchingPlan && sectorPlanDocUploaded) {
-            sectorPlanScore = 50;
-        }
-        else {
-            const sectorsWithDocs = sectorPlanSectors.filter(sector => sector.docUploaded).length;
-            sectorPlanScore = Math.min(sectorsWithDocs * 10, 50);
-        }
+        const section2_3 = formData.infraDevelopment?.section2_3 || [];
+        const hasSectorPlan = section2_3.length > 0 && section2_3.some(item => item.files && item.files.length > 0);
+        const sectorPlanScore = hasSectorPlan ? 50 : 0;
         calculations.push({
             indicator: '2.3 Sector Infra Development Plan',
-            value: sectorPlanSectors.length,
+            value: hasSectorPlan ? 1 : 0,
             weight: 0.05,
             score: sectorPlanScore,
             maxScore: 50,
         });
         categoryScore += sectorPlanScore;
-        const investmentProjects = formData.investmentProjects || [];
-        const validProjects = investmentProjects.filter(project => project.docUploaded).length;
-        const investmentProjectsScore = Math.min(validProjects * 10, 50);
+        const section2_4 = formData.infraDevelopment?.section2_4 || [];
+        const hasProjectPipeline = section2_4.length > 0 && section2_4.some(item => item.dprFile);
+        const projectPipelineScore = hasProjectPipeline ? 50 : 0;
         calculations.push({
             indicator: '2.4 Investment Ready Project Pipeline',
-            value: validProjects,
+            value: hasProjectPipeline ? 1 : 0,
             weight: 0.05,
-            score: investmentProjectsScore,
+            score: projectPipelineScore,
             maxScore: 50,
         });
-        categoryScore += investmentProjectsScore;
-        const assetMonetizationProjects = formData.assetMonetizationProjects || [];
-        const validAssets = assetMonetizationProjects.filter(asset => asset.docUploaded).length;
-        const assetMonetizationScore = Math.min(validAssets * 10, 50);
+        categoryScore += projectPipelineScore;
+        const section2_5 = formData.infraDevelopment?.section2_5 || [];
+        const hasAssetMonetization = section2_5.length > 0 && section2_5.some(item => item.projectName && item.estimatedMonetization);
+        const assetMonetizationScore = hasAssetMonetization ? 50 : 0;
         calculations.push({
             indicator: '2.5 Asset Monetization Pipeline',
-            value: validAssets,
+            value: hasAssetMonetization ? 1 : 0,
             weight: 0.05,
             score: assetMonetizationScore,
             maxScore: 50,
@@ -219,9 +209,9 @@ let ScoringService = class ScoringService {
     }
     calculatePPPDevelopmentScore(formData, calculations) {
         let categoryScore = 0;
-        const hasPPPAct = formData.hasPPPAct === 'Yes';
-        const pppActDocUploaded = formData.pppActDocUploaded === true;
-        const pppActScore = (hasPPPAct && pppActDocUploaded) ? 50 : 0;
+        const section3_1 = formData.pppDevelopment?.section3_1 || {};
+        const hasPPPAct = section3_1.available === 'yes' || section3_1.available === 'Yes';
+        const pppActScore = hasPPPAct ? 50 : 0;
         calculations.push({
             indicator: '3.1 Availability of PPP Act/Policy',
             value: hasPPPAct ? 1 : 0,
@@ -230,9 +220,9 @@ let ScoringService = class ScoringService {
             maxScore: 50,
         });
         categoryScore += pppActScore;
-        const hasPPPCell = formData.hasPPPCell === 'Yes';
-        const pppCellDocUploaded = formData.pppCellDocUploaded === true;
-        const pppCellScore = (hasPPPCell && pppCellDocUploaded) ? 50 : 0;
+        const section3_2 = formData.pppDevelopment?.section3_2 || {};
+        const hasPPPCell = section3_2.available === 'yes' || section3_2.available === 'Yes';
+        const pppCellScore = hasPPPCell ? 50 : 0;
         calculations.push({
             indicator: '3.2 Functional PPP Cell/Unit',
             value: hasPPPCell ? 1 : 0,
@@ -241,157 +231,206 @@ let ScoringService = class ScoringService {
             maxScore: 50,
         });
         categoryScore += pppCellScore;
-        const vgfProjects = formData.vgfProjects || [];
-        const validVGFProjects = vgfProjects.filter(project => project.docUploaded).length;
-        const vgfScore = Math.min(validVGFProjects * 5, 50);
+        const section3_3 = formData.pppDevelopment?.section3_3 || [];
+        const vgfProposals = section3_3.length;
+        const vgfScore = Math.min(vgfProposals * 10, 50);
         calculations.push({
             indicator: '3.3 Proposals under VGF/IIPDF',
-            value: validVGFProjects,
+            value: vgfProposals,
             weight: 0.05,
             score: vgfScore,
             maxScore: 50,
         });
         categoryScore += vgfScore;
-        const totalCostBankablePPP = formData.totalCostBankablePPP || 0;
-        const totalCostAllInfraProjects = formData.totalCostAllInfraProjects || 0;
-        const pppProportionRatio = totalCostAllInfraProjects > 0 ? (totalCostBankablePPP / totalCostAllInfraProjects) * 100 : 0;
-        const pppProportionScore = Math.min(pppProportionRatio * 2, 100);
+        const section3_4 = formData.pppDevelopment?.section3_4 || {};
+        const proportion = parseFloat(section3_4.proportion) || 0;
+        const tpcScore = Math.min(proportion * 0.27, 100);
         calculations.push({
             indicator: '3.4 Proportion of TPC of PPP Projects',
-            value: pppProportionRatio,
+            value: proportion,
             weight: 0.1,
-            score: pppProportionScore,
+            score: tpcScore,
             maxScore: 100,
         });
-        categoryScore += pppProportionScore;
+        categoryScore += tpcScore;
         return categoryScore;
     }
     calculateInfraEnablersScore(formData, calculations) {
         let categoryScore = 0;
-        const allProjectsOnNIP = formData.allProjectsOnNIP === 'Yes';
-        const nipDocUploaded = formData.nipDocUploaded === true;
-        const nipScore = (allProjectsOnNIP && nipDocUploaded) ? 50 : 0;
+        const section4_1 = formData.infraEnablers?.section4_1 || {};
+        const allEligible = section4_1.allEligible === 'yes' || section4_1.allEligible === 'Yes';
+        const nipScore = allEligible ? 50 : 0;
         calculations.push({
             indicator: '4.1 All Eligible Infra Projects on NIP Portal',
-            value: allProjectsOnNIP ? 1 : 0,
+            value: allEligible ? 1 : 0,
             weight: 0.05,
             score: nipScore,
             maxScore: 50,
         });
         categoryScore += nipScore;
-        const hasStatePMG = formData.hasStatePMG === 'Yes';
-        const pmgDocOrURLUploaded = formData.pmgDocOrURLUploaded === true;
-        const pmgScore = (hasStatePMG && pmgDocOrURLUploaded) ? 30 : 0;
+        const section4_2 = formData.infraEnablers?.section4_2 || {};
+        const hasPMG = section4_2.available === 'yes' || section4_2.available === 'Yes';
+        const pmgScore = hasPMG ? 30 : 0;
         calculations.push({
             indicator: '4.2 Availability & Use of State/UT PMG',
-            value: hasStatePMG ? 1 : 0,
+            value: hasPMG ? 1 : 0,
             weight: 0.03,
             score: pmgScore,
             maxScore: 30,
         });
         categoryScore += pmgScore;
-        const gatiShaktiProjects = formData.gatiShaktiProjects || [];
-        const validGatiShaktiProjects = gatiShaktiProjects.filter(project => project.evidenceUploaded).length;
-        const gatiShaktiScore = Math.min(validGatiShaktiProjects * 5, 20);
+        const section4_3 = formData.infraEnablers?.section4_3 || {};
+        const numberOfProjects = parseFloat(section4_3.numberOfProjects) || 0;
+        const gatiShaktiScore = Math.min(numberOfProjects * 10, 20);
         calculations.push({
             indicator: '4.3 Adoption of PM GatiShakti',
-            value: validGatiShaktiProjects,
+            value: numberOfProjects,
             weight: 0.02,
             score: gatiShaktiScore,
             maxScore: 20,
         });
         categoryScore += gatiShaktiScore;
-        const hasADR = formData.hasADR === 'Yes';
-        const adrDocUploaded = formData.adrDocUploaded === true;
-        const adrScore = (hasADR && adrDocUploaded) ? 50 : 0;
+        const section4_4 = formData.infraEnablers?.section4_4 || {};
+        const adoptedADR = section4_4.adopted === 'yes' || section4_4.adopted === 'Yes';
+        const adrScore = adoptedADR ? 50 : 0;
         calculations.push({
             indicator: '4.4 Adoption of ADR',
-            value: hasADR ? 1 : 0,
+            value: adoptedADR ? 1 : 0,
             weight: 0.05,
             score: adrScore,
             maxScore: 50,
         });
         categoryScore += adrScore;
-        const innovativePractices = formData.innovativePractices || [];
-        const validPractices = innovativePractices.filter(practice => practice.evidenceUploaded).length;
-        const innovativeScore = Math.min(validPractices * 10, 50);
+        const section4_5 = formData.infraEnablers?.section4_5 || {};
+        const hasInnovativePractice = section4_5.implemented === 'yes' || section4_5.implemented === 'Yes';
+        const innovativeScore = hasInnovativePractice ? 50 : 0;
         calculations.push({
             indicator: '4.5 Innovative Practices',
-            value: validPractices,
+            value: hasInnovativePractice ? 1 : 0,
             weight: 0.05,
             score: innovativeScore,
             maxScore: 50,
         });
         categoryScore += innovativeScore;
-        const capacityBuildingOfficers = formData.capacityBuildingOfficers || [];
-        const validOfficers = capacityBuildingOfficers.filter(officer => officer.name && officer.designation && officer.participationDate).length;
-        const capacityBuildingScore = Math.min(validOfficers * 1, 50);
+        const section4_6 = formData.infraEnablers?.section4_6 || [];
+        const participants = section4_6.length;
+        const capacityScore = Math.min(participants * 10, 50);
         calculations.push({
             indicator: '4.6 Capacity Building - Officer Participation',
-            value: validOfficers,
+            value: participants,
             weight: 0.05,
-            score: capacityBuildingScore,
+            score: capacityScore,
             maxScore: 50,
         });
-        categoryScore += capacityBuildingScore;
+        categoryScore += capacityScore;
         return categoryScore;
     }
     async getScoreRankings() {
         const scores = await this.finalScoreRepository
-            .createQueryBuilder('finalScore')
-            .leftJoinAndSelect('finalScore.submission', 'submission')
-            .orderBy('finalScore.totalScore', 'DESC')
+            .createQueryBuilder('fs')
+            .leftJoinAndSelect('fs.submission', 's')
+            .select([
+            'fs.id',
+            'fs.submissionId',
+            'fs.stateUt',
+            'fs.totalScore',
+            'fs.percentage',
+            'fs.createdAt',
+            's.formData',
+        ])
+            .orderBy('fs.totalScore', 'DESC')
             .getMany();
         return scores.map((score, index) => ({
             rank: index + 1,
             stateUt: score.stateUt,
             totalScore: score.totalScore,
-            percentage: score.scoreBreakdown.percentage,
-            approvedAt: score.createdAt,
+            percentage: score.percentage,
             submissionId: score.submissionId,
+            createdAt: score.createdAt,
         }));
-    }
-    async getStateScore(stateUt) {
-        return this.finalScoreRepository.findOne({
-            where: { stateUt },
-            relations: ['submission'],
-            order: { createdAt: 'DESC' },
-        });
     }
     async getScoreStatistics() {
         const scores = await this.finalScoreRepository.find();
         if (scores.length === 0) {
             return {
-                totalStates: 0,
+                totalSubmissions: 0,
                 averageScore: 0,
                 highestScore: 0,
                 lowestScore: 0,
                 scoreDistribution: {},
             };
         }
-        const totalScores = scores.map((s) => s.totalScore);
+        const totalScores = scores.map(s => s.totalScore);
         const averageScore = totalScores.reduce((sum, score) => sum + score, 0) / totalScores.length;
         const highestScore = Math.max(...totalScores);
         const lowestScore = Math.min(...totalScores);
-        const scoreDistribution = {
-            '90-100': scores.filter((s) => s.totalScore >= 90).length,
-            '80-89': scores.filter((s) => s.totalScore >= 80 && s.totalScore < 90).length,
-            '70-79': scores.filter((s) => s.totalScore >= 70 && s.totalScore < 80).length,
-            '60-69': scores.filter((s) => s.totalScore >= 60 && s.totalScore < 70).length,
-            '50-59': scores.filter((s) => s.totalScore >= 50 && s.totalScore < 60).length,
-            'Below 50': scores.filter((s) => s.totalScore < 50).length,
+        const distribution = {
+            '0-200': 0,
+            '201-400': 0,
+            '401-600': 0,
+            '601-800': 0,
+            '801-1000': 0,
         };
+        totalScores.forEach(score => {
+            if (score <= 200)
+                distribution['0-200']++;
+            else if (score <= 400)
+                distribution['201-400']++;
+            else if (score <= 600)
+                distribution['401-600']++;
+            else if (score <= 800)
+                distribution['601-800']++;
+            else
+                distribution['801-1000']++;
+        });
         return {
-            totalStates: scores.length,
+            totalSubmissions: scores.length,
             averageScore: Math.round(averageScore * 100) / 100,
             highestScore,
             lowestScore,
-            scoreDistribution,
+            scoreDistribution: distribution,
+        };
+    }
+    async getStateScore(stateUt) {
+        const score = await this.finalScoreRepository.findOne({
+            where: { stateUt },
+            order: { createdAt: 'DESC' },
+        });
+        if (!score) {
+            throw new common_1.NotFoundException(`No score found for state: ${stateUt}`);
+        }
+        return {
+            stateUt: score.stateUt,
+            totalScore: score.totalScore,
+            percentage: score.percentage,
+            scoreBreakdown: score.scoreBreakdown,
+            calculationMethodology: score.calculationMethodology,
+            createdAt: score.createdAt,
+        };
+    }
+    async getAllScores(page = 1, limit = 10) {
+        const [scores, total] = await this.finalScoreRepository.findAndCount({
+            order: { totalScore: 'DESC' },
+            skip: (page - 1) * limit,
+            take: limit,
+        });
+        return {
+            scores: scores.map(score => ({
+                id: score.id,
+                submissionId: score.submissionId,
+                stateUt: score.stateUt,
+                totalScore: score.totalScore,
+                percentage: score.percentage,
+                createdAt: score.createdAt,
+            })),
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
         };
     }
 };
 exports.ScoringService = ScoringService;
-exports.ScoringService = ScoringService = __decorate([
+exports.ScoringService = ScoringService = ScoringService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(submission_entity_1.Submission)),
     __param(1, (0, typeorm_1.InjectRepository)(final_score_entity_1.FinalScore)),
