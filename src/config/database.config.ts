@@ -20,12 +20,8 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       username: this.configService.get("DB_USERNAME"),
       password: this.configService.get("DB_PASSWORD"),
       database: this.configService.get("DB_DATABASE"),
-      ssl: isProduction ? { rejectUnauthorized: false } : false,
-      extra: isProduction
-        ? {
-            ssl: { rejectUnauthorized: false },
-          }
-        : {},
+      ssl: false,
+      extra: {},
       synchronize: false,
       autoLoadEntities: true,
     };
