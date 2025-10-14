@@ -256,7 +256,7 @@ describe("SubmissionService", () => {
     const rejectDto: StateRejectDto = {
       status: SubmissionStatus.REJECTED,
       comment: "Rejected by state",
-      sectionId: "test-section-id",
+      sectionId: "test-section",
     };
     const mockSubmission = {
       id: "submission-id",
@@ -301,7 +301,7 @@ describe("SubmissionService", () => {
     const rejectDto: FinalRejectDto = {
       status: SubmissionStatus.REJECTED_FINAL,
       comment: "Final rejection",
-      sectionId: "test-section-id",
+      sectionId: "test-section",
     };
     const mockSubmission = {
       id: "submission-id",
@@ -472,7 +472,7 @@ describe("SubmissionService", () => {
         {
           status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
           comment: "Forwarding to MoSPI Reviewer",
-          sectionId: "test-section-id",
+          sectionId: "test-section",
         },
         "user-id",
         UserRole.STATE_APPROVER,
@@ -505,7 +505,7 @@ describe("SubmissionService", () => {
           {
             status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
             comment: "Test",
-            sectionId: "test-section-id",
+            sectionId: "test-section",
           },
           "user-id",
           UserRole.STATE_APPROVER,
@@ -538,7 +538,7 @@ describe("SubmissionService", () => {
         {
           status: SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
           comment: "Forwarding to MoSPI Approver",
-          sectionId: "test-section-id",
+          sectionId: "test-section",
         },
         "user-id",
         UserRole.MOSPI_REVIEWER,
@@ -571,7 +571,7 @@ describe("SubmissionService", () => {
           {
             status: SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
             comment: "Test",
-            sectionId: "test-section-id",
+            sectionId: "test-section",
           },
           "user-id",
           UserRole.MOSPI_REVIEWER,
@@ -606,7 +606,7 @@ describe("SubmissionService", () => {
         {
           status: SubmissionStatus.SUBMITTED_TO_STATE,
           comment: "Send back for corrections",
-          sectionId: "test-section-id",
+          sectionId: "test-section",
         },
         "user-id",
         UserRole.MOSPI_REVIEWER,
@@ -640,7 +640,7 @@ describe("SubmissionService", () => {
           {
             status: SubmissionStatus.SUBMITTED_TO_STATE,
             comment: "Test",
-            sectionId: "test-section-id",
+            sectionId: "test-section",
           },
           "user-id",
           UserRole.MOSPI_REVIEWER,
