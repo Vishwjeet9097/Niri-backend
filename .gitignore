@@ -72,6 +72,7 @@ web_modules/
 # dotenv environment variables file
 .env
 .env.test
+
 .env.production
 
 # parcel-bundler cache (https://parceljs.org/)
@@ -84,57 +85,70 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+dist/
 
 # Gatsby files
 .cache/
-# Comment in the public line in if your project uses Gatsby and not Next.js
-# https://nextjs.org/blog/next-9-1#public-directory-support
-# public
+public
 
-# vuepress build output
-.vuepress/dist
+# Storybook build outputs
+.out
+.storybook-out
 
-# Serverless directories
-.serverless/
+# Temporary folder
+tmp/
+temp/
 
-# FuseBox cache
-.fusebox/
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# DynamoDB Local files
-.dynamodb/
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# TernJS port file
-.tern-port
-
-# Stores VSCode versions used for testing VSCode extensions
-.vscode-test
-
-# yarn v2
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.*
-
-# End of https://mrkandreev.name/snippets/gitignore-generator/#Node
-
-# NestJS specific
-dist/
-build/
-
-# Development environment files
-server.log
-debug.log
-*.env.*
-!env.example
-!env.test
-
-# File uploads (except gitkeep to maintain directory structure)
-uploads/*
-!uploads/.gitkeep
-
-# Local database files
-*.db
+# Database
 *.sqlite
-*.sqlite3
+*.db
+
+# Uploads and user content
+/uploads/
+public/uploads/
+
+# Documentation generated files
+docs-ai/
+
+# Test files (if not needed in production)
+test-results/
+coverage/
+
+# Custom config files (sensitive)
+src/database/data-source.ts
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# Lock files (optional - uncomment if you want to ignore)
+# package-lock.json
+# yarn.lock
+
+# IDE files
+*.sublime-project
+*.sublime-workspace
+
+# Local development files
+.local
+local/
+
+# Database configuration (ignore to prevent sensitive data exposure)
+src/config/database.config.ts

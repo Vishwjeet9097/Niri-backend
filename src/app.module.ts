@@ -8,6 +8,7 @@ import { AppService } from './app.service';
 import { DatabaseConfig } from './config/database.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
+import { StateModule } from './modules/state/state.module';
 import { SubmissionModule } from './modules/submission/submission.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
@@ -31,6 +32,7 @@ import { AuditMiddleware } from './middleware/audit.middleware';
     }),
     AuthModule,
     UserModule,
+    StateModule,
     SubmissionModule,
     AuditModule,
     DashboardModule,
