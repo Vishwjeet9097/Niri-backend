@@ -215,8 +215,15 @@ export class UserService {
     userRole: UserRole,
     userStateUt: string
   ): Promise<{ user: Partial<User>; accessToken: string }> {
-    const { email, password, firstName, lastName, role, stateUt } =
-      createUserDto;
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      contactNumber,
+      role,
+      stateUt,
+    } = createUserDto;
 
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({
@@ -257,6 +264,7 @@ export class UserService {
       password: hashedPassword,
       firstName,
       lastName,
+      contactNumber,
       role,
       stateUt,
     });
