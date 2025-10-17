@@ -1,4 +1,0 @@
- id | entity_type | entity_id | user_id | userRole | action | oldValues | newValues | ip_address | user_agent | createdAt 
-----+-------------+-----------+---------+----------+--------+-----------+-----------+------------+------------+-----------
-(0 rows)
-

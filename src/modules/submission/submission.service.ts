@@ -74,6 +74,88 @@ export class SubmissionService {
             : "approval"),
     };
   }
+  
+  /**
+   * Groups comments by their section numbers (1.1, 1.2, etc.)
+   * @param comments The flat array of comments
+   * @returns Comments organized by section numbers: { "1.1": [...comments], "1.2": [...comments], etc. }
+   */
+  public groupCommentsBySection(comments: ReviewComment[]): Record<string, ReviewComment[]> {
+    if (!Array.isArray(comments) || comments.length === 0) {
+      return {};
+    }
+    
+    const groupedComments: Record<string, ReviewComment[]> = {};
+    
+    // Define a more comprehensive section mapping
+    const sectionMap = {
+      'general': '1.1',
+      'infrastructureMetrics': '1.2',
+      'budgetAllocation': '1.3',
+      'projectDetails': '1.4',
+      'rejection-reason': '2.1',
+      'approval-notes': '2.2',
+      'qualityMetrics': '1.5',
+      'performanceMetrics': '1.6',
+      'finalScores': '2.0',
+    };
+    
+    // Handle nested section paths
+    const prefixMap = {
+      'infrastructureMetrics.': '1.2.',
+      'qualityMetrics.': '1.5.',
+      'performanceMetrics.': '1.6.',
+      'projectDetails.': '1.4.',
+      'budgetAllocation.': '1.3.',
+    };
+    
+    // Group comments by section (use section numbers like 1.1, 1.2 etc)
+    comments.forEach((comment) => {
+      // Determine section number based on sectionId or comment type
+      let sectionNumber = '1.1'; // Default section
+      
+      if (comment.sectionId) {
+        // First check if it's a direct match in our section map
+        if (sectionMap[comment.sectionId]) {
+          sectionNumber = sectionMap[comment.sectionId];
+        } else {
+          // Check if it's a nested section using prefix map
+          let foundPrefix = false;
+          
+          for (const [prefix, sectionPrefix] of Object.entries(prefixMap)) {
+            if (comment.sectionId.startsWith(prefix)) {
+              // Extract the subsection from the path
+              const subsection = comment.sectionId.substring(prefix.length);
+              sectionNumber = `${sectionPrefix}${subsection}`;
+              foundPrefix = true;
+              break;
+            }
+          }
+          
+          // If not found in our maps, check for direct numerical pattern or use default section
+          if (!foundPrefix) {
+            // Extract section number from sectionId if possible
+            const sectionMatch = comment.sectionId.match(/(\d+\.\d+)/);
+            sectionNumber = sectionMatch ? sectionMatch[1] : '3.1';
+          }
+        }
+      } else if (comment.type === 'rejection') {
+        sectionNumber = '2.1';
+      } else if (comment.type === 'approval') {
+        sectionNumber = '2.2';
+      }
+      
+      // Initialize the array if it doesn't exist
+      if (!groupedComments[sectionNumber]) {
+        groupedComments[sectionNumber] = [];
+      }
+      
+      // Add the comment to the appropriate group
+      groupedComments[sectionNumber].push({...comment});
+    });
+    
+    return groupedComments;
+  }
 
   async create(
     createSubmissionDto: CreateSubmissionDto,
@@ -247,11 +329,24 @@ export class SubmissionService {
         `ID: ${id}, UserRole: ${userRole}, StateUt: ${userStateUt}`
       );
 
-      // Step 1: Find submission
-      const submission = await this.submissionRepository.findOne({
-        where: { id },
-        relations: ["user", "finalScore"],
-      });
+      // Step 1: Find submission - use query builder to avoid selecting finalScore.category_scores
+      const submission = await this.submissionRepository
+        .createQueryBuilder("submission")
+        .leftJoinAndSelect("submission.user", "user")
+        .leftJoin("submission.finalScore", "finalScore")
+        .addSelect([
+          "finalScore.id", 
+          "finalScore.submissionId", 
+          "finalScore.stateUt", 
+          "finalScore.totalScore", 
+          "finalScore.scoreBreakdown", 
+          "finalScore.calculationMethodology", 
+          "finalScore.approvedBy",
+          "finalScore.createdAt",
+          "finalScore.updatedAt"
+        ])
+        .where("submission.id = :id", { id })
+        .getOne();
 
       if (!submission) {
         this.logger.error(`Submission not found with ID: ${id}`);
