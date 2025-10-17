@@ -79,6 +79,13 @@ export class Submission {
   reviewComments: ReviewComment[];
 
   @Column({
+    name: "indicator_comment",
+    type: "jsonb",
+    default: () => "'{}'",
+  })
+  indicatorComment: Record<string, ReviewComment[]>;
+
+  @Column({
     name: "attached_files",
     type: "jsonb",
     array: true,

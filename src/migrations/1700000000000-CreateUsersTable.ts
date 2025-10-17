@@ -41,7 +41,7 @@ export class CreateUsersTable1700000000000 implements MigrationInterface {
             ],
           },
           {
-            name: "stateUt",
+            name: "state_ut",
             type: "varchar",
           },
           {
@@ -77,7 +77,7 @@ export class CreateUsersTable1700000000000 implements MigrationInterface {
     try {
       // Note: Using double quotes for case-sensitive column names
       await queryRunner.query(
-        `CREATE INDEX IF NOT EXISTS IDX_users_state_role ON users ("stateUt", role)`
+        `CREATE INDEX IF NOT EXISTS IDX_users_state_role ON users ("state_ut", role)`
       );
     } catch (error) {
       console.log(
