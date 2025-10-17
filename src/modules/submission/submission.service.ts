@@ -74,46 +74,48 @@ export class SubmissionService {
             : "approval"),
     };
   }
-  
+
   /**
    * Groups comments by their section numbers (1.1, 1.2, etc.)
    * @param comments The flat array of comments
    * @returns Comments organized by section numbers: { "1.1": [...comments], "1.2": [...comments], etc. }
    */
-  public groupCommentsBySection(comments: ReviewComment[]): Record<string, ReviewComment[]> {
+  public groupCommentsBySection(
+    comments: ReviewComment[]
+  ): Record<string, ReviewComment[]> {
     if (!Array.isArray(comments) || comments.length === 0) {
       return {};
     }
-    
+
     const groupedComments: Record<string, ReviewComment[]> = {};
-    
+
     // Define a more comprehensive section mapping
     const sectionMap = {
-      'general': '1.1',
-      'infrastructureMetrics': '1.2',
-      'budgetAllocation': '1.3',
-      'projectDetails': '1.4',
-      'rejection-reason': '2.1',
-      'approval-notes': '2.2',
-      'qualityMetrics': '1.5',
-      'performanceMetrics': '1.6',
-      'finalScores': '2.0',
+      general: "1.1",
+      infrastructureMetrics: "1.2",
+      budgetAllocation: "1.3",
+      projectDetails: "1.4",
+      "rejection-reason": "2.1",
+      "approval-notes": "2.2",
+      qualityMetrics: "1.5",
+      performanceMetrics: "1.6",
+      finalScores: "2.0",
     };
-    
+
     // Handle nested section paths
     const prefixMap = {
-      'infrastructureMetrics.': '1.2.',
-      'qualityMetrics.': '1.5.',
-      'performanceMetrics.': '1.6.',
-      'projectDetails.': '1.4.',
-      'budgetAllocation.': '1.3.',
+      "infrastructureMetrics.": "1.2.",
+      "qualityMetrics.": "1.5.",
+      "performanceMetrics.": "1.6.",
+      "projectDetails.": "1.4.",
+      "budgetAllocation.": "1.3.",
     };
-    
+
     // Group comments by section (use section numbers like 1.1, 1.2 etc)
     comments.forEach((comment) => {
       // Determine section number based on sectionId or comment type
-      let sectionNumber = '1.1'; // Default section
-      
+      let sectionNumber = "1.1"; // Default section
+
       if (comment.sectionId) {
         // First check if it's a direct match in our section map
         if (sectionMap[comment.sectionId]) {
@@ -121,7 +123,7 @@ export class SubmissionService {
         } else {
           // Check if it's a nested section using prefix map
           let foundPrefix = false;
-          
+
           for (const [prefix, sectionPrefix] of Object.entries(prefixMap)) {
             if (comment.sectionId.startsWith(prefix)) {
               // Extract the subsection from the path
@@ -131,29 +133,29 @@ export class SubmissionService {
               break;
             }
           }
-          
+
           // If not found in our maps, check for direct numerical pattern or use default section
           if (!foundPrefix) {
             // Extract section number from sectionId if possible
             const sectionMatch = comment.sectionId.match(/(\d+\.\d+)/);
-            sectionNumber = sectionMatch ? sectionMatch[1] : '3.1';
+            sectionNumber = sectionMatch ? sectionMatch[1] : "3.1";
           }
         }
-      } else if (comment.type === 'rejection') {
-        sectionNumber = '2.1';
-      } else if (comment.type === 'approval') {
-        sectionNumber = '2.2';
+      } else if (comment.type === "rejection") {
+        sectionNumber = "2.1";
+      } else if (comment.type === "approval") {
+        sectionNumber = "2.2";
       }
-      
+
       // Initialize the array if it doesn't exist
       if (!groupedComments[sectionNumber]) {
         groupedComments[sectionNumber] = [];
       }
-      
+
       // Add the comment to the appropriate group
-      groupedComments[sectionNumber].push({...comment});
+      groupedComments[sectionNumber].push({ ...comment });
     });
-    
+
     return groupedComments;
   }
 
@@ -335,15 +337,15 @@ export class SubmissionService {
         .leftJoinAndSelect("submission.user", "user")
         .leftJoin("submission.finalScore", "finalScore")
         .addSelect([
-          "finalScore.id", 
-          "finalScore.submissionId", 
-          "finalScore.stateUt", 
-          "finalScore.totalScore", 
-          "finalScore.scoreBreakdown", 
-          "finalScore.calculationMethodology", 
+          "finalScore.id",
+          "finalScore.submissionId",
+          "finalScore.stateUt",
+          "finalScore.totalScore",
+          "finalScore.scoreBreakdown",
+          "finalScore.calculationMethodology",
           "finalScore.approvedBy",
           "finalScore.createdAt",
-          "finalScore.updatedAt"
+          "finalScore.updatedAt",
         ])
         .where("submission.id = :id", { id })
         .getOne();
@@ -489,12 +491,10 @@ export class SubmissionService {
       const updatedComments = [...submission.reviewComments, comment];
       this.logger.log(`Total comments after update: ${updatedComments.length}`);
 
-      // Step 4: Save updated submission
-      await this.submissionRepository.update(id, {
-        reviewComments: updatedComments,
-      });
+      // Step 4: Save updated submission with both reviewComments and indicatorComment
+      await this.updateCommentsAndIndicator(id, updatedComments);
 
-      // Step 5: Return updated submission
+      // Step 6: Return updated submission
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(
         `Comment added successfully to submission: ${updatedSubmission.id}`
@@ -667,6 +667,7 @@ export class SubmissionService {
           status: SubmissionStatus.SUBMITTED_TO_STATE,
           currentOwnerRole: UserRole.STATE_APPROVER,
           reviewComments: updatedComments,
+          indicatorComment: this.groupCommentsByIndicator(updatedComments),
         });
 
         // Step 8: Return updated submission
@@ -784,6 +785,7 @@ export class SubmissionService {
         status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
         currentOwnerRole: UserRole.MOSPI_REVIEWER,
         reviewComments: updatedComments,
+        indicatorComment: this.groupCommentsByIndicator(updatedComments),
       });
 
       console.log("Update result:", updateResult);
@@ -908,10 +910,12 @@ export class SubmissionService {
 
         this.logger.log(`Adding rejection comment: ${rejectDto.comment}`);
 
+        const updatedComments = [...submission.reviewComments, comment];
         await manager.update(Submission, id, {
           status: rejectDto.status,
           currentOwnerRole: UserRole.NODAL_OFFICER,
-          reviewComments: [...submission.reviewComments, comment],
+          reviewComments: updatedComments,
+          indicatorComment: this.groupCommentsByIndicator(updatedComments),
         });
 
         this.logger.log(`State rejection completed successfully`);
@@ -1023,11 +1027,13 @@ export class SubmissionService {
 
         this.logger.log(`Adding final rejection comment: ${rejectDto.comment}`);
 
+        const updatedComments = [...submission.reviewComments, comment];
         const updatedSubmission = await manager.save(Submission, {
           ...submission,
           status: rejectDto.status,
           currentOwnerRole: this.getOwnerRoleFromStatus(rejectDto.status),
-          reviewComments: [...submission.reviewComments, comment],
+          reviewComments: updatedComments,
+          indicatorComment: this.groupCommentsByIndicator(updatedComments),
         });
 
         this.logger.log(`Final rejection completed successfully`);
@@ -1160,6 +1166,7 @@ export class SubmissionService {
           rejectionCount: submission.rejectionCount + 1,
           formData: resubmitDto.formData || submission.formData,
           reviewComments: updatedComments,
+          indicatorComment: this.groupCommentsByIndicator(updatedComments),
         });
 
         this.logger.log(`Resubmission completed successfully`);
@@ -1250,18 +1257,21 @@ export class SubmissionService {
 
       // Step 8: Update submission using raw SQL (same as working endpoints)
       this.logger.log(`Updating submission with status: ${approveDto.status}`);
+      const indicatorComments = this.groupCommentsByIndicator(updatedComments);
       const result = await this.dataSource.query(
         `UPDATE submissions 
          SET status = $1, 
              current_owner_role = $2, 
              review_comments = $3::jsonb,
+             indicator_comment = $4::jsonb,
              "updatedAt" = CURRENT_TIMESTAMP 
-         WHERE id = $4
-         RETURNING id, status, current_owner_role, review_comments`,
+         WHERE id = $5
+         RETURNING id, status, current_owner_role, review_comments, indicator_comment`,
         [
           approveDto.status,
           this.getOwnerRoleFromStatus(approveDto.status),
           JSON.stringify(updatedComments), // Pass as JSON string
+          JSON.stringify(indicatorComments), // Pass indicator comments as JSON string
           id,
         ]
       );
@@ -1468,6 +1478,7 @@ export class SubmissionService {
         status: updateStatusDto.status,
         currentOwnerRole: newOwnerRole,
         reviewComments: updatedComments,
+        indicatorComment: this.groupCommentsByIndicator(updatedComments),
       });
 
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
@@ -1568,18 +1579,21 @@ export class SubmissionService {
       );
 
       // Use raw SQL with proper PostgreSQL array syntax
+      const indicatorComments = this.groupCommentsByIndicator(updatedComments);
       const result = await this.dataSource.query(
         `UPDATE submissions 
          SET status = $1, 
              current_owner_role = $2, 
              review_comments = $3::jsonb,
+             indicator_comment = $4::jsonb,
              "updatedAt" = CURRENT_TIMESTAMP 
-         WHERE id = $4
-         RETURNING id, status, current_owner_role, review_comments`,
+         WHERE id = $5
+         RETURNING id, status, current_owner_role, review_comments, indicator_comment`,
         [
           forwardDto.status,
           UserRole.MOSPI_REVIEWER,
           JSON.stringify(updatedComments), // Pass as JSON string
+          JSON.stringify(indicatorComments), // Pass indicator comments as JSON string
           id,
         ]
       );
@@ -1643,6 +1657,7 @@ export class SubmissionService {
         status: forwardDto.status,
         currentOwnerRole: UserRole.MOSPI_APPROVER,
         reviewComments: updatedComments,
+        indicatorComment: this.groupCommentsByIndicator(updatedComments),
       });
 
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
@@ -1703,6 +1718,7 @@ export class SubmissionService {
         status: sendBackDto.status,
         currentOwnerRole: UserRole.STATE_APPROVER,
         reviewComments: updatedComments,
+        indicatorComment: this.groupCommentsByIndicator(updatedComments),
         rejectionCount: () => "rejection_count + 1",
       });
 
@@ -1755,6 +1771,100 @@ export class SubmissionService {
       throw new BadRequestException(
         `Invalid status transition from ${currentStatus} to ${newStatus}. Please check the workflow rules.`
       );
+    }
+  }
+
+  /**
+   * Groups comments by indicator sections (1.1, 1.2, 2.1, etc.)
+   * Only groups comments with sectionId matching pattern "X.Y" where X and Y are digits
+   */
+  private groupCommentsByIndicator(
+    comments: ReviewComment[]
+  ): Record<string, ReviewComment[]> {
+    const indicatorComments: Record<string, ReviewComment[]> = {};
+
+    for (const comment of comments) {
+      // Check if sectionId matches indicator pattern (X.Y where X and Y are digits)
+      const indicatorPattern = /^\d+\.\d+$/;
+      if (indicatorPattern.test(comment.sectionId)) {
+        if (!indicatorComments[comment.sectionId]) {
+          indicatorComments[comment.sectionId] = [];
+        }
+        indicatorComments[comment.sectionId].push(comment);
+      }
+    }
+
+    return indicatorComments;
+  }
+
+  /**
+   * Updates indicatorComment field based on current reviewComments
+   */
+  private async updateIndicatorComment(submissionId: string): Promise<void> {
+    const submission = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+    });
+
+    if (submission) {
+      const indicatorComments = this.groupCommentsByIndicator(
+        submission.reviewComments
+      );
+      await this.submissionRepository.update(submissionId, {
+        indicatorComment: indicatorComments,
+      });
+    }
+  }
+
+  /**
+   * Updates both reviewComments and indicatorComment fields
+   */
+  private async updateCommentsAndIndicator(
+    submissionId: string,
+    reviewComments: ReviewComment[]
+  ): Promise<void> {
+    const indicatorComments = this.groupCommentsByIndicator(reviewComments);
+
+    await this.submissionRepository.update(submissionId, {
+      reviewComments: reviewComments,
+      indicatorComment: indicatorComments,
+    });
+  }
+
+  /**
+   * Gets indicator comments for a submission
+   */
+  async getIndicatorComments(
+    id: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Record<string, ReviewComment[]>> {
+    try {
+      this.logger.log(`=== GET INDICATOR COMMENTS START ===`);
+      this.logger.log(
+        `ID: ${id}, UserRole: ${userRole}, StateUt: ${userStateUt}`
+      );
+
+      // Step 1: Find submission
+      const submission = await this.findOne(id, userRole, userStateUt);
+      this.logger.log(`Found submission with status: ${submission.status}`);
+
+      // Step 2: Update indicatorComment field if needed
+      await this.updateIndicatorComment(id);
+
+      // Step 3: Get updated submission with indicatorComment
+      const updatedSubmission = await this.submissionRepository.findOne({
+        where: { id },
+      });
+
+      this.logger.log(`=== GET INDICATOR COMMENTS SUCCESS ===`);
+      return updatedSubmission?.indicatorComment || {};
+    } catch (error) {
+      this.logger.error(`=== GET INDICATOR COMMENTS ERROR ===`);
+      this.logger.error(
+        `Error getting indicator comments for submission ${id}: ${error.message}`
+      );
+      this.logger.error(`Stack trace: ${error.stack}`);
+      throw error;
     }
   }
 }
