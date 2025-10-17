@@ -255,8 +255,8 @@ describe("SubmissionService", () => {
   describe("stateReject", () => {
     const rejectDto: StateRejectDto = {
       status: SubmissionStatus.REJECTED,
-      comment: "Rejected by state",
-      sectionId: "test-section",
+      comment: 'Rejected by state',
+      sectionId: 'test-section',
     };
     const mockSubmission = {
       id: "submission-id",
@@ -300,8 +300,8 @@ describe("SubmissionService", () => {
   describe("finalReject", () => {
     const rejectDto: FinalRejectDto = {
       status: SubmissionStatus.REJECTED_FINAL,
-      comment: "Final rejection",
-      sectionId: "test-section",
+      comment: 'Final rejection',
+      sectionId: 'test-section',
     };
     const mockSubmission = {
       id: "submission-id",
@@ -471,8 +471,8 @@ describe("SubmissionService", () => {
         "submission-id",
         {
           status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
-          comment: "Forwarding to MoSPI Reviewer",
-          sectionId: "test-section",
+          comment: 'Forwarding to MoSPI Reviewer',
+          sectionId: 'test-section',
         },
         "user-id",
         UserRole.STATE_APPROVER,
@@ -501,13 +501,9 @@ describe("SubmissionService", () => {
 
       await expect(
         service.forwardToMoSPIReviewer(
-          "submission-id",
-          {
-            status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
-            comment: "Test",
-            sectionId: "test-section",
-          },
-          "user-id",
+          'submission-id',
+          { status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER, comment: 'Test', sectionId: 'test-section' },
+          'user-id',
           UserRole.STATE_APPROVER,
           "Maharashtra"
         )
@@ -537,8 +533,8 @@ describe("SubmissionService", () => {
         "submission-id",
         {
           status: SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
-          comment: "Forwarding to MoSPI Approver",
-          sectionId: "test-section",
+          comment: 'Forwarding to MoSPI Approver',
+          sectionId: 'test-section',
         },
         "user-id",
         UserRole.MOSPI_REVIEWER,
@@ -567,13 +563,9 @@ describe("SubmissionService", () => {
 
       await expect(
         service.forwardToMoSPIApprover(
-          "submission-id",
-          {
-            status: SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
-            comment: "Test",
-            sectionId: "test-section",
-          },
-          "user-id",
+          'submission-id',
+          { status: SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER, comment: 'Test', sectionId: 'test-section' },
+          'user-id',
           UserRole.MOSPI_REVIEWER,
           "Maharashtra"
         )
@@ -602,13 +594,9 @@ describe("SubmissionService", () => {
         });
 
       const result = await service.sendBackToState(
-        "submission-id",
-        {
-          status: SubmissionStatus.SUBMITTED_TO_STATE,
-          comment: "Send back for corrections",
-          sectionId: "test-section",
-        },
-        "user-id",
+        'submission-id',
+        { status: SubmissionStatus.SUBMITTED_TO_STATE, comment: 'Send back for corrections', sectionId: 'test-section' },
+        'user-id',
         UserRole.MOSPI_REVIEWER,
         "Maharashtra"
       );
@@ -636,13 +624,9 @@ describe("SubmissionService", () => {
 
       await expect(
         service.sendBackToState(
-          "submission-id",
-          {
-            status: SubmissionStatus.SUBMITTED_TO_STATE,
-            comment: "Test",
-            sectionId: "test-section",
-          },
-          "user-id",
+          'submission-id',
+          { status: SubmissionStatus.SUBMITTED_TO_STATE, comment: 'Test', sectionId: 'test-section' },
+          'user-id',
           UserRole.MOSPI_REVIEWER,
           "Maharashtra"
         )
