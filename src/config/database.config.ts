@@ -11,6 +11,8 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
   constructor(private configService: ConfigService) {}
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
+    const isProduction = this.configService.get("NODE_ENV") === "production";
+    
     return {
       type: "postgres",
       host: this.configService.get("DB_HOST"),
@@ -18,10 +20,10 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       username: this.configService.get("DB_USERNAME"),
       password: this.configService.get("DB_PASSWORD"),
       database: this.configService.get("DB_NAME"),
-      ssl: { rejectUnauthorized: false },
-      extra: {
+      ssl: isProduction ? { rejectUnauthorized: false } : false,
+      extra: isProduction ? {
         ssl: { rejectUnauthorized: false },
-      },
+      } : {},
       synchronize: false,
       autoLoadEntities: true,
     };
