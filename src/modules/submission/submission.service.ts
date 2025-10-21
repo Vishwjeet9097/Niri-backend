@@ -15,7 +15,7 @@ import {
   ReviewComment,
   SubmissionFile,
 } from "../../entities/submission.entity";
-import { UserRole } from "../../entities/user.entity";
+import { UserRole, User } from "../../entities/user.entity";
 import { FinalScore } from "../../entities/final-score.entity";
 import { ScoringService } from "../scoring/scoring.service";
 import { StorageService } from "../storage/storage.service";
@@ -50,18 +50,31 @@ export class SubmissionService {
     private storageService: StorageService
   ) {}
 
+  // Helper function to get user name
+  private async getUserName(userId: string): Promise<string> {
+    const user = await this.dataSource
+      .getRepository(User)
+      .findOne({ where: { id: userId } });
+
+    return user ? `${user.firstName} ${user.lastName}` : "Unknown User";
+  }
+
   // Helper function to create comments with appropriate section ID
-  private createComment(
+  private async createComment(
     text: string,
     type: "comment" | "rejection" | "approval",
     userRole: UserRole,
     userId: string,
     sectionId?: string
-  ): ReviewComment {
+  ): Promise<ReviewComment> {
+    // Fetch user details to get full name
+    const userName = await this.getUserName(userId);
+
     return {
       timestamp: new Date(),
       role: userRole,
       userId,
+      userName,
       text,
       type,
       // If sectionId is provided, use it; otherwise use a default based on comment type
@@ -475,7 +488,7 @@ export class SubmissionService {
       this.logger.log(`Found submission with status: ${submission.status}`);
 
       // Step 2: Create comment using helper function
-      const comment = this.createComment(
+      const comment = await this.createComment(
         addCommentDto.text,
         addCommentDto.type,
         userRole,
@@ -628,11 +641,13 @@ export class SubmissionService {
         let updatedComments = [...submission.reviewComments];
 
         if (submitDto.sectionComments && submitDto.sectionComments.length > 0) {
+          const userName = await this.getUserName(userId);
           for (const sectionComment of submitDto.sectionComments) {
             const comment: ReviewComment = {
               timestamp: new Date(),
               role: userRole,
               userId,
+              userName,
               text: sectionComment.text,
               type: sectionComment.type,
               sectionId: sectionComment.sectionId,
@@ -647,10 +662,12 @@ export class SubmissionService {
 
         // Step 6: Add overall comment if provided
         if (submitDto.overallComment) {
+          const userName = await this.getUserName(userId);
           const overallComment: ReviewComment = {
             timestamp: new Date(),
             role: userRole,
             userId,
+            userName,
             text: submitDto.overallComment,
             type: "comment",
             sectionId: "overall", // Using "overall" as the section ID for overall comments
@@ -760,7 +777,7 @@ export class SubmissionService {
       // Add comment if provided using helper function
       let updatedComments = [...submission.reviewComments];
       if (forwardDto.comment) {
-        const comment = this.createComment(
+        const comment = await this.createComment(
           forwardDto.comment,
           "comment",
           userRole,
@@ -901,7 +918,7 @@ export class SubmissionService {
       );
       return this.dataSource.transaction(async (manager) => {
         // Add rejection comment using helper function
-        const comment = this.createComment(
+        const comment = await this.createComment(
           rejectDto.comment,
           "rejection",
           userRole,
@@ -1018,7 +1035,7 @@ export class SubmissionService {
       );
       return this.dataSource.transaction(async (manager) => {
         // Add rejection comment using helper function
-        const comment = this.createComment(
+        const comment = await this.createComment(
           rejectDto.comment,
           "rejection",
           userRole,
@@ -1141,7 +1158,7 @@ export class SubmissionService {
         // Add resubmission comment if provided
         let updatedComments = submission.reviewComments;
         if (resubmitDto.comment) {
-          const comment = this.createComment(
+          const comment = await this.createComment(
             resubmitDto.comment,
             "comment",
             userRole,
@@ -1242,7 +1259,7 @@ export class SubmissionService {
       }
 
       // Step 6: Add approval comment using helper function
-      const comment = this.createComment(
+      const comment = await this.createComment(
         approveDto.comment || "Submission approved",
         "approval",
         userRole,
@@ -1464,7 +1481,7 @@ export class SubmissionService {
       // Add comment if provided using helper function
       let updatedComments = [...submission.reviewComments];
       if (updateStatusDto.comment) {
-        const comment = this.createComment(
+        const comment = await this.createComment(
           updateStatusDto.comment,
           "comment",
           userRole,
@@ -1552,7 +1569,7 @@ export class SubmissionService {
       let updatedComments = [...submission.reviewComments];
       if (forwardDto.comment) {
         this.logger.log(`Adding comment: ${forwardDto.comment}`);
-        const comment = this.createComment(
+        const comment = await this.createComment(
           forwardDto.comment,
           "comment",
           userRole,
@@ -1643,7 +1660,7 @@ export class SubmissionService {
       // Add comment if provided
       let updatedComments = [...submission.reviewComments];
       if (forwardDto.comment) {
-        const comment = this.createComment(
+        const comment = await this.createComment(
           forwardDto.comment,
           "comment",
           userRole,
@@ -1704,7 +1721,7 @@ export class SubmissionService {
       // Add comment if provided
       let updatedComments = [...submission.reviewComments];
       if (sendBackDto.comment) {
-        const comment = this.createComment(
+        const comment = await this.createComment(
           sendBackDto.comment,
           "comment",
           userRole,
