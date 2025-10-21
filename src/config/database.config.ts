@@ -12,18 +12,23 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
 
   createTypeOrmOptions(): TypeOrmModuleOptions {
     const isProduction = this.configService.get("NODE_ENV") === "production";
-    
+
     return {
       type: "postgres",
       host: this.configService.get("DB_HOST"),
       port: parseInt(this.configService.get("DB_PORT") || "5432", 10),
       username: this.configService.get("DB_USERNAME"),
       password: this.configService.get("DB_PASSWORD"),
-      database: this.configService.get("DB_NAME"),
+      database:
+        this.configService.get("DB_NAME") ||
+        this.configService.get("DB_DATABASE") ||
+        "niri_dev",
       ssl: isProduction ? { rejectUnauthorized: false } : false,
-      extra: isProduction ? {
-        ssl: { rejectUnauthorized: false },
-      } : {},
+      extra: isProduction
+        ? {
+            ssl: { rejectUnauthorized: false },
+          }
+        : {},
       synchronize: false,
       autoLoadEntities: true,
     };

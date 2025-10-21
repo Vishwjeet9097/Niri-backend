@@ -1,78 +1,102 @@
-import { MigrationInterface, QueryRunner, Table } from 'typeorm';
+import { MigrationInterface, QueryRunner, Table, Index } from "typeorm";
 
 export class CreateAuditLogsTable1700000000002 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Create audit_logs_userrole_enum
+    await queryRunner.query(`
+      CREATE TYPE "public"."audit_logs_userrole_enum" AS ENUM(
+        'NODAL_OFFICER',
+        'STATE_APPROVER',
+        'MOSPI_REVIEWER',
+        'MOSPI_APPROVER'
+      )
+    `);
+
+    // Create audit_logs table
     await queryRunner.createTable(
       new Table({
-        name: 'audit_logs',
+        name: "audit_logs",
         columns: [
           {
-            name: 'id',
-            type: 'uuid',
+            name: "id",
+            type: "uuid",
             isPrimary: true,
-            generationStrategy: 'uuid',
-            default: 'uuid_generate_v4()',
+            generationStrategy: "uuid",
+            default: "uuid_generate_v4()",
           },
           {
-            name: 'entityType',
-            type: 'varchar',
+            name: "entity_type",
+            type: "varchar",
+            isNullable: false,
           },
           {
-            name: 'entityId',
-            type: 'varchar',
+            name: "entity_id",
+            type: "varchar",
+            isNullable: false,
           },
           {
-            name: 'userId',
-            type: 'varchar',
+            name: "user_id",
+            type: "varchar",
+            isNullable: false,
           },
           {
-            name: 'userRole',
-            type: 'enum',
-            enum: ['NODAL_OFFICER', 'STATE_APPROVER', 'MOSPI_REVIEWER', 'MOSPI_APPROVER'],
+            name: "userRole",
+            type: "audit_logs_userrole_enum",
+            isNullable: false,
           },
           {
-            name: 'action',
-            type: 'varchar',
+            name: "action",
+            type: "varchar",
+            isNullable: false,
           },
           {
-            name: 'oldValues',
-            type: 'jsonb',
+            name: "oldValues",
+            type: "jsonb",
             isNullable: true,
           },
           {
-            name: 'newValues',
-            type: 'jsonb',
+            name: "newValues",
+            type: "jsonb",
             isNullable: true,
           },
           {
-            name: 'ipAddress',
-            type: 'varchar',
+            name: "ip_address",
+            type: "varchar",
             isNullable: true,
           },
           {
-            name: 'userAgent',
-            type: 'varchar',
+            name: "user_agent",
+            type: "varchar",
             isNullable: true,
           },
           {
-            name: 'createdAt',
-            type: 'timestamp',
-            default: 'CURRENT_TIMESTAMP',
+            name: "createdAt",
+            type: "timestamp",
+            isNullable: false,
+            default: "CURRENT_TIMESTAMP",
           },
         ],
       }),
-      true,
+      true
     );
 
+    // Create indexes
     await queryRunner.query(
-      `CREATE INDEX IDX_audit_logs_entity ON audit_logs ("entityType", "entityId")`,
+      `CREATE INDEX "IDX_audit_logs_entity" ON "audit_logs" ("entity_type", "entity_id")`
     );
-    await queryRunner.query(`CREATE INDEX IDX_audit_logs_user_id ON audit_logs ("userId")`);
-    await queryRunner.query(`CREATE INDEX IDX_audit_logs_action ON audit_logs (action)`);
-    await queryRunner.query(`CREATE INDEX IDX_audit_logs_created_at ON audit_logs ("createdAt")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_audit_logs_user_id" ON "audit_logs" ("user_id")`
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_audit_logs_action" ON "audit_logs" ("action")`
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_audit_logs_created_at" ON "audit_logs" ("createdAt")`
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.dropTable('audit_logs');
+    await queryRunner.dropTable("audit_logs");
+    await queryRunner.query(`DROP TYPE "public"."audit_logs_userrole_enum"`);
   }
 }
