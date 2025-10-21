@@ -14,11 +14,13 @@ export const AppDataSource = new DataSource({
   port: configService.get("DB_PORT"),
   username: configService.get("DB_USERNAME"),
   password: configService.get("DB_PASSWORD"),
-  database: configService.get("DB_DATABASE") || "niri_backend",
+  database: configService.get("DB_DATABASE") || "niri_dev",
   ssl: isProduction ? { rejectUnauthorized: false } : false,
-  extra: isProduction ? {
-    ssl: { rejectUnauthorized: false },
-  } : {},
+  extra: isProduction
+    ? {
+        ssl: { rejectUnauthorized: false },
+      }
+    : {},
   entities: ["src/entities/*.entity.ts"],
   migrations: ["src/migrations/*.ts"],
   synchronize: false,
