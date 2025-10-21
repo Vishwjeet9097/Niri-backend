@@ -28,6 +28,7 @@ export interface ReviewComment {
   timestamp: Date;
   role: UserRole;
   userId: string;
+  userName: string; // User's full name (firstName + lastName)
   text: string;
   type: "comment" | "rejection" | "approval";
   sectionId: string; // Section ID is now required for all comments
