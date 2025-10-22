@@ -30,7 +30,7 @@ export interface ReviewComment {
   userId: string;
   userName: string; // User's full name (firstName + lastName)
   text: string;
-  type: "comment" | "rejection" | "approval";
+  type: "comment" | "rejection" | "approval" | "indicator_comment";
   sectionId: string; // Section ID is now required for all comments
 }
 

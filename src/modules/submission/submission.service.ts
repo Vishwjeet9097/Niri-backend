@@ -62,7 +62,7 @@ export class SubmissionService {
   // Helper function to create comments with appropriate section ID
   private async createComment(
     text: string,
-    type: "comment" | "rejection" | "approval",
+    type: "comment" | "rejection" | "approval" | "indicator_comment",
     userRole: UserRole,
     userId: string,
     sectionId?: string
@@ -84,7 +84,9 @@ export class SubmissionService {
           ? "general"
           : type === "rejection"
             ? "rejection"
-            : "approval"),
+            : type === "indicator_comment"
+              ? "general"
+              : "approval"),
     };
   }
 
@@ -330,6 +332,15 @@ export class SubmissionService {
 
     const [submissions, total] = await query.getManyAndCount();
 
+    // Update indicatorComment for each submission
+    for (const submission of submissions) {
+      if (submission.reviewComments && submission.reviewComments.length > 0) {
+        submission.indicatorComment = this.groupCommentsByIndicator(
+          submission.reviewComments
+        );
+      }
+    }
+
     return { submissions, total };
   }
 
@@ -390,6 +401,21 @@ export class SubmissionService {
           `Access denied for STATE_APPROVER. Submission StateUt: ${submission.stateUt}, User StateUt: ${userStateUt}`
         );
         throw new ForbiddenException("Access denied");
+      }
+
+      // Step 3: Update indicatorComment field if needed
+      if (submission.reviewComments && submission.reviewComments.length > 0) {
+        this.logger.log(`=== UPDATING INDICATOR COMMENT IN FINDONE ===`);
+        this.logger.log(
+          `Review comments count: ${submission.reviewComments.length}`
+        );
+        const indicatorComments = this.groupCommentsByIndicator(
+          submission.reviewComments
+        );
+        submission.indicatorComment = indicatorComments;
+        this.logger.log(
+          `Updated indicatorComment: ${JSON.stringify(submission.indicatorComment)}`
+        );
       }
 
       this.logger.log(`Access granted for user role: ${userRole}`);
@@ -475,7 +501,15 @@ export class SubmissionService {
     userId: string,
     userRole: UserRole,
     userStateUt: string
-  ): Promise<Submission> {
+  ): Promise<{
+    status: boolean;
+    data: {
+      submissions: Submission[];
+      total: number;
+    };
+    message: string;
+    timestamp: string;
+  }> {
     try {
       this.logger.log(`=== ADD COMMENT START ===`);
       this.logger.log(
@@ -507,14 +541,23 @@ export class SubmissionService {
       // Step 4: Save updated submission with both reviewComments and indicatorComment
       await this.updateCommentsAndIndicator(id, updatedComments);
 
-      // Step 6: Return updated submission
+      // Step 6: Return updated submission in consistent format
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(
         `Comment added successfully to submission: ${updatedSubmission.id}`
       );
       this.logger.log(`=== ADD COMMENT SUCCESS ===`);
 
-      return updatedSubmission;
+      // Return in same format as findAll
+      return {
+        status: true,
+        data: {
+          submissions: [updatedSubmission],
+          total: 1,
+        },
+        message: "Comment added successfully",
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
       this.logger.error(`=== ADD COMMENT ERROR ===`);
       this.logger.error(
@@ -1800,17 +1843,33 @@ export class SubmissionService {
   ): Record<string, ReviewComment[]> {
     const indicatorComments: Record<string, ReviewComment[]> = {};
 
+    this.logger.log(`=== GROUPING INDICATOR COMMENTS ===`);
+    this.logger.log(`Total comments to process: ${comments.length}`);
+
     for (const comment of comments) {
       // Check if sectionId matches indicator pattern (X.Y where X and Y are digits)
+      // or if it's an indicator_comment type
       const indicatorPattern = /^\d+\.\d+$/;
-      if (indicatorPattern.test(comment.sectionId)) {
-        if (!indicatorComments[comment.sectionId]) {
-          indicatorComments[comment.sectionId] = [];
+      const isIndicatorPattern = indicatorPattern.test(comment.sectionId);
+      const isIndicatorComment = comment.type === "indicator_comment";
+
+      this.logger.log(
+        `Comment: ${comment.text}, SectionId: ${comment.sectionId}, Type: ${comment.type}, IsPattern: ${isIndicatorPattern}, IsIndicatorComment: ${isIndicatorComment}`
+      );
+
+      if (isIndicatorPattern || isIndicatorComment) {
+        const sectionKey = comment.sectionId;
+        if (!indicatorComments[sectionKey]) {
+          indicatorComments[sectionKey] = [];
         }
-        indicatorComments[comment.sectionId].push(comment);
+        indicatorComments[sectionKey].push(comment);
+        this.logger.log(`Added to section ${sectionKey}`);
       }
     }
 
+    this.logger.log(
+      `Final grouped indicator comments: ${JSON.stringify(indicatorComments)}`
+    );
     return indicatorComments;
   }
 
