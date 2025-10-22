@@ -1,10 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { TypeOrmModuleOptions, TypeOrmOptionsFactory } from "@nestjs/typeorm";
-import { User } from "../entities/user.entity";
-import { Submission } from "../entities/submission.entity";
-import { AuditLog } from "../entities/audit-log.entity";
-import { FinalScore } from "../entities/final-score.entity";
 
 @Injectable()
 export class DatabaseConfig implements TypeOrmOptionsFactory {
