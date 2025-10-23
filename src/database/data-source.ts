@@ -23,5 +23,4 @@ export const AppDataSource = new DataSource({
   migrations: ["src/migrations/*.ts"],
   synchronize: false,
   logging: configService.get("NODE_ENV") === "development",
-  ssl: false,
 });
