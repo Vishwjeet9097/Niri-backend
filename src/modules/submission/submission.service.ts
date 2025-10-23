@@ -77,16 +77,20 @@ export class SubmissionService {
     }
 
     try {
-      // Get user's assigned indicator codes
-      const userIndicatorScopes = await this.userIndicatorScopeRepository
-        .createQueryBuilder("uis")
-        .leftJoinAndSelect("uis.indicator", "indicator")
-        .where("uis.userId = :userId", { userId })
-        .andWhere("indicator.isActive = :isActive", { isActive: true })
-        .getMany();
+      // Get user's assigned indicator codes using raw query
+      const userIndicatorScopes = await this.userIndicatorScopeRepository.query(
+        `
+        SELECT uis.id, uis.user_id as "userId", uis.indicator_id as "indicatorId",
+               i.id, i.code, i.indicator_name as name, i.is_active as "isActive"
+        FROM user_indicator_scope uis
+        LEFT JOIN indicators i ON uis.indicator_id = i.id
+        WHERE uis.user_id = $1 AND i.is_active = true
+      `,
+        [userId]
+      );
 
       const assignedIndicatorCodes = userIndicatorScopes.map(
-        (scope) => scope.indicator.code
+        (scope) => scope.code
       );
 
       this.logger.log(
