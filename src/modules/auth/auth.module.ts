@@ -7,6 +7,8 @@ import { PassportModule } from "@nestjs/passport";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { User } from "../../entities/user.entity";
+import { Indicator } from "../../entities/indicator.entity";
+import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
@@ -14,7 +16,7 @@ import { DatabaseHealthService } from "../../common/services/database-health.ser
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Indicator, UserIndicatorScope]),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

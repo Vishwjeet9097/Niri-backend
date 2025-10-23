@@ -22,25 +22,22 @@ export class Indicator {
   @Column({ name: "section_id" })
   sectionId: string; // e.g., "1", "2", "3"
 
-  @Column()
+  @Column({ name: "indicator_name" })
   name: string; // e.g., "Infrastructure Financing", "Infrastructure Development"
-
-  @Column({ type: "text", nullable: true })
-  description: string;
 
   @Column({ name: "max_score", type: "decimal", precision: 10, scale: 2 })
   maxScore: number;
 
-  @Column({ name: "weight", type: "decimal", precision: 5, scale: 4 })
-  weight: number;
+  @Column({ name: "category" })
+  category: string;
 
-  @Column({ default: true })
+  @Column({ name: "is_active", default: true })
   isActive: boolean;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt: Date;
 
   @OneToMany(
