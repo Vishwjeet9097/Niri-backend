@@ -443,4 +443,28 @@ export class UserService {
 
     return query.getMany();
   }
+
+  // Get user's assigned indicators from user_indicator_scope table
+  async getUserIndicatorScopes(userId: string) {
+    const userIndicatorScopes = await this.userIndicatorScopeRepository
+      .createQueryBuilder("scope")
+      .leftJoinAndSelect("scope.indicator", "indicator")
+      .where("scope.userId = :userId", { userId })
+      .getMany();
+
+    return userIndicatorScopes.map((scope) => ({
+      id: scope.id,
+      userId: scope.userId,
+      indicatorId: scope.indicatorId,
+      indicator: {
+        id: scope.indicator.id,
+        code: scope.indicator.code,
+        name: scope.indicator.name,
+        category: scope.indicator.category,
+        maxScore: scope.indicator.maxScore,
+        isActive: scope.indicator.isActive,
+      },
+      createdAt: scope.createdAt,
+    }));
+  }
 }
