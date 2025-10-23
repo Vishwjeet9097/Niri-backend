@@ -10,7 +10,7 @@ export class ScoringController {
   constructor(private readonly scoringService: ScoringService) {}
 
   @Get('rankings')
-  @Roles(UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
   async getRankings(@Request() req) {
     const rankings = await this.scoringService.getScoreRankings();
     return {
@@ -22,7 +22,7 @@ export class ScoringController {
   }
 
   @Get('statistics')
-  @Roles(UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
   async getStatistics(@Request() req) {
     const statistics = await this.scoringService.getScoreStatistics();
     return {
@@ -34,7 +34,7 @@ export class ScoringController {
   }
 
   @Get('state/:stateUt')
-  @Roles(UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
   async getStateScore(@Param('stateUt') stateUt: string, @Request() req) {
     const score = await this.scoringService.getStateScore(stateUt);
     return {
