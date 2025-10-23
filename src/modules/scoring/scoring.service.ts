@@ -95,7 +95,9 @@ export class ScoringService {
       submissionId,
       stateUt: submission.stateUt,
       totalScore: scoreBreakdown.totalScore,
+      percentage: scoreBreakdown.percentage,
       scoreBreakdown,
+      categoryScores: scoreBreakdown.categoryScores,
       calculationMethodology: scoreBreakdown.methodology,
       approvedBy: userId,
     });
@@ -143,22 +145,22 @@ export class ScoringService {
       calculations,
       categoryScores: {
         infraFinancing: {
-          score: infraFinancingScore,
+          score: Math.round(infraFinancingScore * 100) / 100,
           maxScore: 250,
           percentage: Math.round((infraFinancingScore / 250) * 100 * 100) / 100
         },
         infraDevelopment: {
-          score: infraDevelopmentScore,
+          score: Math.round(infraDevelopmentScore * 100) / 100,
           maxScore: 250,
           percentage: Math.round((infraDevelopmentScore / 250) * 100 * 100) / 100
         },
         pppDevelopment: {
-          score: pppDevelopmentScore,
+          score: Math.round(pppDevelopmentScore * 100) / 100,
           maxScore: 250,
           percentage: Math.round((pppDevelopmentScore / 250) * 100 * 100) / 100
         },
         infraEnablers: {
-          score: infraEnablersScore,
+          score: Math.round(infraEnablersScore * 100) / 100,
           maxScore: 250,
           percentage: Math.round((infraEnablersScore / 250) * 100 * 100) / 100
         }
