@@ -28,8 +28,9 @@ export interface ReviewComment {
   timestamp: Date;
   role: UserRole;
   userId: string;
+  userName: string; // User's full name (firstName + lastName)
   text: string;
-  type: "comment" | "rejection" | "approval";
+  type: "comment" | "rejection" | "approval" | "indicator_comment";
   sectionId: string; // Section ID is now required for all comments
 }
 
@@ -77,6 +78,13 @@ export class Submission {
     default: () => "'[]'",
   })
   reviewComments: ReviewComment[];
+
+  @Column({
+    name: "indicator_comment",
+    type: "jsonb",
+    default: () => "'{}'",
+  })
+  indicatorComment: Record<string, ReviewComment[]>;
 
   @Column({
     name: "attached_files",

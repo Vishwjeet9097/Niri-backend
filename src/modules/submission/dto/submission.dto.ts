@@ -35,8 +35,8 @@ export class AddCommentDto {
   @IsString()
   text: string;
 
-  @IsEnum(["comment", "rejection", "approval"])
-  type: "comment" | "rejection" | "approval";
+  @IsEnum(["comment", "rejection", "approval", "indicator_comment"])
+  type: "comment" | "rejection" | "approval" | "indicator_comment";
 
   @IsString()
   sectionId: string;

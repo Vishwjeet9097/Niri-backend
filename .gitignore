@@ -150,3 +150,128 @@ src/database/data-source.ts
 # Local development files
 .local
 local/
+
+
+# Ignored files and directories
+common/
+docs/
+*.md
+!README.md
+!package.json
+!package-lock.json
+!tsconfig.json
+!nest-cli.json
+!docker-compose.yml
+!Dockerfile
+!.gitignore
+!.env.example
+
+# Documentation files (keep only essential)
+!docs/README.md
+!docs/PRODUCTION_ARCHITECTURE.md
+!docs/API_FLOW_DOCUMENTATION.md
+!docs/DATABASE_DESIGN.md
+!docs/DEPLOYMENT_GUIDE.md
+
+# Common directory (non-essential files)
+common/seeders/
+common/tests/
+common/sql/
+common/scripts/
+common/postman/
+
+# Keep only essential common files
+!common/README.md
+
+# Additional unnecessary files
+*.docx
+*.pdf
+*.xlsx
+*.pptx
+*.zip
+*.tar.gz
+*.rar
+
+# Log files
+*.log
+logs/
+log/
+
+# Cache directories
+.cache/
+cache/
+.tmp/
+tmp/
+
+# Build artifacts
+build/
+dist/
+out/
+
+# Test artifacts
+test-results/
+coverage/
+.nyc_output/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment files (except examples)
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Database files
+*.sqlite
+*.db
+*.sql.backup
+
+# Upload directories
+uploads/
+public/uploads/
+static/uploads/
+
+# Temporary files
+*.tmp
+*.temp
+*.backup
+*.bak
+
+# Node modules (already covered but explicit)
+node_modules/
+
+# Package manager files (uncomment if needed)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Docker volumes
+docker-data/
+postgres-data/
+redis-data/
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Backup directories
+backup/
+backups/
