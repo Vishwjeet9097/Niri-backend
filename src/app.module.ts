@@ -16,8 +16,8 @@ import { ReportModule } from "./modules/report/report.module";
 import { StorageModule } from "./modules/storage/storage.module";
 import { ScoringModule } from "./modules/scoring/scoring.module";
 import { ValidationModule } from "./modules/validation/validation.module";
+import { IndicatorModule } from "./modules/indicator/indicator.module";
 import { AuditMiddleware } from "./middleware/audit.middleware";
-
 
 @Module({
   imports: [
@@ -42,6 +42,7 @@ import { AuditMiddleware } from "./middleware/audit.middleware";
     StorageModule,
     ScoringModule,
     ValidationModule,
+    IndicatorModule,
   ],
   controllers: [AppController],
   providers: [AppService],
