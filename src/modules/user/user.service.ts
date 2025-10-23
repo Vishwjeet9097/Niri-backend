@@ -28,7 +28,7 @@ export class UserService {
     userRole: UserRole,
     userStateUt: string,
     userId?: string
-  ): Promise<User[]> {
+  ): Promise<any[]> {
     let query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -69,7 +69,20 @@ export class UserService {
       });
     }
 
-    return query.getMany();
+    const users = await query.getMany();
+
+    // Get indicators for each user
+    const usersWithIndicators = await Promise.all(
+      users.map(async (user) => {
+        const indicators = await this.getUserIndicatorScopes(user.id);
+        return {
+          ...user,
+          assignedIndicators: indicators,
+        };
+      })
+    );
+
+    return usersWithIndicators;
   }
 
   async findOne(
@@ -346,7 +359,7 @@ export class UserService {
     userRole?: UserRole,
     userStateUt?: string,
     userId?: string
-  ): Promise<User[]> {
+  ): Promise<any[]> {
     // Only ADMIN can access users from any state, others can only access their own state
     if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
       throw new ForbiddenException("Access denied");
@@ -386,7 +399,20 @@ export class UserService {
       });
     }
 
-    return query.getMany();
+    const users = await query.getMany();
+
+    // Get indicators for each user
+    const usersWithIndicators = await Promise.all(
+      users.map(async (user) => {
+        const indicators = await this.getUserIndicatorScopes(user.id);
+        return {
+          ...user,
+          assignedIndicators: indicators,
+        };
+      })
+    );
+
+    return usersWithIndicators;
   }
 
   async getUsersByRole(
@@ -395,7 +421,7 @@ export class UserService {
     userRole?: UserRole,
     userStateUt?: string,
     userId?: string
-  ): Promise<User[]> {
+  ): Promise<any[]> {
     let query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -441,7 +467,20 @@ export class UserService {
       query.andWhere("user.stateUt = :userStateUt", { userStateUt });
     }
 
-    return query.getMany();
+    const users = await query.getMany();
+
+    // Get indicators for each user
+    const usersWithIndicators = await Promise.all(
+      users.map(async (user) => {
+        const indicators = await this.getUserIndicatorScopes(user.id);
+        return {
+          ...user,
+          assignedIndicators: indicators,
+        };
+      })
+    );
+
+    return usersWithIndicators;
   }
 
   // Get user's assigned indicators from user_indicator_scope table
@@ -466,5 +505,31 @@ export class UserService {
       },
       createdAt: scope.createdAt,
     }));
+  }
+
+  // Get indicators by codes
+  async getIndicatorsByCodes(codes: string[]) {
+    return this.indicatorRepository.find({
+      where: { code: In(codes), isActive: true },
+    });
+  }
+
+  // Assign indicators to user
+  async assignIndicatorsToUser(userId: string, indicatorIds: string[]) {
+    // Remove existing assignments for this user
+    await this.userIndicatorScopeRepository.delete({ userId });
+
+    // Create new assignments
+    const assignments = indicatorIds.map((indicatorId) => ({
+      userId,
+      indicatorId,
+    }));
+
+    await this.userIndicatorScopeRepository.save(assignments);
+
+    return {
+      message: "Indicators assigned successfully",
+      assigned: indicatorIds,
+    };
   }
 }
