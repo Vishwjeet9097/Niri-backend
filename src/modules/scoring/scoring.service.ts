@@ -18,6 +18,28 @@ export interface ScoreBreakdown {
   maxPossibleScore: number;
   percentage: number;
   calculations: ScoreCalculation[];
+  categoryScores?: {
+    infraFinancing: {
+      score: number;
+      maxScore: number;
+      percentage: number;
+    };
+    infraDevelopment: {
+      score: number;
+      maxScore: number;
+      percentage: number;
+    };
+    pppDevelopment: {
+      score: number;
+      maxScore: number;
+      percentage: number;
+    };
+    infraEnablers: {
+      score: number;
+      maxScore: number;
+      percentage: number;
+    };
+  };
   methodology: string;
 }
 
@@ -73,7 +95,9 @@ export class ScoringService {
       submissionId,
       stateUt: submission.stateUt,
       totalScore: scoreBreakdown.totalScore,
+      percentage: scoreBreakdown.percentage,
       scoreBreakdown,
+      categoryScores: scoreBreakdown.categoryScores,
       calculationMethodology: scoreBreakdown.methodology,
       approvedBy: userId,
     });
@@ -119,6 +143,28 @@ export class ScoringService {
       maxPossibleScore,
       percentage: Math.round(percentage * 100) / 100,
       calculations,
+      categoryScores: {
+        infraFinancing: {
+          score: Math.round(infraFinancingScore * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((infraFinancingScore / 250) * 100 * 100) / 100
+        },
+        infraDevelopment: {
+          score: Math.round(infraDevelopmentScore * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((infraDevelopmentScore / 250) * 100 * 100) / 100
+        },
+        pppDevelopment: {
+          score: Math.round(pppDevelopmentScore * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((pppDevelopmentScore / 250) * 100 * 100) / 100
+        },
+        infraEnablers: {
+          score: Math.round(infraEnablersScore * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((infraEnablersScore / 250) * 100 * 100) / 100
+        }
+      },
       methodology:
         'NIRI Scoring Methodology v2.0 - Based on detailed infrastructure readiness assessment rubric (1000 marks total)',
     };
@@ -133,7 +179,7 @@ export class ScoringService {
     const capexAllocation = parseFloat(section1_1.capitalAllocation) || 0;
     const gsdp = parseFloat(section1_1.gsdpForFY) || 0;
     const capexToGsdpRatio = gsdp > 0 ? (capexAllocation / gsdp) * 100 : 0;
-    const capexToGsdpScore = Math.min(capexToGsdpRatio * 0.5, 50); // 0.5 marks for every 1%
+    const capexToGsdpScore = Math.min(capexToGsdpRatio * 10, 50); // 10 marks for every 1%
     
     calculations.push({
       indicator: '1.1 % of Capex to GSDP',
@@ -149,7 +195,7 @@ export class ScoringService {
     const actualCapex = parseFloat(section1_2.actualCapex) || 0;
     const stateCapexUtilisation = parseFloat(section1_2.stateCapexUtilisation) || 0;
     const capexUtilizationRatio = stateCapexUtilisation > 0 ? (actualCapex / stateCapexUtilisation) * 100 : 0;
-    const capexUtilizationScore = Math.min(capexUtilizationRatio * 0.5, 50); // 0.5 marks for every 1%
+    const capexUtilizationScore = Math.min(capexUtilizationRatio / 2, 50); // 1 mark for every 2%
     
     calculations.push({
       indicator: '1.2 % Capex Utilization',
@@ -165,7 +211,7 @@ export class ScoringService {
     const creditRatedULBs = section1_3.length;
     const totalULBs = 10; // Assuming total ULBs as 10 for realistic calculation
     const creditRatedRatio = (creditRatedULBs / totalULBs) * 100;
-    const creditRatedScore = Math.min(creditRatedRatio * 0.5, 50); // 0.5 marks for every 1%
+    const creditRatedScore = Math.min(creditRatedRatio / 2, 50); // 1 mark for every 2%
     
     calculations.push({
       indicator: '1.3 % of Credit Rated ULBs',
@@ -181,7 +227,7 @@ export class ScoringService {
     const ulbsIssuingBonds = section1_4.length;
     const totalULBsEntered = 10; // Assuming total ULBs as 10 for realistic calculation
     const ulbsBondsRatio = (ulbsIssuingBonds / totalULBsEntered) * 100;
-    const ulbsBondsScore = Math.min(ulbsBondsRatio * 0.5, 50); // 0.5 marks for every 1%
+    const ulbsBondsScore = Math.min(ulbsBondsRatio * 2, 50); // 2 marks for every 1%
     
     calculations.push({
       indicator: '1.4 % of ULBs Issuing Bonds',
@@ -194,12 +240,12 @@ export class ScoringService {
 
     // 1.5 Functional Financial Intermediary (50 marks)
     const section1_5 = formData.infraFinancing?.section1_5 || [];
-    const hasFinancialIntermediary = section1_5.length > 0;
-    const financialIntermediaryScore = hasFinancialIntermediary ? 50 : 0; // Binary: Yes = 50, No = 0
+    const validEntries = section1_5.length;
+    const financialIntermediaryScore = Math.min(validEntries * 10, 50); // 10 marks per entry
     
     calculations.push({
       indicator: '1.5 Functional Financial Intermediary',
-      value: hasFinancialIntermediary ? 1 : 0,
+      value: validEntries,
       weight: 0.05,
       score: financialIntermediaryScore,
       maxScore: 50,
@@ -215,12 +261,12 @@ export class ScoringService {
 
     // 2.1 Availability of Infrastructure Act/Policy (50 marks)
     const section2_1 = formData.infraDevelopment?.section2_1 || [];
-    const hasInfraAct = section2_1.length > 0 && section2_1.some(item => item.files && item.files.length > 0);
-    const infraActScore = hasInfraAct ? 50 : 0; // Binary: Yes = 50, No = 0
+    const sectorsWithDoc2_1 = section2_1.filter(item => item.files && item.files.length > 0).length;
+    const infraActScore = Math.min(sectorsWithDoc2_1 * 10, 50); // 10 marks per sector with document
     
     calculations.push({
       indicator: '2.1 Availability of Infrastructure Act/Policy',
-      value: hasInfraAct ? 1 : 0,
+      value: sectorsWithDoc2_1,
       weight: 0.05,
       score: infraActScore,
       maxScore: 50,
@@ -229,12 +275,12 @@ export class ScoringService {
 
     // 2.2 Availability of Specialized Entity (50 marks)
     const section2_2 = formData.infraDevelopment?.section2_2 || [];
-    const hasSpecializedEntity = section2_2.length > 0 && section2_2.some(item => item.files && item.files.length > 0);
-    const specializedEntityScore = hasSpecializedEntity ? 50 : 0; // Binary: Yes = 50, No = 0
+    const sectorsWithDoc2_2 = section2_2.filter(item => item.files && item.files.length > 0).length;
+    const specializedEntityScore = Math.min(sectorsWithDoc2_2 * 10, 50); // 10 marks per sector with document
     
     calculations.push({
       indicator: '2.2 Availability of Specialized Entity',
-      value: hasSpecializedEntity ? 1 : 0,
+      value: sectorsWithDoc2_2,
       weight: 0.05,
       score: specializedEntityScore,
       maxScore: 50,
@@ -243,12 +289,12 @@ export class ScoringService {
 
     // 2.3 Sector Infra Development Plan (50 marks)
     const section2_3 = formData.infraDevelopment?.section2_3 || [];
-    const hasSectorPlan = section2_3.length > 0 && section2_3.some(item => item.files && item.files.length > 0);
-    const sectorPlanScore = hasSectorPlan ? 50 : 0; // Binary: Yes = 50, No = 0
+    const sectorsWithDoc2_3 = section2_3.filter(item => item.files && item.files.length > 0).length;
+    const sectorPlanScore = Math.min(sectorsWithDoc2_3 * 10, 50); // 10 marks per sector with document
     
     calculations.push({
       indicator: '2.3 Sector Infra Development Plan',
-      value: hasSectorPlan ? 1 : 0,
+      value: sectorsWithDoc2_3,
       weight: 0.05,
       score: sectorPlanScore,
       maxScore: 50,
@@ -257,12 +303,12 @@ export class ScoringService {
 
     // 2.4 Investment Ready Project Pipeline (50 marks)
     const section2_4 = formData.infraDevelopment?.section2_4 || [];
-    const hasProjectPipeline = section2_4.length > 0 && section2_4.some(item => item.dprFile);
-    const projectPipelineScore = hasProjectPipeline ? 50 : 0; // Binary: Yes = 50, No = 0
+    const validProjectsWithDocs = section2_4.filter(item => item.dprFile).length;
+    const projectPipelineScore = Math.min(validProjectsWithDocs * 10, 50); // 10 marks per project with DPR
     
     calculations.push({
       indicator: '2.4 Investment Ready Project Pipeline',
-      value: hasProjectPipeline ? 1 : 0,
+      value: validProjectsWithDocs,
       weight: 0.05,
       score: projectPipelineScore,
       maxScore: 50,
@@ -271,12 +317,12 @@ export class ScoringService {
 
     // 2.5 Asset Monetization Pipeline (50 marks)
     const section2_5 = formData.infraDevelopment?.section2_5 || [];
-    const hasAssetMonetization = section2_5.length > 0 && section2_5.some(item => item.projectName && item.estimatedMonetization);
-    const assetMonetizationScore = hasAssetMonetization ? 50 : 0; // Binary: Yes = 50, No = 0
+    const validAssetsProjects = section2_5.filter(item => item.projectName && item.estimatedMonetization).length;
+    const assetMonetizationScore = Math.min(validAssetsProjects * 10, 50); // 10 marks per valid asset/project
     
     calculations.push({
       indicator: '2.5 Asset Monetization Pipeline',
-      value: hasAssetMonetization ? 1 : 0,
+      value: validAssetsProjects,
       weight: 0.05,
       score: assetMonetizationScore,
       maxScore: 50,
@@ -292,8 +338,9 @@ export class ScoringService {
 
     // 3.1 Availability of PPP Act/Policy (50 marks)
     const section3_1 = formData.pppDevelopment?.section3_1 || {};
-    const hasPPPAct = section3_1.available === 'yes' || section3_1.available === 'Yes';
-    const pppActScore = hasPPPAct ? 50 : 0; // Binary: Yes = 50, No = 0
+    const hasPPPAct = (section3_1.available === 'yes' || section3_1.available === 'Yes') && 
+                      section3_1.file && section3_1.file.id;
+    const pppActScore = hasPPPAct ? 50 : 0; // Binary: Yes + Doc uploaded = 50, else 0
     
     calculations.push({
       indicator: '3.1 Availability of PPP Act/Policy',
@@ -306,8 +353,9 @@ export class ScoringService {
 
     // 3.2 Functional PPP Cell/Unit (50 marks)
     const section3_2 = formData.pppDevelopment?.section3_2 || {};
-    const hasPPPCell = section3_2.available === 'yes' || section3_2.available === 'Yes';
-    const pppCellScore = hasPPPCell ? 50 : 0; // Binary: Yes = 50, No = 0
+    const hasPPPCell = (section3_2.available === 'yes' || section3_2.available === 'Yes') && 
+                       section3_2.file && section3_2.file.id;
+    const pppCellScore = hasPPPCell ? 50 : 0; // Binary: Yes + Doc uploaded = 50, else 0
     
     calculations.push({
       indicator: '3.2 Functional PPP Cell/Unit',
@@ -320,8 +368,8 @@ export class ScoringService {
 
     // 3.3 Proposals under VGF/IIPDF (50 marks)
     const section3_3 = formData.pppDevelopment?.section3_3 || [];
-    const vgfProposals = section3_3.length;
-    const vgfScore = Math.min(vgfProposals * 10, 50); // 10 marks per proposal
+    const vgfProposals = section3_3.filter(item => item.file && item.file.id).length;
+    const vgfScore = Math.min(vgfProposals * 5, 50); // 5 marks per project with document
     
     calculations.push({
       indicator: '3.3 Proposals under VGF/IIPDF',
@@ -334,12 +382,14 @@ export class ScoringService {
 
     // 3.4 Proportion of TPC of PPP Projects (100 marks)
     const section3_4 = formData.pppDevelopment?.section3_4 || {};
-    const proportion = parseFloat(section3_4.proportion) || 0;
-    const tpcScore = Math.min(proportion * 0.27, 100); // 0.27 marks for every 1% (100/369.47)
+    const totalCostBankablePPP = parseFloat(section3_4.tpcOfPPPProjects) || 0;
+    const totalCostAllInfra = parseFloat(section3_4.totalTPC) || 0;
+    const proportionRatio = totalCostAllInfra > 0 ? (totalCostBankablePPP / totalCostAllInfra) * 100 : 0;
+    const tpcScore = Math.min(proportionRatio * 2, 100); // 2 marks for every 1%
     
     calculations.push({
       indicator: '3.4 Proportion of TPC of PPP Projects',
-      value: proportion,
+      value: proportionRatio,
       weight: 0.1,
       score: tpcScore,
       maxScore: 100,
@@ -355,8 +405,9 @@ export class ScoringService {
 
     // 4.1 All Eligible Infra Projects on NIP Portal (50 marks)
     const section4_1 = formData.infraEnablers?.section4_1 || {};
-    const allEligible = section4_1.allEligible === 'yes' || section4_1.allEligible === 'Yes';
-    const nipScore = allEligible ? 50 : 0; // Binary: Yes = 50, No = 0
+    const allEligible = (section4_1.allEligible === 'yes' || section4_1.allEligible === 'Yes') && 
+                        section4_1.websiteLink && section4_1.websiteLink.trim() !== '';
+    const nipScore = allEligible ? 50 : 0; // Binary: Yes + Valid Doc = 50, else 0
     
     calculations.push({
       indicator: '4.1 All Eligible Infra Projects on NIP Portal',
@@ -369,8 +420,9 @@ export class ScoringService {
 
     // 4.2 Availability & Use of State/UT PMG (30 marks)
     const section4_2 = formData.infraEnablers?.section4_2 || {};
-    const hasPMG = section4_2.available === 'yes' || section4_2.available === 'Yes';
-    const pmgScore = hasPMG ? 30 : 0; // Binary: Yes = 30, No = 0
+    const hasPMG = (section4_2.available === 'yes' || section4_2.available === 'Yes') && 
+                   section4_2.file && section4_2.file.id;
+    const pmgScore = hasPMG ? 30 : 0; // Binary: Yes + Upload = 30, else 0
     
     calculations.push({
       indicator: '4.2 Availability & Use of State/UT PMG',
@@ -384,7 +436,7 @@ export class ScoringService {
     // 4.3 Adoption of PM GatiShakti (20 marks)
     const section4_3 = formData.infraEnablers?.section4_3 || {};
     const numberOfProjects = parseFloat(section4_3.numberOfProjects) || 0;
-    const gatiShaktiScore = Math.min(numberOfProjects * 10, 20); // 10 marks per project
+    const gatiShaktiScore = Math.min(numberOfProjects * 5, 20); // 5 marks per project
     
     calculations.push({
       indicator: '4.3 Adoption of PM GatiShakti',
@@ -397,8 +449,9 @@ export class ScoringService {
 
     // 4.4 Adoption of ADR (50 marks)
     const section4_4 = formData.infraEnablers?.section4_4 || {};
-    const adoptedADR = section4_4.adopted === 'yes' || section4_4.adopted === 'Yes';
-    const adrScore = adoptedADR ? 50 : 0; // Binary: Yes = 50, No = 0
+    const adoptedADR = (section4_4.adopted === 'yes' || section4_4.adopted === 'Yes') && 
+                       section4_4.file && section4_4.file.id;
+    const adrScore = adoptedADR ? 50 : 0; // Binary: Yes + Doc uploaded = 50, else 0
     
     calculations.push({
       indicator: '4.4 Adoption of ADR',
@@ -411,12 +464,12 @@ export class ScoringService {
 
     // 4.5 Innovative Practices (50 marks)
     const section4_5 = formData.infraEnablers?.section4_5 || {};
-    const hasInnovativePractice = section4_5.implemented === 'yes' || section4_5.implemented === 'Yes';
-    const innovativeScore = hasInnovativePractice ? 50 : 0; // Binary: Yes = 50, No = 0
+    const practicesWithEvidence = section4_5.implemented === 'yes' || section4_5.implemented === 'Yes' ? 1 : 0;
+    const innovativeScore = Math.min(practicesWithEvidence * 10, 50); // 10 marks per practice
     
     calculations.push({
       indicator: '4.5 Innovative Practices',
-      value: hasInnovativePractice ? 1 : 0,
+      value: practicesWithEvidence,
       weight: 0.05,
       score: innovativeScore,
       maxScore: 50,
@@ -426,7 +479,7 @@ export class ScoringService {
     // 4.6 Capacity Building - Officer Participation (50 marks)
     const section4_6 = formData.infraEnablers?.section4_6 || [];
     const participants = section4_6.length;
-    const capacityScore = Math.min(participants * 10, 50); // 10 marks per participant
+    const capacityScore = Math.min(participants * 1, 50); // 1 mark per officer
     
     calculations.push({
       indicator: '4.6 Capacity Building - Officer Participation',
@@ -450,6 +503,7 @@ export class ScoringService {
         'fs.stateUt',
         'fs.totalScore',
         'fs.percentage',
+        'fs.categoryScores',
         'fs.createdAt',
         's.formData',
       ])
@@ -461,6 +515,7 @@ export class ScoringService {
       stateUt: score.stateUt,
       totalScore: score.totalScore,
       percentage: score.percentage,
+      categoryScores: score.categoryScores,
       submissionId: score.submissionId,
       createdAt: score.createdAt,
     }));

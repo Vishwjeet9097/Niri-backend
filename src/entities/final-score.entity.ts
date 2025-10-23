@@ -44,7 +44,7 @@ export class FinalScore {
   approvedBy: string;
 
   @Column({ name: 'category_scores', type: 'jsonb', nullable: true })
-  categoryScores: Record<string, number>;
+  categoryScores: Record<string, any>;
 
   @Column({ name: 'scoring_version', type: 'varchar', default: '2.0' })
   scoringVersion: string;
