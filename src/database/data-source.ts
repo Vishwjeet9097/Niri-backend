@@ -15,12 +15,10 @@ export const AppDataSource = new DataSource({
   username: configService.get("DB_USERNAME"),
   password: configService.get("DB_PASSWORD"),
   database: configService.get("DB_DATABASE") || "niri_dev",
-  ssl: isProduction ? { rejectUnauthorized: false } : false,
-  extra: isProduction
-    ? {
-        ssl: { rejectUnauthorized: false },
-      }
-    : {},
+  ssl: false, // Disable SSL for local development
+  extra: {
+    ssl: false, // Disable SSL for local development
+  },
   entities: ["src/entities/*.entity.ts"],
   migrations: ["src/migrations/*.ts"],
   synchronize: false,

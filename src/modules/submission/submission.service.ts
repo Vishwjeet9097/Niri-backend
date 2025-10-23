@@ -17,6 +17,8 @@ import {
 } from "../../entities/submission.entity";
 import { UserRole, User } from "../../entities/user.entity";
 import { FinalScore } from "../../entities/final-score.entity";
+import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
+import { Indicator } from "../../entities/indicator.entity";
 import { ScoringService } from "../scoring/scoring.service";
 import { StorageService } from "../storage/storage.service";
 import {
@@ -45,6 +47,10 @@ export class SubmissionService {
     private submissionRepository: Repository<Submission>,
     @InjectRepository(FinalScore)
     private finalScoreRepository: Repository<FinalScore>,
+    @InjectRepository(UserIndicatorScope)
+    private userIndicatorScopeRepository: Repository<UserIndicatorScope>,
+    @InjectRepository(Indicator)
+    private indicatorRepository: Repository<Indicator>,
     private dataSource: DataSource,
     private scoringService: ScoringService,
     private storageService: StorageService
@@ -57,6 +63,101 @@ export class SubmissionService {
       .findOne({ where: { id: userId } });
 
     return user ? `${user.firstName} ${user.lastName}` : "Unknown User";
+  }
+
+  // Helper function to filter form data based on user's indicator access
+  private async filterFormDataByIndicatorAccess(
+    formData: Record<string, any>,
+    userId: string,
+    userRole: UserRole
+  ): Promise<Record<string, any>> {
+    // Only filter for NODAL_OFFICER role
+    if (userRole !== UserRole.NODAL_OFFICER) {
+      return formData;
+    }
+
+    try {
+      // Get user's assigned indicator codes
+      const userIndicatorScopes = await this.userIndicatorScopeRepository
+        .createQueryBuilder("uis")
+        .leftJoinAndSelect("uis.indicator", "indicator")
+        .where("uis.userId = :userId", { userId })
+        .andWhere("indicator.isActive = :isActive", { isActive: true })
+        .getMany();
+
+      const assignedIndicatorCodes = userIndicatorScopes.map(
+        (scope) => scope.indicator.code
+      );
+
+      this.logger.log(
+        `User ${userId} assigned indicator codes: ${assignedIndicatorCodes.join(", ")}`
+      );
+
+      // Filter form data to only include assigned indicators
+      const filteredFormData: Record<string, any> = {};
+
+      for (const [key, value] of Object.entries(formData)) {
+        // Check if key matches indicator pattern and is assigned to user
+        const indicatorPattern = /^\d+(\.\d+)*$/;
+        if (
+          indicatorPattern.test(key) &&
+          assignedIndicatorCodes.includes(key)
+        ) {
+          filteredFormData[key] = value;
+        } else if (!indicatorPattern.test(key)) {
+          // Include non-indicator keys (general form fields)
+          filteredFormData[key] = value;
+        }
+      }
+
+      this.logger.log(
+        `Filtered form data keys: ${Object.keys(filteredFormData).join(", ")}`
+      );
+      return filteredFormData;
+    } catch (error) {
+      this.logger.error(`Error filtering form data: ${error.message}`);
+      // Return original form data if filtering fails
+      return formData;
+    }
+  }
+
+  // Helper function to get user's assigned indicator codes
+  private async getUserIndicatorCodes(userId: string): Promise<string[]> {
+    const userIndicatorScopes = await this.userIndicatorScopeRepository
+      .createQueryBuilder("scope")
+      .leftJoinAndSelect("scope.indicator", "indicator")
+      .where("scope.userId = :userId", { userId })
+      .andWhere("scope.isActive = :isActive", { isActive: true })
+      .andWhere("indicator.isActive = :indicatorActive", {
+        indicatorActive: true,
+      })
+      .getMany();
+
+    return userIndicatorScopes.map((scope) => scope.indicator.code);
+  }
+
+  // Helper function to filter formData based on user's indicator access
+  private async filterFormDataForUser(
+    formData: Record<string, any>,
+    userId: string,
+    userRole: UserRole
+  ): Promise<Record<string, any>> {
+    // Only filter for NODAL_OFFICER role
+    if (userRole !== UserRole.NODAL_OFFICER) {
+      return formData;
+    }
+
+    const userIndicatorCodes = await this.getUserIndicatorCodes(userId);
+    const filteredFormData: Record<string, any> = {};
+
+    // Only include form data for indicators the user has access to
+    for (const [key, value] of Object.entries(formData)) {
+      if (userIndicatorCodes.includes(key)) {
+        filteredFormData[key] = value;
+      }
+    }
+
+    return filteredFormData;
   }
 
   // Helper function to create comments with appropriate section ID
@@ -415,6 +516,21 @@ export class SubmissionService {
         submission.indicatorComment = indicatorComments;
         this.logger.log(
           `Updated indicatorComment: ${JSON.stringify(submission.indicatorComment)}`
+        );
+      }
+
+      // Step 4: Filter formData for NODAL_OFFICER based on indicator access
+      if (userRole === UserRole.NODAL_OFFICER) {
+        this.logger.log(`=== FILTERING FORMDATA FOR NODAL OFFICER ===`);
+        const originalFormDataKeys = Object.keys(submission.formData || {});
+        submission.formData = await this.filterFormDataByIndicatorAccess(
+          submission.formData || {},
+          submission.submittedBy,
+          userRole
+        );
+        const filteredFormDataKeys = Object.keys(submission.formData || {});
+        this.logger.log(
+          `Original formData keys: ${originalFormDataKeys.length}, Filtered keys: ${filteredFormDataKeys.length}`
         );
       }
 
