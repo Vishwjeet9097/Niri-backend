@@ -5,8 +5,10 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Not } from "typeorm";
+import { Repository, Not, DataSource, In } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
+import { Indicator } from "../../entities/indicator.entity";
+import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
 
@@ -14,7 +16,12 @@ import * as bcrypt from "bcryptjs";
 export class UserService {
   constructor(
     @InjectRepository(User)
-    private userRepository: Repository<User>
+    private userRepository: Repository<User>,
+    @InjectRepository(Indicator)
+    private indicatorRepository: Repository<Indicator>,
+    @InjectRepository(UserIndicatorScope)
+    private userIndicatorScopeRepository: Repository<UserIndicatorScope>,
+    private dataSource: DataSource
   ) {}
 
   async findAll(
@@ -223,6 +230,7 @@ export class UserService {
       contactNumber,
       role,
       stateUt,
+      indicatorCodes,
     } = createUserDto;
 
     // Check if user already exists
@@ -253,43 +261,84 @@ export class UserService {
       throw new ForbiddenException("Cannot create user for different state/UT");
     }
 
-    // Admin and MoSPI roles can create users for any state (no restriction)
+    // Validate indicator codes for NODAL_OFFICER
+    if (role === UserRole.NODAL_OFFICER) {
+      if (!indicatorCodes || indicatorCodes.length === 0) {
+        throw new ConflictException(
+          "Indicator codes are required for NODAL_OFFICER role"
+        );
+      }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
+      // Check if all indicator codes exist
+      const indicators = await this.indicatorRepository.find({
+        where: { code: In(indicatorCodes), isActive: true },
+      });
 
-    // Create user
-    const user = this.userRepository.create({
-      email,
-      password: hashedPassword,
-      firstName,
-      lastName,
-      contactNumber,
-      role,
-      stateUt,
+      if (indicators.length !== indicatorCodes.length) {
+        const foundCodes = indicators.map((ind) => ind.code);
+        const missingCodes = indicatorCodes.filter(
+          (code) => !foundCodes.includes(code)
+        );
+        throw new ConflictException(
+          `Invalid indicator codes: ${missingCodes.join(", ")}`
+        );
+      }
+    }
+
+    // Use transaction for user creation and indicator scope assignment
+    return this.dataSource.transaction(async (manager) => {
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create user
+      const user = manager.create(User, {
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        contactNumber,
+        role,
+        stateUt,
+      });
+
+      const savedUser = await manager.save(user);
+
+      // Create indicator scope mappings for NODAL_OFFICER
+      if (role === UserRole.NODAL_OFFICER && indicatorCodes) {
+        const indicators = await manager.find(Indicator, {
+          where: { code: In(indicatorCodes), isActive: true },
+        });
+
+        const userIndicatorScopes = indicators.map((indicator) =>
+          manager.create(UserIndicatorScope, {
+            userId: savedUser.id,
+            indicatorId: indicator.id,
+          })
+        );
+
+        await manager.save(UserIndicatorScope, userIndicatorScopes);
+      }
+
+      // Generate JWT token
+      const payload = {
+        sub: savedUser.id,
+        email: savedUser.email,
+        role: savedUser.role,
+        stateUt: savedUser.stateUt,
+      };
+
+      const jwtService = require("@nestjs/jwt").JwtService;
+      const jwt = new jwtService({ secret: process.env.JWT_SECRET });
+      const accessToken = jwt.sign(payload);
+
+      // Return user without password
+      const { password: _, ...userWithoutPassword } = savedUser;
+
+      return {
+        user: userWithoutPassword,
+        accessToken,
+      };
     });
-
-    const savedUser = await this.userRepository.save(user);
-
-    // Generate JWT token
-    const payload = {
-      sub: savedUser.id,
-      email: savedUser.email,
-      role: savedUser.role,
-      stateUt: savedUser.stateUt,
-    };
-
-    const jwtService = require("@nestjs/jwt").JwtService;
-    const jwt = new jwtService({ secret: process.env.JWT_SECRET });
-    const accessToken = jwt.sign(payload);
-
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = savedUser;
-
-    return {
-      user: userWithoutPassword,
-      accessToken,
-    };
   }
 
   async getUsersByState(

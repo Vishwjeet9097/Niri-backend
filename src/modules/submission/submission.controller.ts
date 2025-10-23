@@ -13,6 +13,7 @@ import {
   HttpStatus,
   BadRequestException,
   Put,
+  UseInterceptors,
 } from "@nestjs/common";
 import { SubmissionService } from "./submission.service";
 import {
@@ -35,6 +36,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard, Roles } from "../auth/guards/roles.guard";
 import { UserRole } from "../../entities/user.entity";
 import { SubmissionStatus } from "../../entities/submission.entity";
+import { IndicatorAccessMiddleware } from "../../middleware/indicator-access.middleware";
 
 @Controller("submission")
 @UseGuards(JwtAuthGuard)
@@ -83,6 +85,7 @@ export class SubmissionController {
   @Post()
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
+  @UseGuards(IndicatorAccessMiddleware)
   async create(
     @Body() createSubmissionDto: CreateSubmissionDto,
     @Request() req
@@ -209,6 +212,7 @@ export class SubmissionController {
   @Put(":id")
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
+  @UseGuards(IndicatorAccessMiddleware)
   async update(
     @Param("id") id: string,
     @Body() updateSubmissionDto: UpdateSubmissionDto,
