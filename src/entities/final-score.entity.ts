@@ -31,6 +31,9 @@ export class FinalScore {
   @Column({ name: 'total_score', type: 'decimal', precision: 10, scale: 2 })
   totalScore: number;
 
+  @Column({ name: 'percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  percentage: number;
+
   @Column({ name: 'score_breakdown', type: 'jsonb' })
   scoreBreakdown: Record<string, any>;
 
@@ -39,6 +42,12 @@ export class FinalScore {
 
   @Column({ name: 'approved_by' })
   approvedBy: string;
+
+  @Column({ name: 'category_scores', type: 'jsonb', nullable: true })
+  categoryScores: Record<string, any>;
+
+  @Column({ name: 'scoring_version', type: 'varchar', default: '2.0' })
+  scoringVersion: string;
 
   @CreateDateColumn()
   createdAt: Date;

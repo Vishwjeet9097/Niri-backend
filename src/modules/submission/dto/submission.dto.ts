@@ -1,7 +1,17 @@
-import { IsString, IsObject, IsOptional, IsEnum, IsArray, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
-import { SubmissionStatus, ReviewComment } from '../../../entities/submission.entity';
-import { UserRole } from '../../../entities/user.entity';
+import {
+  IsString,
+  IsObject,
+  IsOptional,
+  IsEnum,
+  IsArray,
+  ValidateNested,
+} from "class-validator";
+import { Type } from "class-transformer";
+import {
+  SubmissionStatus,
+  ReviewComment,
+} from "../../../entities/submission.entity";
+import { UserRole } from "../../../entities/user.entity";
 
 export class CreateSubmissionDto {
   @IsString()
@@ -25,14 +35,21 @@ export class AddCommentDto {
   @IsString()
   text: string;
 
-  @IsEnum(['comment', 'rejection', 'approval'])
-  type: 'comment' | 'rejection' | 'approval';
+  @IsEnum(["comment", "rejection", "approval", "indicator_comment"])
+  type: "comment" | "rejection" | "approval" | "indicator_comment";
+
+  @IsString()
+  sectionId: string;
 }
 
 export class ForwardToMoSPIDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  @IsOptional()
+  @IsString()
+  sectionId?: string; // Optional sectionId field, defaults to "status-change" if not provided
 }
 
 export class UpdateStatusDto {
@@ -51,6 +68,9 @@ export class ForwardToMoSPIReviewerDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  @IsString()
+  sectionId: string;
 }
 
 export class ForwardToMoSPIApproverDto {
@@ -60,6 +80,9 @@ export class ForwardToMoSPIApproverDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  @IsString()
+  sectionId: string;
 }
 
 export class SendBackToStateDto {
@@ -69,6 +92,9 @@ export class SendBackToStateDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  @IsString()
+  sectionId: string;
 }
 
 export class StateRejectDto {
@@ -77,6 +103,9 @@ export class StateRejectDto {
 
   @IsString()
   comment: string;
+
+  @IsString()
+  sectionId: string;
 }
 
 export class FinalRejectDto {
@@ -85,6 +114,35 @@ export class FinalRejectDto {
 
   @IsString()
   comment: string;
+
+  @IsString()
+  sectionId: string;
+}
+
+export class SectionComment {
+  @IsString()
+  sectionId: string;
+
+  @IsString()
+  text: string;
+
+  @IsEnum(["comment", "rejection", "approval"])
+  type: "comment" | "rejection" | "approval";
+}
+
+export class SubmitWithSectionCommentsDto {
+  @IsObject()
+  formData: Record<string, any>;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SectionComment)
+  sectionComments?: SectionComment[];
+
+  @IsOptional()
+  @IsString()
+  overallComment?: string;
 }
 
 export class ResubmitDto {
@@ -95,6 +153,12 @@ export class ResubmitDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SectionComment)
+  sectionComments?: SectionComment[];
 }
 
 export class SubmissionQueryDto {
