@@ -12,105 +12,124 @@ var S3StorageStrategy_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.S3StorageStrategy = void 0;
 const common_1 = require("@nestjs/common");
-const config_1 = require("@nestjs/config");
 const client_s3_1 = require("@aws-sdk/client-s3");
 const s3_request_presigner_1 = require("@aws-sdk/s3-request-presigner");
+const fs_1 = require("fs");
+const fs_2 = require("fs");
+const path_1 = require("path");
 const uuid_1 = require("uuid");
 let S3StorageStrategy = S3StorageStrategy_1 = class S3StorageStrategy {
-    constructor(configService) {
-        this.configService = configService;
+    constructor() {
         this.logger = new common_1.Logger(S3StorageStrategy_1.name);
-        this.bucketName = this.configService.get('S3_BUCKET_NAME');
-        this.s3Client = new client_s3_1.S3Client({
-            region: this.configService.get('AWS_REGION'),
+        this.s3 = new client_s3_1.S3Client({
+            region: process.env.S3_REGION || 'us-east-1',
             credentials: {
-                accessKeyId: this.configService.get('AWS_ACCESS_KEY_ID'),
-                secretAccessKey: this.configService.get('AWS_SECRET_ACCESS_KEY'),
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
             },
         });
-        this.logger.log(`S3 Storage Strategy initialized for bucket: ${this.bucketName}`);
+        this.bucket = process.env.S3_BUCKET_NAME || process.env.S3_BUCKET || '';
+        this.defaultExpirySec = Number(process.env.S3_SIGNED_URL_EXPIRATION || 3600);
+        if (!this.bucket) {
+            this.logger.warn('S3 bucket name not configured (S3_BUCKET_NAME or S3_BUCKET). S3 operations will likely fail.');
+        }
+    }
+    makeKey(file, filePathParam) {
+        const original = file.originalname || 'file';
+        const safeOriginal = original.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        if (filePathParam && filePathParam.includes('/')) {
+            if (filePathParam.endsWith('/')) {
+                return `${filePathParam}${(0, uuid_1.v4)()}_${safeOriginal}`;
+            }
+            return filePathParam;
+        }
+        const folder = filePathParam ? filePathParam.replace(/\/+$/, '') : 'uploads';
+        return `${folder}/${(0, uuid_1.v4)()}_${safeOriginal}`;
     }
     async uploadFile(file, subFolder) {
-        try {
-            const fileExtension = this.getFileExtension(file.originalname);
-            const uniqueFileName = `${(0, uuid_1.v4)()}${fileExtension}`;
-            const s3Key = subFolder ? `${subFolder}/${uniqueFileName}` : uniqueFileName;
-            const uploadCommand = new client_s3_1.PutObjectCommand({
-                Bucket: this.bucketName,
-                Key: s3Key,
-                Body: file.buffer,
-                ContentType: file.mimetype,
-                ContentLength: file.size,
-                Metadata: {
-                    originalName: file.originalname,
-                    uploadedAt: new Date().toISOString(),
-                },
-            });
-            await this.s3Client.send(uploadCommand);
-            const fileUrl = `https://${this.bucketName}.s3.${this.configService.get('AWS_REGION')}.amazonaws.com/${s3Key}`;
-            this.logger.log(`File uploaded to S3 successfully: ${s3Key}`);
-            return {
-                fileName: uniqueFileName,
-                originalName: file.originalname,
-                filePath: s3Key,
-                fileUrl: await this.getSignedUrl(s3Key),
-                fileSize: file.size,
-                mimeType: file.mimetype,
-                uploadedAt: new Date(),
-            };
+        const key = this.makeKey(file, subFolder);
+        let body;
+        let contentLength;
+        if (file.buffer && Buffer.isBuffer(file.buffer)) {
+            body = file.buffer;
+            contentLength = file.buffer.length;
         }
-        catch (error) {
-            this.logger.error(`S3 upload failed: ${error.message}`);
-            throw new Error(`Failed to upload file to S3: ${error.message}`);
+        else if (file.path) {
+            body = (0, fs_1.createReadStream)(file.path);
+            try {
+                const st = (0, fs_2.statSync)(file.path);
+                contentLength = st.size;
+            }
+            catch (e) {
+            }
         }
+        else {
+            body = Buffer.from('');
+            contentLength = 0;
+        }
+        const contentType = file.mimetype || 'application/octet-stream';
+        const cmd = new client_s3_1.PutObjectCommand({
+            Bucket: this.bucket,
+            Key: key,
+            Body: body,
+            ContentType: contentType,
+        });
+        await this.s3.send(cmd);
+        const fileUrl = await this.getSignedUrl(key);
+        const stored = {
+            fileName: (0, path_1.basename)(key),
+            originalName: file.originalname || (0, path_1.basename)(key),
+            filePath: key,
+            fileUrl,
+            fileSize: contentLength || (file.size || 0),
+            mimeType: contentType,
+            uploadedAt: new Date(),
+        };
+        this.logger.log(`Uploaded file to s3://${this.bucket}/${key}`);
+        return stored;
     }
     async deleteFile(filePath) {
         try {
-            const deleteCommand = new client_s3_1.DeleteObjectCommand({
-                Bucket: this.bucketName,
-                Key: filePath,
-            });
-            await this.s3Client.send(deleteCommand);
-            this.logger.log(`File deleted from S3 successfully: ${filePath}`);
+            const cmd = new client_s3_1.DeleteObjectCommand({ Bucket: this.bucket, Key: filePath });
+            await this.s3.send(cmd);
+            this.logger.log(`Deleted s3://${this.bucket}/${filePath}`);
             return true;
         }
-        catch (error) {
-            this.logger.error(`S3 deletion failed: ${error.message}`);
+        catch (err) {
+            this.logger.error(`Failed to delete s3 object ${filePath}: ${err.message || err}`);
             return false;
         }
     }
     async getSignedUrl(filePath) {
-        try {
-            const getObjectCommand = new client_s3_1.GetObjectCommand({
-                Bucket: this.bucketName,
-                Key: filePath,
-            });
-            const signedUrl = await (0, s3_request_presigner_1.getSignedUrl)(this.s3Client, getObjectCommand, { expiresIn: 3600 });
-            return signedUrl;
-        }
-        catch (error) {
-            this.logger.error(`Failed to generate signed URL: ${error.message}`);
-            throw new Error(`Failed to generate file URL: ${error.message}`);
-        }
+        const key = filePath;
+        const cmd = new client_s3_1.GetObjectCommand({ Bucket: this.bucket, Key: key });
+        const url = await (0, s3_request_presigner_1.getSignedUrl)(this.s3, cmd, { expiresIn: this.defaultExpirySec });
+        return url;
     }
     async deleteFolder(folderPath) {
         try {
-            this.logger.log(`S3 folder deletion requested for: ${folderPath}`);
+            const listCmd = new client_s3_1.ListObjectsV2Command({ Bucket: this.bucket, Prefix: folderPath.replace(/^\/+/, '') });
+            const listResp = await this.s3.send(listCmd);
+            const toDelete = (listResp.Contents || []).map((o) => ({ Key: o.Key }));
+            if (toDelete.length === 0)
+                return true;
+            const delCmd = new client_s3_1.DeleteObjectsCommand({
+                Bucket: this.bucket,
+                Delete: { Objects: toDelete },
+            });
+            await this.s3.send(delCmd);
+            this.logger.log(`Deleted ${toDelete.length} objects under s3://${this.bucket}/${folderPath}`);
             return true;
         }
-        catch (error) {
-            this.logger.error(`Failed to delete S3 folder: ${error.message}`);
+        catch (err) {
+            this.logger.error(`Failed to delete folder ${folderPath}: ${err.message || err}`);
             return false;
         }
-    }
-    getFileExtension(originalName) {
-        const lastDotIndex = originalName.lastIndexOf('.');
-        return lastDotIndex !== -1 ? originalName.substring(lastDotIndex) : '';
     }
 };
 exports.S3StorageStrategy = S3StorageStrategy;
 exports.S3StorageStrategy = S3StorageStrategy = S3StorageStrategy_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [config_1.ConfigService])
+    __metadata("design:paramtypes", [])
 ], S3StorageStrategy);
 //# sourceMappingURL=s3-storage.strategy.js.map

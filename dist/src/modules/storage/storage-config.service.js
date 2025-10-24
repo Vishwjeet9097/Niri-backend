@@ -21,7 +21,7 @@ let StorageConfigService = class StorageConfigService {
             storageType: this.configService.get('STORAGE_TYPE', 'local'),
             awsAccessKeyId: this.configService.get('AWS_ACCESS_KEY_ID'),
             awsSecretAccessKey: this.configService.get('AWS_SECRET_ACCESS_KEY'),
-            awsRegion: this.configService.get('AWS_REGION'),
+            awsRegion: this.configService.get('S3_REGION'),
             s3BucketName: this.configService.get('S3_BUCKET_NAME'),
             storagePathLocal: this.configService.get('STORAGE_PATH_LOCAL', './uploads'),
         };
@@ -33,7 +33,7 @@ let StorageConfigService = class StorageConfigService {
         const config = this.getStorageConfig();
         if (config.storageType === 's3') {
             if (!config.awsAccessKeyId || !config.awsSecretAccessKey || !config.awsRegion || !config.s3BucketName) {
-                throw new Error('S3 configuration is incomplete. Please provide AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, and S3_BUCKET_NAME');
+                throw new Error('S3 configuration is incomplete. Please provide AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_REGION, and S3_BUCKET_NAME');
             }
         }
     }

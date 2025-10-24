@@ -26,6 +26,25 @@ let StorageService = StorageService_1 = class StorageService {
         this.storageStrategy = this.getStorageStrategy();
         this.logger.log(`Storage service initialized with strategy: ${this.storageConfigService.getStorageConfig().storageType}`);
     }
+    async uploadSubmissionFiles(submissionId, attachedFiles) {
+        if (!attachedFiles || attachedFiles.length === 0) {
+            throw new common_1.BadRequestException('No attached files to upload');
+        }
+        if (attachedFiles.length > 10) {
+            throw new common_1.BadRequestException('Maximum 10 files allowed per submission');
+        }
+        const uploadPromises = attachedFiles.map((file) => this.uploadFile(file, submissionId));
+        try {
+            const results = await Promise.all(uploadPromises);
+            this.logger.log(`All attached files uploaded for submission: ${submissionId}`);
+            return results;
+        }
+        catch (error) {
+            const msg = (error && error.message) ? error.message : String(error);
+            this.logger.error(`Failed to upload attached files: ${msg}`);
+            throw new common_1.BadRequestException(`Failed to upload attached files: ${msg}`);
+        }
+    }
     getStorageStrategy() {
         const config = this.storageConfigService.getStorageConfig();
         return config.storageType === 's3' ? this.s3StorageStrategy : this.localStorageStrategy;
@@ -53,15 +72,18 @@ let StorageService = StorageService_1 = class StorageService {
             throw new common_1.BadRequestException(`File type ${file.mimetype} is not allowed`);
         }
         try {
-            const folderPath = `submissions/${submissionId}`;
-            const uniqueFileName = (0, uuid_1.v4)();
-            const result = await this.storageStrategy.uploadFile(file, folderPath);
-            this.logger.log(`File uploaded successfully: ${result.fileName} for submission: ${submissionId}`);
+            const uniqueFileId = (0, uuid_1.v4)();
+            const original = file.originalname || 'file';
+            const safeOriginal = original.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+            const destinationPath = `submissions/${submissionId}/${uniqueFileId}_${safeOriginal}`;
+            const result = await this.storageStrategy.uploadFile(file, destinationPath);
+            this.logger.log(`File uploaded successfully: ${result.fileName || destinationPath} for submission: ${submissionId}`);
             return result;
         }
         catch (error) {
-            this.logger.error(`File upload failed: ${error.message}`);
-            throw new common_1.BadRequestException(`File upload failed: ${error.message}`);
+            const msg = (error && error.message) ? error.message : String(error);
+            this.logger.error(`File upload failed: ${msg}`);
+            throw new common_1.BadRequestException(`File upload failed: ${msg}`);
         }
     }
     async uploadMultipleFiles(files, submissionId) {
@@ -78,8 +100,9 @@ let StorageService = StorageService_1 = class StorageService {
             return results;
         }
         catch (error) {
-            this.logger.error(`Multiple file upload failed: ${error.message}`);
-            throw new common_1.BadRequestException(`Multiple file upload failed: ${error.message}`);
+            const msg = (error && error.message) ? error.message : String(error);
+            this.logger.error(`Multiple file upload failed: ${msg}`);
+            throw new common_1.BadRequestException(`Multiple file upload failed: ${msg}`);
         }
     }
     async deleteFile(filePath) {
@@ -88,7 +111,8 @@ let StorageService = StorageService_1 = class StorageService {
             return result;
         }
         catch (error) {
-            this.logger.error(`File deletion failed: ${error.message}`);
+            const msg = (error && error.message) ? error.message : String(error);
+            this.logger.error(`File deletion failed: ${msg}`);
             return false;
         }
     }
@@ -97,8 +121,9 @@ let StorageService = StorageService_1 = class StorageService {
             return await this.storageStrategy.getSignedUrl(filePath);
         }
         catch (error) {
-            this.logger.error(`Failed to get file URL: ${error.message}`);
-            throw new common_1.BadRequestException(`Failed to get file URL: ${error.message}`);
+            const msg = (error && error.message) ? error.message : String(error);
+            this.logger.error(`Failed to get file URL: ${msg}`);
+            throw new common_1.BadRequestException(`Failed to get file URL: ${msg}`);
         }
     }
     async deleteSubmissionFiles(submissionId, filePaths) {
@@ -108,7 +133,8 @@ let StorageService = StorageService_1 = class StorageService {
             this.logger.log(`All files deleted for submission: ${submissionId}`);
         }
         catch (error) {
-            this.logger.error(`Failed to delete submission files: ${error.message}`);
+            const msg = (error && error.message) ? error.message : String(error);
+            this.logger.error(`Failed to delete submission files: ${msg}`);
         }
     }
     getStorageType() {

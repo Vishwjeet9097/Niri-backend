@@ -9,6 +9,7 @@ export declare class StorageService {
     private readonly logger;
     private readonly storageStrategy;
     constructor(storageConfigService: StorageConfigService, localStorageStrategy: LocalStorageStrategy, s3StorageStrategy: S3StorageStrategy);
+    uploadSubmissionFiles(submissionId: string, attachedFiles: Express.Multer.File[]): Promise<StoredFile[]>;
     private getStorageStrategy;
     uploadFile(file: Express.Multer.File, submissionId: string, fileType?: string): Promise<StoredFile>;
     uploadMultipleFiles(files: Express.Multer.File[], submissionId: string): Promise<StoredFile[]>;

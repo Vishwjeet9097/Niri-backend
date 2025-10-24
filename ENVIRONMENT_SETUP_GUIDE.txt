@@ -66,14 +66,14 @@ STORAGE_PATH_LOCAL=./uploads
 STORAGE_TYPE=s3
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_REGION=us-east-1
+S3_REGION=us-east-1
 S3_BUCKET_NAME=your-s3-bucket-name
 ```
 
 **कहाँ मिलेगा:**
 - `AWS_ACCESS_KEY_ID`: AWS Console → IAM → Users → Access Keys
 - `AWS_SECRET_ACCESS_KEY`: AWS Console → IAM → Users → Access Keys
-- `AWS_REGION`: AWS region (us-east-1, ap-south-1, etc.)
+- `S3_REGION`: AWS region (us-east-1, ap-south-1, etc.)
 - `S3_BUCKET_NAME`: आपका S3 bucket name
 
 ## 🚀 Step-by-Step Setup
@@ -209,7 +209,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 STORAGE_TYPE=s3
 AWS_ACCESS_KEY_ID=your-access-key
 AWS_SECRET_ACCESS_KEY=your-secret-key
-AWS_REGION=us-east-1
+S3_REGION=us-east-1
 S3_BUCKET_NAME=niri-backend-files
 ```
 

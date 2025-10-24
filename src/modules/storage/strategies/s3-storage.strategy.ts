@@ -1,122 +1,140 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { UploadedFile, StoredFile, IStorageStrategy } from '../interfaces/storage.interface';
+import { createReadStream } from 'fs';
+import { statSync } from 'fs';
+import { basename } from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { IStorageStrategy, UploadedFile, StoredFile } from '../interfaces/storage.interface';
 
 @Injectable()
 export class S3StorageStrategy implements IStorageStrategy {
   private readonly logger = new Logger(S3StorageStrategy.name);
-  private readonly s3Client: S3Client;
-  private readonly bucketName: string;
+  private s3: S3Client;
+  private bucket: string;
+  private defaultExpirySec: number;
 
-  constructor(private configService: ConfigService) {
-    this.bucketName = this.configService.get('S3_BUCKET_NAME');
-
-    this.s3Client = new S3Client({
-      region: this.configService.get('AWS_REGION'),
+  constructor() {
+    // lazy create client with env vars
+    this.s3 = new S3Client({
+      region: process.env.S3_REGION || 'us-east-1',
       credentials: {
-        accessKeyId: this.configService.get('AWS_ACCESS_KEY_ID'),
-        secretAccessKey: this.configService.get('AWS_SECRET_ACCESS_KEY'),
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
       },
     });
-
-    this.logger.log(`S3 Storage Strategy initialized for bucket: ${this.bucketName}`);
+    this.bucket = process.env.S3_BUCKET_NAME || process.env.S3_BUCKET || '';
+    this.defaultExpirySec = Number(process.env.S3_SIGNED_URL_EXPIRATION || 3600);
+    if (!this.bucket) {
+      this.logger.warn('S3 bucket name not configured (S3_BUCKET_NAME or S3_BUCKET). S3 operations will likely fail.');
+    }
   }
 
-  async uploadFile(file: UploadedFile, subFolder?: string): Promise<StoredFile> {
-    try {
-      const fileExtension = this.getFileExtension(file.originalname);
-      const uniqueFileName = `${uuidv4()}${fileExtension}`;
-      const s3Key = subFolder ? `${subFolder}/${uniqueFileName}` : uniqueFileName;
-
-      const uploadCommand = new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: s3Key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        ContentLength: file.size,
-        Metadata: {
-          originalName: file.originalname,
-          uploadedAt: new Date().toISOString(),
-        },
-      });
-
-      await this.s3Client.send(uploadCommand);
-
-      const fileUrl = `https://${this.bucketName}.s3.${this.configService.get('AWS_REGION')}.amazonaws.com/${s3Key}`;
-
-      this.logger.log(`File uploaded to S3 successfully: ${s3Key}`);
-
-      return {
-        fileName: uniqueFileName,
-        originalName: file.originalname,
-        filePath: s3Key,
-        fileUrl: await this.getSignedUrl(s3Key),
-        fileSize: file.size,
-        mimeType: file.mimetype,
-        uploadedAt: new Date(),
-      };
-    } catch (error) {
-      this.logger.error(`S3 upload failed: ${error.message}`);
-      throw new Error(`Failed to upload file to S3: ${error.message}`);
+  // filePathParam can be either: 1) full key "submissions/123/uuid_name.pdf" OR 2) folder "submissions/123"
+  private makeKey(file: UploadedFile | Express.Multer.File, filePathParam?: string): string {
+    const original = (file as any).originalname || 'file';
+    const safeOriginal = original.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    if (filePathParam && filePathParam.includes('/')) {
+      // treat as full key if user already provided filename in path
+      // If filePathParam ends with slash, append generated filename
+      if (filePathParam.endsWith('/')) {
+        return `${filePathParam}${uuidv4()}_${safeOriginal}`;
+      }
+      // if param looks like it already includes a filename component and an extension, use it as key
+      return filePathParam;
     }
+    // otherwise treat filePathParam as folder or undefined
+    const folder = filePathParam ? filePathParam.replace(/\/+$/, '') : 'uploads';
+    return `${folder}/${uuidv4()}_${safeOriginal}`;
+  }
+
+  async uploadFile(file: UploadedFile | Express.Multer.File, subFolder?: string): Promise<StoredFile> {
+    const key = this.makeKey(file as any, subFolder);
+    let body: any;
+    let contentLength: number | undefined;
+
+    // supports multer memoryStorage (buffer) or diskStorage (path)
+    if ((file as any).buffer && Buffer.isBuffer((file as any).buffer)) {
+      body = (file as any).buffer;
+      contentLength = (file as any).buffer.length;
+    } else if ((file as any).path) {
+      // multer stored to disk; stream file
+      body = createReadStream((file as any).path);
+      try {
+        const st = statSync((file as any).path);
+        contentLength = st.size;
+      } catch (e) {
+        // ignore if cannot stat
+      }
+    } else {
+      // fallback: try to use originalname as content
+      body = Buffer.from('');
+      contentLength = 0;
+    }
+
+    const contentType = (file as any).mimetype || 'application/octet-stream';
+
+    const cmd = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    });
+
+    await this.s3.send(cmd);
+
+    const fileUrl = await this.getSignedUrl(key);
+
+    const stored: StoredFile = {
+      fileName: basename(key),
+      originalName: (file as any).originalname || basename(key),
+      filePath: key,
+      fileUrl,
+      fileSize: contentLength || ((file as any).size || 0),
+      mimeType: contentType,
+      uploadedAt: new Date(),
+    };
+
+    this.logger.log(`Uploaded file to s3://${this.bucket}/${key}`);
+    return stored;
   }
 
   async deleteFile(filePath: string): Promise<boolean> {
     try {
-      const deleteCommand = new DeleteObjectCommand({
-        Bucket: this.bucketName,
-        Key: filePath,
-      });
-
-      await this.s3Client.send(deleteCommand);
-
-      this.logger.log(`File deleted from S3 successfully: ${filePath}`);
-
+      const cmd = new DeleteObjectCommand({ Bucket: this.bucket, Key: filePath });
+      await this.s3.send(cmd);
+      this.logger.log(`Deleted s3://${this.bucket}/${filePath}`);
       return true;
-    } catch (error) {
-      this.logger.error(`S3 deletion failed: ${error.message}`);
+    } catch (err) {
+      this.logger.error(`Failed to delete s3 object ${filePath}: ${(err as any).message || err}`);
       return false;
     }
   }
 
   async getSignedUrl(filePath: string): Promise<string> {
-    try {
-      const getObjectCommand = new GetObjectCommand({
-        Bucket: this.bucketName,
-        Key: filePath,
-      });
-
-      // Generate a signed URL valid for 1 hour
-      const signedUrl = await getSignedUrl(this.s3Client, getObjectCommand, { expiresIn: 3600 });
-      return signedUrl;
-    } catch (error) {
-      this.logger.error(`Failed to generate signed URL: ${error.message}`);
-      throw new Error(`Failed to generate file URL: ${error.message}`);
-    }
+    const key = filePath;
+    const cmd = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+    const url = await getSignedUrl(this.s3, cmd, { expiresIn: this.defaultExpirySec });
+    return url;
   }
 
   async deleteFolder(folderPath: string): Promise<boolean> {
     try {
-      // S3 doesn't have folders, but we can delete all objects with the prefix
-      // This is a simplified implementation
-      this.logger.log(`S3 folder deletion requested for: ${folderPath}`);
+      const listCmd = new ListObjectsV2Command({ Bucket: this.bucket, Prefix: folderPath.replace(/^\/+/, '') });
+      const listResp = await this.s3.send(listCmd);
+      const toDelete = (listResp.Contents || []).map((o) => ({ Key: o.Key! }));
+      if (toDelete.length === 0) return true;
+
+      const delCmd = new DeleteObjectsCommand({
+        Bucket: this.bucket,
+        Delete: { Objects: toDelete },
+      });
+      await this.s3.send(delCmd);
+      this.logger.log(`Deleted ${toDelete.length} objects under s3://${this.bucket}/${folderPath}`);
       return true;
-    } catch (error) {
-      this.logger.error(`Failed to delete S3 folder: ${error.message}`);
+    } catch (err) {
+      this.logger.error(`Failed to delete folder ${folderPath}: ${(err as any).message || err}`);
       return false;
     }
-  }
-
-  private getFileExtension(originalName: string): string {
-    const lastDotIndex = originalName.lastIndexOf('.');
-    return lastDotIndex !== -1 ? originalName.substring(lastDotIndex) : '';
   }
 }

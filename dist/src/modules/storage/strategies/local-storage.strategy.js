@@ -12,77 +12,80 @@ var LocalStorageStrategy_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LocalStorageStrategy = void 0;
 const common_1 = require("@nestjs/common");
-const config_1 = require("@nestjs/config");
-const fs = require("fs/promises");
-const path = require("path");
+const fs_1 = require("fs");
+const fs_extra_1 = require("fs-extra");
+const path_1 = require("path");
 const uuid_1 = require("uuid");
 let LocalStorageStrategy = LocalStorageStrategy_1 = class LocalStorageStrategy {
-    constructor(configService) {
-        this.configService = configService;
+    constructor() {
         this.logger = new common_1.Logger(LocalStorageStrategy_1.name);
-        this.storagePath = this.configService.get('STORAGE_PATH_LOCAL', './uploads');
-        this.ensureStorageDirectory();
+        this.basePath = process.env.STORAGE_PATH_LOCAL || './uploads';
+        (0, fs_extra_1.ensureDirSync)(this.basePath);
     }
-    async ensureStorageDirectory() {
-        try {
-            await fs.mkdir(this.storagePath, { recursive: true });
-            this.logger.log(`Storage directory ensured: ${this.storagePath}`);
+    makePath(file, subFolder) {
+        const original = file.originalname || 'file';
+        const safeOriginal = original.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const filename = `${(0, uuid_1.v4)()}_${safeOriginal}`;
+        if (subFolder) {
+            if (subFolder.includes('/') && !subFolder.endsWith('/')) {
+                return (0, path_1.join)(this.basePath, subFolder);
+            }
+            return (0, path_1.join)(this.basePath, subFolder, filename);
         }
-        catch (error) {
-            this.logger.error(`Failed to create storage directory: ${error.message}`);
-            throw error;
-        }
+        return (0, path_1.join)(this.basePath, filename);
     }
     async uploadFile(file, subFolder) {
-        try {
-            const fullFolderPath = subFolder ? path.join(this.storagePath, subFolder) : this.storagePath;
-            await fs.mkdir(fullFolderPath, { recursive: true });
-            const fileExtension = path.extname(file.originalname);
-            const uniqueFileName = `${(0, uuid_1.v4)()}${fileExtension}`;
-            const fullFilePath = path.join(fullFolderPath, uniqueFileName);
-            await fs.writeFile(fullFilePath, file.buffer);
-            const relativePath = subFolder ? path.join(subFolder, uniqueFileName) : uniqueFileName;
-            const fileUrl = `/uploads/${relativePath}`;
-            this.logger.log(`File uploaded successfully: ${fullFilePath}`);
-            return {
-                fileName: uniqueFileName,
-                originalName: file.originalname,
-                filePath: relativePath,
-                fileUrl,
-                fileSize: file.size,
-                mimeType: file.mimetype,
-                uploadedAt: new Date(),
-            };
+        const dest = this.makePath(file, subFolder);
+        const dir = (0, path_1.join)(dest, '..');
+        await fs_1.promises.mkdir(dir, { recursive: true });
+        if (file.path) {
+            await fs_1.promises.rename(file.path, dest);
         }
-        catch (error) {
-            this.logger.error(`File upload failed: ${error.message}`);
-            throw new Error(`Failed to upload file: ${error.message}`);
+        else if (file.buffer) {
+            await fs_1.promises.writeFile(dest, file.buffer);
         }
+        else {
+            await fs_1.promises.writeFile(dest, '');
+        }
+        const stats = await fs_1.promises.stat(dest);
+        const relativePath = dest.replace(`${this.basePath.replace(/\/+$/, '')}/`, '');
+        const stored = {
+            fileName: (0, path_1.basename)(dest),
+            originalName: file.originalname || (0, path_1.basename)(dest),
+            filePath: relativePath,
+            fileUrl: `/uploads/${relativePath}`,
+            fileSize: stats.size,
+            mimeType: file.mimetype || 'application/octet-stream',
+            uploadedAt: new Date(),
+        };
+        this.logger.log(`Saved file to ${dest}`);
+        return stored;
     }
     async deleteFile(filePath) {
         try {
-            const fullFilePath = path.join(this.storagePath, filePath);
-            await fs.unlink(fullFilePath);
-            this.logger.log(`File deleted successfully: ${fullFilePath}`);
+            const pathOnDisk = (0, path_1.join)(this.basePath, filePath);
+            await fs_1.promises.unlink(pathOnDisk);
+            this.logger.log(`Deleted local file ${pathOnDisk}`);
             return true;
         }
-        catch (error) {
-            this.logger.error(`File deletion failed: ${error.message}`);
+        catch (err) {
+            this.logger.error(`Failed to delete local file ${filePath}: ${err.message || err}`);
             return false;
         }
     }
     async getSignedUrl(filePath) {
-        return `/uploads/${filePath}`;
+        const utf = `/uploads/${filePath}`;
+        return utf;
     }
     async deleteFolder(folderPath) {
         try {
-            const fullFolderPath = path.join(this.storagePath, folderPath);
-            await fs.rm(fullFolderPath, { recursive: true, force: true });
-            this.logger.log(`Folder deleted successfully: ${fullFolderPath}`);
+            const pathOnDisk = (0, path_1.join)(this.basePath, folderPath);
+            await fs_1.promises.rm(pathOnDisk, { recursive: true, force: true });
+            this.logger.log(`Deleted local folder ${pathOnDisk}`);
             return true;
         }
-        catch (error) {
-            this.logger.error(`Folder deletion failed: ${error.message}`);
+        catch (err) {
+            this.logger.error(`Failed to delete local folder ${folderPath}: ${err.message || err}`);
             return false;
         }
     }
@@ -90,6 +93,6 @@ let LocalStorageStrategy = LocalStorageStrategy_1 = class LocalStorageStrategy {
 exports.LocalStorageStrategy = LocalStorageStrategy;
 exports.LocalStorageStrategy = LocalStorageStrategy = LocalStorageStrategy_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [config_1.ConfigService])
+    __metadata("design:paramtypes", [])
 ], LocalStorageStrategy);
 //# sourceMappingURL=local-storage.strategy.js.map
