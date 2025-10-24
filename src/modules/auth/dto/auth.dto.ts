@@ -74,6 +74,10 @@ export class UpdateUserDto {
 
   @IsOptional()
   password?: string;
+
+  @IsOptional()
+  @IsArray()
+  indicatorCodes?: (string | number)[]; // e.g., ['1.1', '1.2', '2.1'] or [1.1, 1.2, 2.1]
 }
 
 export class ChangePasswordDto {

@@ -150,14 +150,24 @@ export class UserService {
       throw new ForbiddenException("Cannot change state/UT");
     }
 
+    // Handle indicator codes separately
+    const { indicatorCodes, ...userUpdateData } = updateUserDto;
+
     // Filter out any invalid properties that don't exist in User entity
-    const updateData = { ...updateUserDto };
+    const updateData = { ...userUpdateData };
     // Remove stateId if it exists, as User entity has stateUt
     if ("stateId" in updateData) {
       delete updateData.stateId;
     }
 
+    // Update user basic information
     await this.userRepository.update(id, updateData);
+
+    // Handle indicator codes if provided
+    if (indicatorCodes !== undefined) {
+      await this.updateUserIndicatorCodes(id, indicatorCodes);
+    }
+
     return this.findOne(id, userRole, userStateUt);
   }
 
@@ -401,13 +411,13 @@ export class UserService {
 
     const users = await query.getMany();
 
-    // Get indicators for each user
+    // Get indicator codes for each user (simplified response)
     const usersWithIndicators = await Promise.all(
       users.map(async (user) => {
-        const indicators = await this.getUserIndicatorScopes(user.id);
+        const indicatorCodes = await this.getUserIndicatorCodes(user.id);
         return {
           ...user,
-          assignedIndicators: indicators,
+          assignedIndicators: indicatorCodes,
         };
       })
     );
@@ -505,6 +515,58 @@ export class UserService {
       },
       createdAt: scope.createdAt,
     }));
+  }
+
+  // Get only indicator codes for a user (for simplified response)
+  async getUserIndicatorCodes(userId: string): Promise<number[]> {
+    const userIndicatorScopes = await this.userIndicatorScopeRepository
+      .createQueryBuilder("scope")
+      .leftJoinAndSelect("scope.indicator", "indicator")
+      .where("scope.userId = :userId", { userId })
+      .getMany();
+
+    return userIndicatorScopes.map((scope) => {
+      // Convert string codes like "1.1", "2.3" to numbers like 1.1, 2.3
+      const code = scope.indicator.code;
+      return parseFloat(code);
+    });
+  }
+
+  // Update user's indicator codes
+  async updateUserIndicatorCodes(
+    userId: string,
+    indicatorCodes: (string | number)[]
+  ): Promise<void> {
+    // First, delete all existing indicator scopes for this user
+    await this.userIndicatorScopeRepository.delete({ userId });
+
+    // If no indicator codes provided, just return (all scopes already deleted)
+    if (!indicatorCodes || indicatorCodes.length === 0) {
+      return;
+    }
+
+    // Convert numbers to strings for database lookup
+    const stringCodes = indicatorCodes.map((code) =>
+      typeof code === "number" ? code.toString() : code
+    );
+
+    // Get indicators by codes
+    const indicators = await this.indicatorRepository.find({
+      where: { code: In(stringCodes), isActive: true },
+    });
+
+    // Create new indicator scopes
+    const indicatorScopes = indicators.map((indicator) => {
+      const scope = new UserIndicatorScope();
+      scope.userId = userId;
+      scope.indicatorId = indicator.id;
+      return scope;
+    });
+
+    // Save all new scopes
+    if (indicatorScopes.length > 0) {
+      await this.userIndicatorScopeRepository.save(indicatorScopes);
+    }
   }
 
   // Get indicators by codes
