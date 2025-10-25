@@ -5,8 +5,10 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Not } from "typeorm";
+import { Repository, Not, DataSource, In } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
+import { Indicator } from "../../entities/indicator.entity";
+import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
 
@@ -14,14 +16,19 @@ import * as bcrypt from "bcryptjs";
 export class UserService {
   constructor(
     @InjectRepository(User)
-    private userRepository: Repository<User>
+    private userRepository: Repository<User>,
+    @InjectRepository(Indicator)
+    private indicatorRepository: Repository<Indicator>,
+    @InjectRepository(UserIndicatorScope)
+    private userIndicatorScopeRepository: Repository<UserIndicatorScope>,
+    private dataSource: DataSource
   ) {}
 
   async findAll(
     userRole: UserRole,
     userStateUt: string,
     userId?: string
-  ): Promise<User[]> {
+  ): Promise<any[]> {
     let query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -62,7 +69,20 @@ export class UserService {
       });
     }
 
-    return query.getMany();
+    const users = await query.getMany();
+
+    // Get indicators for each user
+    const usersWithIndicators = await Promise.all(
+      users.map(async (user) => {
+        const indicators = await this.getUserIndicatorScopes(user.id);
+        return {
+          ...user,
+          assignedIndicators: indicators,
+        };
+      })
+    );
+
+    return usersWithIndicators;
   }
 
   async findOne(
@@ -130,14 +150,24 @@ export class UserService {
       throw new ForbiddenException("Cannot change state/UT");
     }
 
+    // Handle indicator codes separately
+    const { indicatorCodes, ...userUpdateData } = updateUserDto;
+
     // Filter out any invalid properties that don't exist in User entity
-    const updateData = { ...updateUserDto };
+    const updateData = { ...userUpdateData };
     // Remove stateId if it exists, as User entity has stateUt
     if ("stateId" in updateData) {
       delete updateData.stateId;
     }
 
+    // Update user basic information
     await this.userRepository.update(id, updateData);
+
+    // Handle indicator codes if provided
+    if (indicatorCodes !== undefined) {
+      await this.updateUserIndicatorCodes(id, indicatorCodes);
+    }
+
     return this.findOne(id, userRole, userStateUt);
   }
 
@@ -223,6 +253,7 @@ export class UserService {
       contactNumber,
       role,
       stateUt,
+      indicatorCodes,
     } = createUserDto;
 
     // Check if user already exists
@@ -253,43 +284,84 @@ export class UserService {
       throw new ForbiddenException("Cannot create user for different state/UT");
     }
 
-    // Admin and MoSPI roles can create users for any state (no restriction)
+    // Validate indicator codes for NODAL_OFFICER
+    if (role === UserRole.NODAL_OFFICER) {
+      if (!indicatorCodes || indicatorCodes.length === 0) {
+        throw new ConflictException(
+          "Indicator codes are required for NODAL_OFFICER role"
+        );
+      }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
+      // Check if all indicator codes exist
+      const indicators = await this.indicatorRepository.find({
+        where: { code: In(indicatorCodes), isActive: true },
+      });
 
-    // Create user
-    const user = this.userRepository.create({
-      email,
-      password: hashedPassword,
-      firstName,
-      lastName,
-      contactNumber,
-      role,
-      stateUt,
+      if (indicators.length !== indicatorCodes.length) {
+        const foundCodes = indicators.map((ind) => ind.code);
+        const missingCodes = indicatorCodes.filter(
+          (code) => !foundCodes.includes(code)
+        );
+        throw new ConflictException(
+          `Invalid indicator codes: ${missingCodes.join(", ")}`
+        );
+      }
+    }
+
+    // Use transaction for user creation and indicator scope assignment
+    return this.dataSource.transaction(async (manager) => {
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create user
+      const user = manager.create(User, {
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        contactNumber,
+        role,
+        stateUt,
+      });
+
+      const savedUser = await manager.save(user);
+
+      // Create indicator scope mappings for NODAL_OFFICER
+      if (role === UserRole.NODAL_OFFICER && indicatorCodes) {
+        const indicators = await manager.find(Indicator, {
+          where: { code: In(indicatorCodes), isActive: true },
+        });
+
+        const userIndicatorScopes = indicators.map((indicator) =>
+          manager.create(UserIndicatorScope, {
+            userId: savedUser.id,
+            indicatorId: indicator.id,
+          })
+        );
+
+        await manager.save(UserIndicatorScope, userIndicatorScopes);
+      }
+
+      // Generate JWT token
+      const payload = {
+        sub: savedUser.id,
+        email: savedUser.email,
+        role: savedUser.role,
+        stateUt: savedUser.stateUt,
+      };
+
+      const jwtService = require("@nestjs/jwt").JwtService;
+      const jwt = new jwtService({ secret: process.env.JWT_SECRET });
+      const accessToken = jwt.sign(payload);
+
+      // Return user without password
+      const { password: _, ...userWithoutPassword } = savedUser;
+
+      return {
+        user: userWithoutPassword,
+        accessToken,
+      };
     });
-
-    const savedUser = await this.userRepository.save(user);
-
-    // Generate JWT token
-    const payload = {
-      sub: savedUser.id,
-      email: savedUser.email,
-      role: savedUser.role,
-      stateUt: savedUser.stateUt,
-    };
-
-    const jwtService = require("@nestjs/jwt").JwtService;
-    const jwt = new jwtService({ secret: process.env.JWT_SECRET });
-    const accessToken = jwt.sign(payload);
-
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = savedUser;
-
-    return {
-      user: userWithoutPassword,
-      accessToken,
-    };
   }
 
   async getUsersByState(
@@ -297,7 +369,7 @@ export class UserService {
     userRole?: UserRole,
     userStateUt?: string,
     userId?: string
-  ): Promise<User[]> {
+  ): Promise<any[]> {
     // Only ADMIN can access users from any state, others can only access their own state
     if (userRole && userRole !== UserRole.ADMIN && stateUt !== userStateUt) {
       throw new ForbiddenException("Access denied");
@@ -337,7 +409,20 @@ export class UserService {
       });
     }
 
-    return query.getMany();
+    const users = await query.getMany();
+
+    // Get indicator codes for each user (simplified response)
+    const usersWithIndicators = await Promise.all(
+      users.map(async (user) => {
+        const indicatorCodes = await this.getUserIndicatorCodes(user.id);
+        return {
+          ...user,
+          assignedIndicators: indicatorCodes,
+        };
+      })
+    );
+
+    return usersWithIndicators;
   }
 
   async getUsersByRole(
@@ -346,7 +431,7 @@ export class UserService {
     userRole?: UserRole,
     userStateUt?: string,
     userId?: string
-  ): Promise<User[]> {
+  ): Promise<any[]> {
     let query = this.userRepository
       .createQueryBuilder("user")
       .select([
@@ -392,6 +477,121 @@ export class UserService {
       query.andWhere("user.stateUt = :userStateUt", { userStateUt });
     }
 
-    return query.getMany();
+    const users = await query.getMany();
+
+    // Get indicators for each user
+    const usersWithIndicators = await Promise.all(
+      users.map(async (user) => {
+        const indicators = await this.getUserIndicatorScopes(user.id);
+        return {
+          ...user,
+          assignedIndicators: indicators,
+        };
+      })
+    );
+
+    return usersWithIndicators;
+  }
+
+  // Get user's assigned indicators from user_indicator_scope table
+  async getUserIndicatorScopes(userId: string) {
+    const userIndicatorScopes = await this.userIndicatorScopeRepository
+      .createQueryBuilder("scope")
+      .leftJoinAndSelect("scope.indicator", "indicator")
+      .where("scope.userId = :userId", { userId })
+      .getMany();
+
+    return userIndicatorScopes.map((scope) => ({
+      id: scope.id,
+      userId: scope.userId,
+      indicatorId: scope.indicatorId,
+      indicator: {
+        id: scope.indicator.id,
+        code: scope.indicator.code,
+        name: scope.indicator.name,
+        category: scope.indicator.category,
+        maxScore: scope.indicator.maxScore,
+        isActive: scope.indicator.isActive,
+      },
+      createdAt: scope.createdAt,
+    }));
+  }
+
+  // Get only indicator codes for a user (for simplified response)
+  async getUserIndicatorCodes(userId: string): Promise<number[]> {
+    const userIndicatorScopes = await this.userIndicatorScopeRepository
+      .createQueryBuilder("scope")
+      .leftJoinAndSelect("scope.indicator", "indicator")
+      .where("scope.userId = :userId", { userId })
+      .getMany();
+
+    return userIndicatorScopes.map((scope) => {
+      // Convert string codes like "1.1", "2.3" to numbers like 1.1, 2.3
+      const code = scope.indicator.code;
+      return parseFloat(code);
+    });
+  }
+
+  // Update user's indicator codes
+  async updateUserIndicatorCodes(
+    userId: string,
+    indicatorCodes: (string | number)[]
+  ): Promise<void> {
+    // First, delete all existing indicator scopes for this user
+    await this.userIndicatorScopeRepository.delete({ userId });
+
+    // If no indicator codes provided, just return (all scopes already deleted)
+    if (!indicatorCodes || indicatorCodes.length === 0) {
+      return;
+    }
+
+    // Convert numbers to strings for database lookup
+    const stringCodes = indicatorCodes.map((code) =>
+      typeof code === "number" ? code.toString() : code
+    );
+
+    // Get indicators by codes
+    const indicators = await this.indicatorRepository.find({
+      where: { code: In(stringCodes), isActive: true },
+    });
+
+    // Create new indicator scopes
+    const indicatorScopes = indicators.map((indicator) => {
+      const scope = new UserIndicatorScope();
+      scope.userId = userId;
+      scope.indicatorId = indicator.id;
+      return scope;
+    });
+
+    // Save all new scopes
+    if (indicatorScopes.length > 0) {
+      await this.userIndicatorScopeRepository.save(indicatorScopes);
+    }
+  }
+
+  // Get indicators by codes
+  async getIndicatorsByCodes(codes: string[]) {
+    return this.indicatorRepository.find({
+      where: { code: In(codes), isActive: true },
+    });
+  }
+
+  // Assign indicators to user
+  async assignIndicatorsToUser(userId: string, indicatorIds: string[]) {
+    // Remove existing assignments for this user
+    await this.userIndicatorScopeRepository.delete({ userId });
+
+    // Create new assignments
+    const assignments = indicatorIds.map((indicatorId) => ({
+      userId,
+      indicatorId,
+    }));
+
+    await this.userIndicatorScopeRepository.save(assignments);
+
+    return {
+      message: "Indicators assigned successfully",
+      assigned: indicatorIds,
+    };
   }
 }

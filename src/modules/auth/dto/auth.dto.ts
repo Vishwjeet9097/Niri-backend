@@ -1,6 +1,15 @@
-import { IsEmail, IsString, IsEnum, IsOptional, MinLength, IsIn } from 'class-validator';
-import { UserRole } from '../../../entities/user.entity';
-import { INDIAN_STATES_AND_UTS } from '../../../constants/states';
+import {
+  IsEmail,
+  IsString,
+  IsEnum,
+  IsOptional,
+  MinLength,
+  IsIn,
+  IsArray,
+  IsString as IsStringArray,
+} from "class-validator";
+import { UserRole } from "../../../entities/user.entity";
+import { INDIAN_STATES_AND_UTS } from "../../../constants/states";
 
 export class CreateUserDto {
   @IsEmail()
@@ -24,8 +33,13 @@ export class CreateUserDto {
   role: UserRole;
 
   @IsString()
-  @IsIn(INDIAN_STATES_AND_UTS, { message: 'Please select a valid state/UT' })
+  @IsIn(INDIAN_STATES_AND_UTS, { message: "Please select a valid state/UT" })
   stateUt: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsStringArray({ each: true })
+  indicatorCodes?: string[]; // e.g., ['1.1', '1.2', '2.1']
 }
 
 export class LoginDto {
@@ -55,11 +69,15 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(INDIAN_STATES_AND_UTS, { message: 'Please select a valid state/UT' })
+  @IsIn(INDIAN_STATES_AND_UTS, { message: "Please select a valid state/UT" })
   stateUt?: string;
 
   @IsOptional()
   password?: string;
+
+  @IsOptional()
+  @IsArray()
+  indicatorCodes?: (string | number)[]; // e.g., ['1.1', '1.2', '2.1'] or [1.1, 1.2, 2.1]
 }
 
 export class ChangePasswordDto {

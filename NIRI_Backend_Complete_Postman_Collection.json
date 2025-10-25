@@ -1,0 +1,3385 @@
+{
+  "info": {
+    "name": "NIRI Backend - Complete API Collection",
+    "description": "Complete Postman collection for NIRI Backend API with all endpoints, authentication, and sample requests",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "submission_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "indicator_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"NODAL_OFFICER\",\n  \"stateUt\": \"MH\",\n  \"phoneNumber\": \"+91-9876543210\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.access_token) {",
+                  "        pm.collectionVariables.set('jwt_token', response.access_token);",
+                  "        console.log('JWT token saved:', response.access_token);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@niri.gov.in\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/profile",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "profile"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"oldpassword\",\n  \"newPassword\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/change-password",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "change-password"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Admin",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/test-admin",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "test-admin"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Access",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicators",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Scope",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-scope",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-scope"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Indicator Scope",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"indicatorCodes\": [\"1.1\", \"1.2\", \"2.1\", \"2.2\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-scope",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-scope"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-performance",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-performance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-summary",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-export",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-report",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-analytics",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Indicator Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/my-indicator-trends",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "my-indicator-trends"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Users by State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/by-state/MH",
+              "host": ["{{base_url}}"],
+              "path": ["users", "by-state", "MH"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Users by Role",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/by-role/NODAL_OFFICER",
+              "host": ["{{base_url}}"],
+              "path": ["users", "by-role", "NODAL_OFFICER"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Smith\",\n  \"email\": \"jane.smith@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"STATE_APPROVER\",\n  \"stateUt\": \"MH\",\n  \"phoneNumber\": \"+91-9876543211\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/create",
+              "host": ["{{base_url}}"],
+              "path": ["users", "create"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane Updated\",\n  \"lastName\": \"Smith Updated\",\n  \"phoneNumber\": \"+91-9876543212\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Delete Users",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [\"user-id-1\", \"user-id-2\", \"user-id-3\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/bulk/delete",
+              "host": ["{{base_url}}"],
+              "path": ["users", "bulk", "delete"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Indicator Scope",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicator-scope",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicator-scope"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User's Indicator Scope",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"indicatorCodes\": [\"1.1\", \"1.2\", \"2.1\", \"2.2\", \"3.1\"],\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicator-scope",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicator-scope"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Users by Indicator",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/by-indicator/1.1",
+              "host": ["{{base_url}}"],
+              "path": ["users", "by-indicator", "1.1"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Indicator Access",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicator-access",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicator-access"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Indicator Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicator-dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicator-dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Indicator Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicator-report",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicator-report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Indicator Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicator-analytics",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicator-analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Indicator Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicator-performance",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicator-performance"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "States",
+      "item": [
+        {
+          "name": "Get All States",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states",
+              "host": ["{{base_url}}"],
+              "path": ["states"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get States Only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/states-only",
+              "host": ["{{base_url}}"],
+              "path": ["states", "states-only"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Union Territories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/union-territories",
+              "host": ["{{base_url}}"],
+              "path": ["states", "union-territories"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validate State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/validate?stateUt=MH",
+              "host": ["{{base_url}}"],
+              "path": ["states", "validate"],
+              "query": [
+                {
+                  "key": "stateUt",
+                  "value": "MH"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get States for User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/for-user",
+              "host": ["{{base_url}}"],
+              "path": ["states", "for-user"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get States for Creation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/for-creation",
+              "host": ["{{base_url}}"],
+              "path": ["states", "for-creation"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicators",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-performance",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-performance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-statistics",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-statistics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-trends",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-trends"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-summary",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-export",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-report",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-analytics",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Indicator Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/states/MH/indicator-performance",
+              "host": ["{{base_url}}"],
+              "path": ["states", "MH", "indicator-performance"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Submissions",
+      "item": [
+        {
+          "name": "Create Submission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.id) {",
+                  "        pm.collectionVariables.set('submission_id', response.id);",
+                  "        console.log('Submission ID saved:', response.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"submissionId\": \"SUBMISSION-001\",\n  \"formData\": {\n    \"1.1\": \"45.5\",\n    \"1.2\": \"78.2\",\n    \"1.3\": \"90.0\",\n    \"2.1\": \"85.5\",\n    \"general_comment\": \"Overall submission comment\"\n  },\n  \"status\": \"DRAFT\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission",
+              "host": ["{{base_url}}"],
+              "path": ["submission"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Submissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission?page=1&limit=10&status=DRAFT",
+              "host": ["{{base_url}}"],
+              "path": ["submission"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "status",
+                  "value": "DRAFT"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Submission",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"1.1\": \"50.0\",\n    \"1.2\": \"80.0\",\n    \"1.3\": \"95.0\",\n    \"2.1\": \"90.0\",\n    \"general_comment\": \"Updated submission comment\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Good progress on infrastructure financing\",\n  \"type\": \"indicator_comment\",\n  \"sectionId\": \"1.1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/comment",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "comment"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Comments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-comments",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-comments"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit to State",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/submit-to-state/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "submit-to-state", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit with Section Comments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"1.1\": \"50.0\",\n    \"1.2\": \"80.0\",\n    \"1.3\": \"95.0\",\n    \"2.1\": \"90.0\"\n  },\n  \"sectionComments\": [\n    {\n      \"sectionId\": \"1.1\",\n      \"text\": \"Infrastructure financing needs improvement\",\n      \"type\": \"comment\"\n    },\n    {\n      \"sectionId\": \"1.2\",\n      \"text\": \"Good utilization of capex\",\n      \"type\": \"approval\"\n    }\n  ],\n  \"overallComment\": \"Overall submission is satisfactory\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/submit-with-comments/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "submit-with-comments", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Forwarding to MoSPI for review\",\n  \"sectionId\": \"status-change\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/forward-to-mospi/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "forward-to-mospi", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI Reviewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUBMITTED_TO_MOSPI_REVIEWER\",\n  \"comment\": \"Forwarding to MoSPI Reviewer\",\n  \"sectionId\": \"status-change\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/forward-to-mospi-reviewer/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "forward-to-mospi-reviewer", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forward to MoSPI Approver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUBMITTED_TO_MOSPI_APPROVER\",\n  \"comment\": \"Forwarding to MoSPI Approver\",\n  \"sectionId\": \"status-change\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/forward-to-mospi-approver/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "forward-to-mospi-approver", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Back to State",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"RETURNED_FROM_MOSPI\",\n  \"comment\": \"Please address the following issues\",\n  \"sectionId\": \"status-change\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/send-back-to-state/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "send-back-to-state", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "State Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED\",\n  \"comment\": \"Submission rejected due to incomplete data\",\n  \"sectionId\": \"rejection\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/state-reject/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "state-reject", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Final Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"REJECTED_FINAL\",\n  \"comment\": \"Final rejection due to insufficient data quality\",\n  \"sectionId\": \"rejection\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/final-reject/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "final-reject", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resubmit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formData\": {\n    \"1.1\": \"55.0\",\n    \"1.2\": \"85.0\",\n    \"1.3\": \"95.0\",\n    \"2.1\": \"90.0\"\n  },\n  \"comment\": \"Resubmitted with corrections\",\n  \"sectionComments\": [\n    {\n      \"sectionId\": \"1.1\",\n      \"text\": \"Updated infrastructure financing data\",\n      \"type\": \"comment\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/resubmit/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "resubmit", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Submission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\",\n  \"comment\": \"Submission approved\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/approve/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "approve", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUBMITTED_TO_STATE\",\n  \"comment\": \"Status updated\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/update-status/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "update-status", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Comments Grouping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/test/comments/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "test", "comments", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Debug All Submissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/debug/all",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "debug", "all"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission by Indicator",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/by-indicator/1.1",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "by-indicator", "1.1"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Indicator Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-data",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-data"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Submission Indicator Data",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"indicatorData\": {\n    \"1.1\": \"45.5\",\n    \"1.2\": \"78.2\",\n    \"1.3\": \"90.0\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-data",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-data"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Indicator Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-summary",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Indicator Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Indicator Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-report",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Indicator Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-analytics",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Indicator Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/submission/{{submission_id}}/indicator-performance",
+              "host": ["{{base_url}}"],
+              "path": ["submission", "{{submission_id}}", "indicator-performance"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Scoring",
+      "item": [
+        {
+          "name": "Get Rankings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/rankings",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "rankings"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/statistics",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "statistics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Score",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/state/MH",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "state", "MH"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Calculate Score",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/calculate/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "calculate", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Scores",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score by State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/state/MH",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "state", "MH"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score by Indicator",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/1.1",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "1.1"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/compare?indicator=1.1&states=MH,DL,KA",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "compare"],
+              "query": [
+                {
+                  "key": "indicator",
+                  "value": "1.1"
+                },
+                {
+                  "key": "states",
+                  "value": "MH,DL,KA"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/trends?indicator=1.1&period=monthly",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "trends"],
+              "query": [
+                {
+                  "key": "indicator",
+                  "value": "1.1"
+                },
+                {
+                  "key": "period",
+                  "value": "monthly"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Distribution",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/distribution",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "distribution"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Rankings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/rankings",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "rankings"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/summary",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/detailed",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/export",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/report",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/performance",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "performance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/trends",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "trends"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/comparison",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/summary",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/detailed",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Score Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/scoring/indicators/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["scoring", "indicators", "dashboard"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "File Storage",
+      "item": [
+        {
+          "name": "Upload File",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/file/upload/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "upload", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Multiple Files",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/file/upload-multiple/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "upload-multiple", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete File",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/path/to/file.pdf",
+              "host": ["{{base_url}}"],
+              "path": ["file", "path", "to", "file.pdf"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get File URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/url/path/to/file.pdf",
+              "host": ["{{base_url}}"],
+              "path": ["file", "url", "path", "to", "file.pdf"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Storage Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/storage-info",
+              "host": ["{{base_url}}"],
+              "path": ["file", "storage-info"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Indicator File",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "indicatorCode",
+                  "value": "1.1",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Indicator 1.1 supporting document",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/file/upload-indicator/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "upload-indicator", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Files by Code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/{{submission_id}}/1.1",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "{{submission_id}}", "1.1"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Indicator File",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicator/{{file_path}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicator", "{{file_path}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/summary/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "summary", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/statistics",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "statistics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/export?format=zip&submissionId={{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "export"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "zip"
+                },
+                {
+                  "key": "submissionId",
+                  "value": "{{submission_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/dashboard/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "dashboard", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/report/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "report", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/analytics/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "analytics", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/performance/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "performance", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/trends/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "trends", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/comparison/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "comparison", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/summary/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "summary", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator File Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/file/indicators/detailed/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["file", "indicators", "detailed", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "item": [
+        {
+          "name": "Get All Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["audit"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Entity Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/entity/submission/{{submission_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "entity", "submission", "{{submission_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/user/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "user", "{{user_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Audit Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/stats",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/my-activity",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "my-activity"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit by User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/user/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "user", "{{user_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit by Indicator",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/{{indicator_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "{{indicator_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/statistics",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "statistics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/summary",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/detailed",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/comparison",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/export",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/report",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Audit Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/audit/indicators/performance",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "indicators", "performance"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/summary",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get KPIs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/kpis",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "kpis"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Recent Activities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/recent-activities",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "recent-activities"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Performance Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-performance",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-performance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Trends Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-trends",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-trends"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Analytics Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-analytics",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Summary Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-summary",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Detailed Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Comparison Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Export Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-export",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-summary",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-export",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-trends",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-trends"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-summary",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dashboard/indicator-dashboard-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["dashboard", "indicator-dashboard-detailed"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Get Rankings Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/ranking",
+              "host": ["{{base_url}}"],
+              "path": ["report", "ranking"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Full Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/full-report",
+              "host": ["{{base_url}}"],
+              "path": ["report", "full-report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get State Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/state/MH",
+              "host": ["{{base_url}}"],
+              "path": ["report", "state", "MH"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Export Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/export?format=excel",
+              "host": ["{{base_url}}"],
+              "path": ["report", "export"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "excel"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission Status Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/submission-status",
+              "host": ["{{base_url}}"],
+              "path": ["report", "submission-status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Performance Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-performance",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-performance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Comparison Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-comparison?indicator=1.1&states=MH,DL,KA",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-comparison"],
+              "query": [
+                {
+                  "key": "indicator",
+                  "value": "1.1"
+                },
+                {
+                  "key": "states",
+                  "value": "MH,DL,KA"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Trends Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-trends?indicator=1.1&period=monthly",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-trends"],
+              "query": [
+                {
+                  "key": "indicator",
+                  "value": "1.1"
+                },
+                {
+                  "key": "period",
+                  "value": "monthly"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Analytics Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-analytics",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Summary Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-summary",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Detailed Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Export Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-export?format=excel&indicator=1.1",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-export"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "excel"
+                },
+                {
+                  "key": "indicator",
+                  "value": "1.1"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-summary",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-export",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-analytics",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-performance",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-performance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-trends",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-trends"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-summary",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/report/indicator-report-export",
+              "host": ["{{base_url}}"],
+              "path": ["report", "indicator-report-export"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Indicators",
+      "item": [
+        {
+          "name": "Get All Indicators",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/{{indicator_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "{{indicator_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Assigned Indicators",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Indicators to User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"indicatorCodes\": [\"1.1\", \"1.2\", \"1.3\", \"2.1\", \"2.2\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User's Indicator Scope",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"indicatorCodes\": [\"1.1\", \"1.2\", \"2.1\", \"2.2\", \"3.1\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Indicators from User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"indicatorCodes\": [\"1.1\", \"1.2\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicators by Section",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/section/1",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "section", "1"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Active Indicators",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/active",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "active"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicators by Category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/category/infrastructure",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "category", "infrastructure"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Search Indicators",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/search?q=infrastructure&category=infrastructure&isActive=true",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "infrastructure"
+                },
+                {
+                  "key": "category",
+                  "value": "infrastructure"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Assigned Indicators",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/my-assigned",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "my-assigned"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/statistics",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "statistics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Usage Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/usage-report",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "usage-report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "dashboard"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/report",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "report"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/analytics",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "analytics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/indicators/performance",
+              "host": ["{{base_url}}"],
+              "path": ["indicators", "performance"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health & System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Root Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicators",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicators"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator Database Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-db",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-db"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator API Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-api",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-api"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-summary",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-detailed"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Export",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-export",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-export"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-health",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-status",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-metrics",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-metrics"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-performance",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-performance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-trends",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-trends"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Comparison",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-comparison",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-comparison"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-summary",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-summary"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicator System Detailed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/indicator-system-detailed",
+              "host": ["{{base_url}}"],
+              "path": ["health", "indicator-system-detailed"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-generate submission ID if not set",
+          "if (!pm.collectionVariables.get('submission_id')) {",
+          "    pm.collectionVariables.set('submission_id', 'test-submission-' + Date.now());",
+          "}",
+          "",
+          "// Auto-generate user ID if not set",
+          "if (!pm.collectionVariables.get('user_id')) {",
+          "    pm.collectionVariables.set('user_id', 'test-user-' + Date.now());",
+          "}",
+          "",
+          "// Auto-generate indicator ID if not set",
+          "if (!pm.collectionVariables.get('indicator_id')) {",
+          "    pm.collectionVariables.set('indicator_id', 'test-indicator-' + Date.now());",
+          "}"
+        ]
+      }
+    }
+  ]
+}
