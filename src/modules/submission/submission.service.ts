@@ -929,7 +929,25 @@ export class SubmissionService {
         submission.status === SubmissionStatus.SUBMITTED_TO_STATE
       );
 
-      if (submission.status !== SubmissionStatus.SUBMITTED_TO_STATE) {
+      // Handle RETURNED_FROM_MOSPI status by changing it to SUBMITTED_TO_MOSPI_REVIEWER first
+      if (submission.status === SubmissionStatus.RETURNED_FROM_MOSPI) {
+        console.log("Status is RETURNED_FROM_MOSPI, updating to SUBMITTED_TO_MOSPI_REVIEWER first...");
+        
+        // Update submission status to SUBMITTED_TO_MOSPI_REVIEWER
+        await this.submissionRepository.update(submission.id, {
+          status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          currentOwnerRole: UserRole.MOSPI_REVIEWER,
+          updatedAt: new Date(),
+        });
+
+        // Update the submission object for further processing
+        submission.status = SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER;
+        submission.currentOwnerRole = UserRole.MOSPI_REVIEWER;
+        
+        console.log("Status updated to SUBMITTED_TO_MOSPI_REVIEWER, continuing with normal flow...");
+      } else if (submission.status === SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER) {
+        console.log("Status is already SUBMITTED_TO_MOSPI_REVIEWER, continuing with normal flow...");
+      } else if (submission.status !== SubmissionStatus.SUBMITTED_TO_STATE) {
         console.log("Status check failed - throwing BadRequestException");
         throw new BadRequestException(
           `Submission must be in SUBMITTED_TO_STATE status, but current status is ${submission.status}`
