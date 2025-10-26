@@ -1,3 +1,6 @@
+<<<<<<< HEAD
+node_modules/
+=======
 # Logs
 logs
 *.log
@@ -275,3 +278,4 @@ redis-data/
 # Backup directories
 backup/
 backups/
+>>>>>>> production
