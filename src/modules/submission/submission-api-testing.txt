@@ -1,0 +1,261 @@
+# Submission API Postman Testing Guide
+
+Base URL: http://<your-server-url>/submission
+Authorization: Bearer <JWT_TOKEN>
+
+---
+
+Create Submission
+Method: POST
+URL: /submission
+Headers:
+  - Authorization: Bearer <JWT_TOKEN>
+  - Content-Type: multipart/form-data
+Body (form-data):
+  - submission (text): JSON string of submission object
+    Example: {"submissionId":"SUB-2025-123","formData":{"infraEnablers":{}}}
+  - files (file): Choose file from local system
+    Fieldname should match nested path in DTO. Example: infraEnablers.section4_2.file
+
+Example: 
+Key: submission
+Value: {"submissionId":"SUB-2025-123","formData":{"infraEnablers":{}}}
+
+Key: infraEnablers.section4_2.file
+Value: Choose File
+
+-----
+
+******************************************
+submission JSON file example :
+
+{
+    "submissionId": "SUB-2025-643911",
+    "formData": {
+        "infraFinancing": {
+            "section1_1": {
+                "year": "2024",
+                "capitalAllocation": "12000",
+                "gsdpForFY": "122200",
+                "stateCapexUtilisation": "",
+                "allocationToGSDP": "9.8%",
+                "capexToCapexActuals": "",
+                "percentage": 9.82,
+                "marksObtained": 50
+            },
+            "section1_2": {
+                "year": "2024",
+                "gsdpForFY": "",
+                "actualCapex": "23400",
+                "budgetaryCapex": "",
+                "stateCapexUtilisation": "234000",
+                "capexActualsToGSDP": "10.0%",
+                "percentage": 10,
+                "marksObtained": 5
+            },
+            "section1_3": [
+                {
+                    "id": "1761442768176",
+                    "cityName": "Mumbai",
+                    "ulb": "Mumbai Municipal Corporation",
+                    "ratingDate": "2025-10-07T18:30:00.000Z",
+                    "rating": "AA+"
+                }
+            ],
+            "section1_4": [
+                {
+                    "id": "1761442789710",
+                    "bondType": "Municipal bond",
+                    "cityName": "Mumbai",
+                    "issuingAuthority": "Municipal Corporation",
+                    "value": "300"
+                }
+            ],
+            "section1_5": [
+                {
+                    "id": "1761442803226",
+                    "organisationName": "NeGD",
+                    "organisationType": "Government Corporation",
+                    "yearEstablished": "2009",
+                    "totalFunding": "50000",
+                    "website": ""
+                }
+            ]
+        },
+        "infraDevelopment": {
+            "section2_1": [],
+            "section2_2": [],
+            "section2_3": [],
+            "section2_4": [],
+            "section2_5": [
+                {
+                    "id": "154c968e-5654-47d9-87a9-cb7325f51957",
+                    "projectName": "Laptops",
+                    "sector": "Education",
+                    "type": "HAM",
+                    "ownership": "Revenue sharing",
+                    "estimatedMonetization": "7"
+                }
+            ]
+        },
+        "pppDevelopment": {
+            "section3_1": {
+                "available": "",
+                "file": null
+            },
+            "section3_2": {
+                "available": "no",
+                "file": null
+            },
+            "section3_3": [],
+            "section3_4": {
+                "tpcOfPPPProjects": "234",
+                "totalTPC": "226",
+                "proportion": 103.54,
+                "marksObtained": 100
+            }
+        },
+        "infraEnablers": {
+            "section4_1": {
+                "allEligible": "no",
+                "websiteLink": ""
+            },
+            "section4_2": {
+                "available": "no",
+                "file": null
+            },
+            "section4_3": {
+                "numberOfProjects": "1",
+                "marksObtained": 5
+            },
+            "section4_4": {
+                "adopted": "no",
+                "file": null,
+                "marksObtained": 0
+            },
+            "section4_5": {
+                "implemented": "no",
+                "practiceName": "",
+                "impact": "",
+                "file": null
+            },
+            "section4_6": []
+        }
+    },
+    "status": "SUBMITTED_TO_STATE"
+}
+                 
+          
+*********************************************
+Response:
+{
+  "infraEnablers": {
+    "section4_1": {
+      "allEligible": "no",
+      "websiteLink": ""
+    },
+    "section4_2": {
+      "file": null,
+      "available": "no"
+    },
+    "section4_3": {
+      "marksObtained": 5,
+      "numberOfProjects": "1"
+    },
+    "section4_4": {
+      "file": null,
+      "adopted": "no",
+      "marksObtained": 0
+    },
+    "section4_5": {
+      "file": null,
+      "impact": "",
+      "implemented": "no",
+      "practiceName": ""
+    },
+    "section4_6": []
+  },
+  "infraFinancing": {
+    "section1_1": {
+      "year": "2024",
+      "gsdpForFY": "122200",
+      "percentage": 9.82,
+      "marksObtained": 50,
+      "allocationToGSDP": "9.8%",
+      "capitalAllocation": "12000",
+      "capexToCapexActuals": "",
+      "stateCapexUtilisation": ""
+    },
+    "section1_2": {
+      "year": "2024",
+      "gsdpForFY": "",
+      "percentage": 10,
+      "actualCapex": "23400",
+      "marksObtained": 5,
+      "budgetaryCapex": "",
+      "capexActualsToGSDP": "10.0%",
+      "stateCapexUtilisation": "234000"
+    },
+    "section1_3": [
+      {
+        "id": "1761442768176",
+        "ulb": "Mumbai Municipal Corporation",
+        "rating": "AA+",
+        "cityName": "Mumbai",
+        "ratingDate": "2025-10-07T18:30:00.000Z"
+      }
+    ],
+    "section1_4": [
+      {
+        "id": "1761442789710",
+        "value": "300",
+        "bondType": "Municipal bond",
+        "cityName": "Mumbai",
+        "issuingAuthority": "Municipal Corporation"
+      }
+    ],
+    "section1_5": [
+      {
+        "id": "1761442803226",
+        "website": "",
+        "totalFunding": "50000",
+        "yearEstablished": "2009",
+        "organisationName": "NeGD",
+        "organisationType": "Government Corporation"
+      }
+    ]
+  },
+  "pppDevelopment": {
+    "section3_1": {
+      "file": "https://niri-dev.s3.ap-south-2.amazonaws.com/submissions/submissions/SUB-2025-643910/pppDevelopment/section3_1/file/9b6bb168-645e-44ba-9615-1d20a4cba02a_Screenshot_2024-08-25_at_11.03.50_PM.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIASVLKCFWEU5WZYBCO%2F20251026%2Fap-south-2%2Fs3%2Faws4_request&X-Amz-Date=20251026T051407Z&X-Amz-Expires=3600&X-Amz-Signature=c9f2da2ce5575442bfa916dc3572bca2f6051b32ec007868f674ffc898b5c9d6&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+      "available": ""
+    },
+    "section3_2": {
+      "file": null,
+      "available": "no"
+    },
+    "section3_3": [],
+    "section3_4": {
+      "totalTPC": "226",
+      "proportion": 103.54,
+      "marksObtained": 100,
+      "tpcOfPPPProjects": "234"
+    }
+  },
+  "infraDevelopment": {
+    "section2_1": [],
+    "section2_2": [],
+    "section2_3": [],
+    "section2_4": [],
+    "section2_5": [
+      {
+        "id": "154c968e-5654-47d9-87a9-cb7325f51957",
+        "type": "HAM",
+        "sector": "Education",
+        "ownership": "Revenue sharing",
+        "projectName": "Laptops",
+        "estimatedMonetization": "7"
+      }
+    ]
+  }
+}

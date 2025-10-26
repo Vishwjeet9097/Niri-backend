@@ -428,7 +428,11 @@ private async processAndUploadFiles(
   const processedFormData = await recurse(formData, '');
   return { processedFormData, attachedFiles };
 }
-
+async uploadFile(file: Express.Multer.File, context: { submissionId: string; path: string }) {
+  const uploadPath = `submissions/${context.submissionId}/${context.path}`;
+  const stored = await this.storageService.uploadFile(file, uploadPath);
+  return stored; // should contain { url, key, bucket } if your service is consistent
+}
 
   async create(
     createSubmissionDto: CreateSubmissionDto,

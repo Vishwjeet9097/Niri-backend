@@ -14,6 +14,7 @@ import {
   BadRequestException,
   Put,
   UseInterceptors,
+  UploadedFiles,
 } from "@nestjs/common";
 import { SubmissionService } from "./submission.service";
 import {
@@ -37,7 +38,7 @@ import { RolesGuard, Roles } from "../auth/guards/roles.guard";
 import { UserRole } from "../../entities/user.entity";
 import { SubmissionStatus } from "../../entities/submission.entity";
 import { IndicatorAccessMiddleware } from "../../middleware/indicator-access.middleware";
-
+import { AnyFilesInterceptor } from "@nestjs/platform-express";
 @Controller("submission")
 @UseGuards(JwtAuthGuard)
 export class SubmissionController {
@@ -86,12 +87,51 @@ export class SubmissionController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
   @UseGuards(IndicatorAccessMiddleware)
+  @UseInterceptors(AnyFilesInterceptor())
   async create(
-    @Body() createSubmissionDto: CreateSubmissionDto,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body("submission") submission: string,
     @Request() req
   ) {
+    if (!submission) {
+      throw new BadRequestException("Missing submission JSON in form-data.");
+    }
+
+    // Parse submission JSON
+    let parsedSubmission: CreateSubmissionDto;
+    try {
+      parsedSubmission = JSON.parse(submission);
+    } catch (error) {
+      throw new BadRequestException("Invalid submission JSON format.");
+    }
+
+    // ✅ Map uploaded files to nested fields (like infraEnablers.section4_2.file)
+    if (files?.length) {
+      for (const file of files) {
+        const fieldPath = file.fieldname.split("."); // e.g. ["infraEnablers", "section4_2", "file"]
+        let current = parsedSubmission.formData;
+
+        for (let i = 0; i < fieldPath.length - 1; i++) {
+          const key = fieldPath[i];
+          if (!current[key]) current[key] = {};
+          current = current[key];
+        }
+
+        const lastKey = fieldPath[fieldPath.length - 1];
+
+        // Upload file using your existing storage service (S3/local)
+        const storedFile = await this.submissionService.uploadFile(file, {
+          submissionId: parsedSubmission.submissionId,
+          path: fieldPath.slice(1).join("/"), // skip the first part if it's "submissions"
+        });
+
+        current[lastKey] = storedFile.fileUrl; // ✅ replace the base64 with actual S3 URL
+      }
+    }
+
+    // ✅ Create submission in DB
     return this.submissionService.create(
-      createSubmissionDto,
+      parsedSubmission,
       req.user.id,
       req.user.role,
       req.user.stateUt
