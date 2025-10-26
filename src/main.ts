@@ -10,7 +10,7 @@ async function bootstrap() {
   console.log("🔄 Starting NIRI Backend API...");
 
   const app = await NestFactory.create(AppModule, {
-    logger: ["error", "warn", "log"],
+    logger: ["error", "warn", "log", 'debug', 'verbose'],
   });
 
   const configService = app.get(ConfigService);
