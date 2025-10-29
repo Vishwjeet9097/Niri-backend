@@ -83,14 +83,39 @@ export class SubmissionController {
     return response;
   }
 
+  // Main submission endpoint - handles JSON with optional file references
   @Post()
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
   @UseGuards(IndicatorAccessMiddleware)
+  async create(@Body() body: CreateSubmissionDto, @Request() req) {
+    if (!body.submissionId || !body.formData) {
+      throw new BadRequestException(
+        "Missing required fields: submissionId and formData."
+      );
+    }
+
+    // Clean up empty file objects in the formData
+    this.cleanEmptyFileObjects(body.formData);
+
+    // ✅ Create submission in DB
+    return this.submissionService.create(
+      body,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
+  }
+
+  // File uploads with submission endpoint
+  @Post("upload")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.NODAL_OFFICER)
+  @UseGuards(IndicatorAccessMiddleware)
   @UseInterceptors(AnyFilesInterceptor())
-  async create(
-    @UploadedFiles() files: Express.Multer.File[],
+  async createWithFiles(
     @Body("submission") submission: string,
+    @UploadedFiles() files: Express.Multer.File[],
     @Request() req
   ) {
     if (!submission) {
@@ -105,7 +130,7 @@ export class SubmissionController {
       throw new BadRequestException("Invalid submission JSON format.");
     }
 
-    // ✅ Map uploaded files to nested fields (like infraEnablers.section4_2.file)
+    // ✅ Map uploaded files to nested fields (files are OPTIONAL)
     if (files?.length) {
       for (const file of files) {
         const fieldPath = file.fieldname.split("."); // e.g. ["infraEnablers", "section4_2", "file"]
@@ -122,10 +147,10 @@ export class SubmissionController {
         // Upload file using your existing storage service (S3/local)
         const storedFile = await this.submissionService.uploadFile(file, {
           submissionId: parsedSubmission.submissionId,
-          path: fieldPath.slice(1).join("/"), // skip the first part if it's "submissions"
+          path: fieldPath.slice(1).join("/"),
         });
 
-        current[lastKey] = storedFile.fileUrl; // ✅ replace the base64 with actual S3 URL
+        current[lastKey] = storedFile.fileUrl; // ✅ replace with actual S3 URL
       }
     }
 
@@ -504,5 +529,32 @@ export class SubmissionController {
       req.user.role,
       req.user.stateUt
     );
+  }
+
+  // Helper method to clean empty file objects from formData
+  private cleanEmptyFileObjects(obj: any): void {
+    if (!obj || typeof obj !== "object") return;
+
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        if (obj[key] && typeof obj[key] === "object") {
+          // Check if it's an empty file object (has only 'file' property with empty object)
+          if (obj[key].file && typeof obj[key].file === "object") {
+            if (Object.keys(obj[key].file).length === 0) {
+              // Remove the file property if it's empty
+              delete obj[key].file;
+            }
+          }
+
+          if (Array.isArray(obj[key])) {
+            // If it's an array, clean each item
+            obj[key].forEach((item: any) => this.cleanEmptyFileObjects(item));
+          } else {
+            // Recursively clean nested objects
+            this.cleanEmptyFileObjects(obj[key]);
+          }
+        }
+      }
+    }
   }
 }
