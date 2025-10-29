@@ -53,41 +53,39 @@ export class Submission {
   @PrimaryGeneratedColumn("uuid")
   id: string;
 
-  @Column({ name: "submission_id", unique: true })
+  @Column({ name: "submissionId", unique: true })
   submissionId: string;
 
-  @Column({ name: "state_ut" })
+  @Column()
   stateUt: string;
 
-  @Column({ name: "submitted_by" })
+  @Column()
   submittedBy: string;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: "submitted_by" })
+  @JoinColumn({ name: "submittedBy" })
   user: User;
 
-  @Column({ name: "rejection_count", default: 0 })
+  @Column({ default: 0 })
   rejectionCount: number;
 
-  @Column({ name: "form_data", type: "jsonb" , nullable: true})
+  @Column({ type: "jsonb", nullable: true })
   formData: any;
 
   @Column({
-    name: "review_comments",
     type: "jsonb",
     default: () => "'[]'",
   })
   reviewComments: ReviewComment[];
 
   @Column({
-    name: "indicator_comment",
     type: "jsonb",
     default: () => "'{}'",
   })
   indicatorComment: Record<string, ReviewComment[]>;
 
- @Column({ name: 'attached_files', type: 'jsonb', nullable: true, default: () => "'[]'::jsonb" })
-attachedFiles: any;
+  @Column({ type: "jsonb", nullable: true, default: () => "'[]'::jsonb" })
+  attachedFiles: any;
   // attachedFiles: SubmissionFile[];
 
   @Column({
@@ -98,7 +96,6 @@ attachedFiles: any;
   status: SubmissionStatus;
 
   @Column({
-    name: "current_owner_role",
     type: "enum",
     enum: UserRole,
     default: UserRole.STATE_APPROVER,
