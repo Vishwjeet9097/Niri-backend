@@ -18,7 +18,7 @@ export enum UserRole {
 
 @Entity("users")
 @Index(["email"], { unique: true })
-@Index(["stateUt", "role"])
+@Index(["state_ut", "role"])
 export class User {
   @PrimaryGeneratedColumn("uuid")
   id: string;
@@ -44,7 +44,7 @@ export class User {
   })
   role: UserRole;
 
-  @Column()
+  @Column({ name: "state_ut" })
   stateUt: string;
 
   @Column({ default: true })
