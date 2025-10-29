@@ -44,7 +44,7 @@ export class User {
   })
   role: UserRole;
 
-  @Column({ name: "state_ut" })
+  @Column()
   stateUt: string;
 
   @Column({ default: true })

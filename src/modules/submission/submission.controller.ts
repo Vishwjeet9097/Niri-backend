@@ -144,7 +144,8 @@ export class SubmissionController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
   )
   async findAll(@Query() queryDto: any, @Request() req) {
     // Manual validation for status parameter
