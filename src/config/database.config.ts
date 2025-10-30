@@ -1,21 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { TypeOrmModuleOptions, TypeOrmOptionsFactory } from "@nestjs/typeorm";
-import { DefaultNamingStrategy, NamingStrategyInterface } from "typeorm";
-import { snakeCase } from "typeorm/util/StringUtils";
-
-class SnakeNamingStrategy
-  extends DefaultNamingStrategy
-  implements NamingStrategyInterface
-{
-  columnName(
-    propertyName: string,
-    customName: string,
-    embeddedPrefixes: string[]
-  ): string {
-    return customName ? customName : snakeCase(propertyName);
-  }
-}
 
 @Injectable()
 export class DatabaseConfig implements TypeOrmOptionsFactory {
