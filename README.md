@@ -1,6 +1,6 @@
 # National Infrastructure Readiness Index (NIRI) Backend API
 
-## 📋 Table of Contents
+## #📋 Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
