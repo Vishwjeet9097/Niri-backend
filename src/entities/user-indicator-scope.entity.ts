@@ -34,9 +34,9 @@ export class UserIndicatorScope {
   @JoinColumn({ name: "indicator_id" })
   indicator: Indicator;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: "createdAt" })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: "updatedAt" })
   updatedAt: Date;
 }

@@ -26,7 +26,8 @@ export class IndicatorController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
   )
   async findAll() {
     return this.indicatorService.findAll();
