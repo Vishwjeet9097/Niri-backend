@@ -468,15 +468,88 @@ if (files?.length) {
   @Post("resubmit/:id")
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
+  @UseInterceptors(AnyFilesInterceptor())
   @HttpCode(HttpStatus.OK)
   async resubmit(
     @Param("id") id: string,
-    @Body() resubmitDto: ResubmitDto,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body("submission") submission: string,
     @Request() req
   ) {
+    // यदि multipart में submission JSON नहीं मिला, तो सीधे JSON बॉडी सपोर्ट भी रखें
+    if (!submission && (req.body && typeof req.body === "object")) {
+      const fallbackDto = req.body as unknown as ResubmitDto;
+      return this.submissionService.resubmit(
+        id,
+        fallbackDto,
+        req.user.id,
+        req.user.role,
+        req.user.stateUt
+      );
+    }
+
+    if (!submission) {
+      // Header-based fallback (for misformatted multipart clients)
+      const headerJson = req.headers?.["x-submission-json"] as string | undefined;
+      if (headerJson && typeof headerJson === "string") {
+        submission = headerJson;
+      } else {
+        throw new BadRequestException("Missing submission JSON in form-data.");
+      }
+    }
+
+    // Parse JSON to ResubmitDto-लाइक ऑब्जेक्ट
+    let parsed: ResubmitDto & { submissionId?: string; attachedFiles?: any[] };
+    try {
+      parsed = JSON.parse(submission);
+    } catch {
+      throw new BadRequestException("Invalid submission JSON format.");
+    }
+
+    parsed.formData = parsed.formData || {};
+
+    // खाली file ऑब्जेक्ट्स क्लीन करें
+    this.cleanEmptyFileObjects(parsed.formData);
+
+    // फ़ाइलों को nested फील्ड्स पर मैप करें (create जैसा)
+    if (files?.length) {
+      const submissionIdForFiles = (parsed as any).submissionId || id;
+      for (const file of files) {
+        const fieldPath = file.fieldname
+          .replace(/\[(\d+)\]/g, '.$1')
+          .split('.');
+
+        let current: any = parsed.formData;
+        for (let i = 0; i < fieldPath.length - 1; i++) {
+          const key = fieldPath[i];
+          if (!current[key]) {
+            const nextKey = fieldPath[i + 1];
+            current[key] = /^\d+$/.test(nextKey) ? [] : {};
+          }
+          current = current[key];
+        }
+
+        const lastKey = fieldPath[fieldPath.length - 1];
+
+        const storedFile = await this.submissionService.uploadFile(file, {
+          submissionId: submissionIdForFiles,
+          path: fieldPath.slice(1).join("/"),
+        });
+
+        current[lastKey] = storedFile.filePath;
+      }
+    }
+
+    // सर्विस को अपडेटेड formData/कमेंट्स के साथ कॉल करें
+    const dto: ResubmitDto = {
+      formData: parsed.formData,
+      comment: (parsed as any).comment,
+      sectionComments: (parsed as any).sectionComments,
+    };
+
     return this.submissionService.resubmit(
       id,
-      resubmitDto,
+      dto,
       req.user.id,
       req.user.role,
       req.user.stateUt
