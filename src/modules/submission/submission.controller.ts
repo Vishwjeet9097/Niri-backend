@@ -83,85 +83,86 @@ export class SubmissionController {
     return response;
   }
 
-  // Main submission endpoint - handles JSON with optional file references
-  @Post()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.NODAL_OFFICER)
-  @UseGuards(IndicatorAccessMiddleware)
-  async create(@Body() body: CreateSubmissionDto, @Request() req) {
-    if (!body.submissionId || !body.formData) {
-      throw new BadRequestException(
-        "Missing required fields: submissionId and formData."
-      );
-    }
-
-    // Clean up empty file objects in the formData
-    this.cleanEmptyFileObjects(body.formData);
-
-    // ✅ Create submission in DB
-    return this.submissionService.create(
-      body,
-      req.user.id,
-      req.user.role,
-      req.user.stateUt
-    );
+ @Post()
+@UseGuards(RolesGuard, IndicatorAccessMiddleware)
+@Roles(UserRole.NODAL_OFFICER)
+@UseInterceptors(AnyFilesInterceptor())
+async create(
+  @UploadedFiles() files: Express.Multer.File[],
+  @Body("submission") submission: string,
+  @Request() req
+) {
+  if (!submission) {
+    throw new BadRequestException("Missing submission JSON in form-data.");
   }
 
-  // File uploads with submission endpoint
-  @Post("upload")
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.NODAL_OFFICER)
-  @UseGuards(IndicatorAccessMiddleware)
-  @UseInterceptors(AnyFilesInterceptor())
-  async createWithFiles(
-    @Body("submission") submission: string,
-    @UploadedFiles() files: Express.Multer.File[],
-    @Request() req
-  ) {
-    if (!submission) {
-      throw new BadRequestException("Missing submission JSON in form-data.");
-    }
+  // Parse JSON
+  let parsedSubmission: CreateSubmissionDto;
+  try {
+    parsedSubmission = JSON.parse(submission);
+  } catch {
+    throw new BadRequestException("Invalid submission JSON format.");
+  }
+// make sure formData and attachedFiles exist so pushes won't crash
+parsedSubmission.formData = parsedSubmission.formData || {};
+parsedSubmission.attachedFiles = parsedSubmission.attachedFiles || [];
 
-    // Parse submission JSON
-    let parsedSubmission: CreateSubmissionDto;
-    try {
-      parsedSubmission = JSON.parse(submission);
-    } catch (error) {
-      throw new BadRequestException("Invalid submission JSON format.");
-    }
+// Map files to nested fields
+if (files?.length) {
+  for (const file of files) {
+    const fieldPath = file.fieldname
+      .replace(/\[(\d+)\]/g, '.$1') // handle arrays
+      .split('.');
 
-    // ✅ Map uploaded files to nested fields (files are OPTIONAL)
-    if (files?.length) {
-      for (const file of files) {
-        const fieldPath = file.fieldname.split("."); // e.g. ["infraEnablers", "section4_2", "file"]
-        let current = parsedSubmission.formData;
-
-        for (let i = 0; i < fieldPath.length - 1; i++) {
-          const key = fieldPath[i];
-          if (!current[key]) current[key] = {};
-          current = current[key];
-        }
-
-        const lastKey = fieldPath[fieldPath.length - 1];
-
-        // Upload file using your existing storage service (S3/local)
-        const storedFile = await this.submissionService.uploadFile(file, {
-          submissionId: parsedSubmission.submissionId,
-          path: fieldPath.slice(1).join("/"),
-        });
-
-        current[lastKey] = storedFile.fileUrl; // ✅ replace with actual S3 URL
+    let current = parsedSubmission.formData;
+    for (let i = 0; i < fieldPath.length - 1; i++) {
+      const key = fieldPath[i];
+      if (!current[key]) {
+        const nextKey = fieldPath[i + 1];
+        current[key] = /^\d+$/.test(nextKey) ? [] : {};
       }
+      current = current[key];
     }
 
-    // ✅ Create submission in DB
-    return this.submissionService.create(
-      parsedSubmission,
-      req.user.id,
-      req.user.role,
-      req.user.stateUt
-    );
+    const lastKey = fieldPath[fieldPath.length - 1];
+
+    const storedFile = await this.submissionService.uploadFile(file, {
+      submissionId: parsedSubmission.submissionId,
+      path: fieldPath.slice(1).join("/"),
+    });
+
+    // store path into form JSON
+    current[lastKey] = storedFile.filePath;
+
+    // normalise uploadedAt to ISO-string and ensure fileUrl exists
+    const uploadedAtStr =
+      storedFile.uploadedAt instanceof Date
+        ? storedFile.uploadedAt.toISOString()
+        : String(storedFile.uploadedAt || new Date().toISOString());
+
+    parsedSubmission.attachedFiles.push({
+      fileName: storedFile.fileName || file.originalname || '',
+      originalName: storedFile.originalName || file.originalname || '',
+      filePath: storedFile.filePath || '',
+      fileUrl: storedFile.fileUrl ?? '', // include property so service/entity isn't missing it
+      fileSize: storedFile.fileSize ?? file.size ?? 0,
+      mimeType: storedFile.mimeType || file.mimetype || '',
+      uploadedAt: uploadedAtStr,
+    });
   }
+}
+
+
+  // Save in DB
+  return this.submissionService.create(
+    parsedSubmission,
+    req.user.id,
+    req.user.role,
+    req.user.stateUt
+  );
+}
+
+
 
   @Get()
   @UseGuards(RolesGuard)

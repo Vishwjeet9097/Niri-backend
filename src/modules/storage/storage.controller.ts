@@ -31,7 +31,7 @@ export class StorageController {
     @UploadedFile() file: Express.Multer.File,
     @Request() req,
   ) {
-    // Verify that the user can upload files for this submission
+    
     if (req.user.role !== UserRole.NODAL_OFFICER) {
       throw new BadRequestException('Only Nodal Officers can upload files');
     }
@@ -40,20 +40,24 @@ export class StorageController {
 
     return {
       message: 'File uploaded successfully',
-      data: result,
+      data: {
+        filePath: result.filePath, // ✅ Only return filePath (not signed URL)
+        fileName: result.fileName,
+        mimeType: result.mimeType,
+        size: result.fileSize,
+      },
     };
   }
 
   @Post('upload-multiple/:submissionId')
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
-  @UseInterceptors(FilesInterceptor('files', 10)) // Maximum 10 files
+  @UseInterceptors(FilesInterceptor('files', 10))
   async uploadMultipleFiles(
     @Param('submissionId') submissionId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Request() req,
   ) {
-    // Verify that the user can upload files for this submission
     if (req.user.role !== UserRole.NODAL_OFFICER) {
       throw new BadRequestException('Only Nodal Officers can upload files');
     }
@@ -62,8 +66,13 @@ export class StorageController {
 
     return {
       message: 'Files uploaded successfully',
-      data: results,
       count: results.length,
+      data: results.map((r) => ({
+        filePath: r.filePath,
+        fileName: r.fileName,
+        mimeType: r.mimeType,
+        size: r.fileSize,
+      })),
     };
   }
 
@@ -76,12 +85,12 @@ export class StorageController {
     UserRole.MOSPI_APPROVER,
   )
   async deleteFile(@Param('filePath') filePath: string) {
-    const result = await this.storageService.deleteFile(filePath);
+    const decodedPath = decodeURIComponent(filePath); // ✅ handle encoded slashes
+    const result = await this.storageService.deleteFile(decodedPath);
 
     return {
       message: result ? 'File deleted successfully' : 'File deletion failed',
       success: result,
-      details: result ? 'File removed from storage' : 'Failed to remove file',
     };
   }
 
@@ -94,12 +103,13 @@ export class StorageController {
     UserRole.MOSPI_APPROVER,
   )
   async getFileUrl(@Param('filePath') filePath: string) {
-    const url = await this.storageService.getFileUrl(filePath);
+    const decodedPath = decodeURIComponent(filePath); // ✅ decode S3 path
+    const url = await this.storageService.getFileUrl(decodedPath);
 
     return {
-      filePath,
-      url,
-      expiresIn: this.storageService.getStorageType() === 's3' ? '1 hour' : 'permanent',
+      filePath: decodedPath,
+      signedUrl: url,
+      expiresIn: '1 hour',
     };
   }
 
@@ -107,9 +117,10 @@ export class StorageController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER)
   async getStorageInfo() {
+    const type = this.storageService.getStorageType();
     return {
-      storageType: this.storageService.getStorageType(),
-      message: `Files are stored using ${this.storageService.getStorageType()} strategy`,
+      storageType: type,
+      message: `Files are stored using ${type.toUpperCase()} strategy.`,
     };
   }
 }
