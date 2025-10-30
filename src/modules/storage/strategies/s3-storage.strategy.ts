@@ -49,55 +49,56 @@ export class S3StorageStrategy implements IStorageStrategy {
   }
 
   async uploadFile(file: UploadedFile | Express.Multer.File, subFolder?: string): Promise<StoredFile> {
-    const key = this.makeKey(file as any, subFolder);
-    let body: any;
-    let contentLength: number | undefined;
+  const key = this.makeKey(file as any, subFolder);
+  let body: any;
+  let contentLength: number | undefined;
 
-    // supports multer memoryStorage (buffer) or diskStorage (path)
-    if ((file as any).buffer && Buffer.isBuffer((file as any).buffer)) {
-      body = (file as any).buffer;
-      contentLength = (file as any).buffer.length;
-    } else if ((file as any).path) {
-      // multer stored to disk; stream file
-      body = createReadStream((file as any).path);
-      try {
-        const st = statSync((file as any).path);
-        contentLength = st.size;
-      } catch (e) {
-        // ignore if cannot stat
-      }
-    } else {
-      // fallback: try to use originalname as content
-      body = Buffer.from('');
-      contentLength = 0;
+  // supports multer memoryStorage (buffer) or diskStorage (path)
+  if ((file as any).buffer && Buffer.isBuffer((file as any).buffer)) {
+    body = (file as any).buffer;
+    contentLength = (file as any).buffer.length;
+  } else if ((file as any).path) {
+    body = createReadStream((file as any).path);
+    try {
+      const st = statSync((file as any).path);
+      contentLength = st.size;
+    } catch (e) {
+      // ignore if cannot stat
     }
-
-    const contentType = (file as any).mimetype || 'application/octet-stream';
-
-    const cmd = new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      Body: body,
-      ContentType: contentType,
-    });
-
-    await this.s3.send(cmd);
-
-    const fileUrl = await this.getSignedUrl(key);
-
-    const stored: StoredFile = {
-      fileName: basename(key),
-      originalName: (file as any).originalname || basename(key),
-      filePath: key,
-      fileUrl,
-      fileSize: contentLength || ((file as any).size || 0),
-      mimeType: contentType,
-      uploadedAt: new Date(),
-    };
-
-    this.logger.log(`Uploaded file to s3://${this.bucket}/${key}`);
-    return stored;
+  } else {
+    body = Buffer.from('');
+    contentLength = 0;
   }
+
+  const contentType = (file as any).mimetype || 'application/octet-stream';
+
+  const cmd = new PutObjectCommand({
+    Bucket: this.bucket,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  });
+
+  await this.s3.send(cmd);
+
+  // ❌ REMOVE signed URL generation
+  // const fileUrl = await this.getSignedUrl(key);
+
+  // ✅ Only return key (filePath)
+  const stored: StoredFile = {
+    fileName: basename(key),
+    originalName: (file as any).originalname || basename(key),
+    filePath: key, // only path to S3 object
+    fileUrl: '', // optional or remove this field from DB schema
+    fileSize: contentLength || ((file as any).size || 0),
+    mimeType: contentType,
+    uploadedAt: new Date(),
+  };
+
+  this.logger.log(`Uploaded file to s3://${this.bucket}/${key}`);
+  return stored;
+}
+
 
   async deleteFile(filePath: string): Promise<boolean> {
     try {
