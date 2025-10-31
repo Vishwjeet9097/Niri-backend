@@ -5,7 +5,6 @@
 - [Overview](#overview)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
-- [Knowledge Transfer Documentation](#knowledge-transfer-documentation)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
@@ -87,20 +86,6 @@ National Infrastructure Readiness Index (NIRI) Backend API एक comprehensive 
 - **Testing**: Jest + Supertest
 - **Containerization**: Docker
 - **Audit**: nestjs-cls
-
-## 📚 Knowledge Transfer Documentation
-
-Complete Knowledge Transfer (KT) documentation is available in the [`docs/knowledge-transfer/`](./docs/knowledge-transfer/) folder.
-
-### Available Documents:
-
-1. **[KNOWLEDGE_TRANSFER_DOCUMENT.md](./docs/knowledge-transfer/KNOWLEDGE_TRANSFER_DOCUMENT.md)** - Main comprehensive documentation (33 KB)
-2. **[KT_QUICK_REFERENCE.md](./docs/knowledge-transfer/KT_QUICK_REFERENCE.md)** - Quick reference guide (3.6 KB)
-3. **[KT_ARCHITECTURE_FLOW.md](./docs/knowledge-transfer/KT_ARCHITECTURE_FLOW.md)** - Architecture diagrams and flows (20 KB)
-4. **[KT_SUMMARY.md](./docs/knowledge-transfer/KT_SUMMARY.md)** - Overview and learning guide (6.9 KB)
-5. **[README.md](./docs/knowledge-transfer/README.md)** - Documentation index and reading guide
-
-**📖 For detailed setup, architecture, API documentation, and troubleshooting, please refer to the [Knowledge Transfer Documentation](./docs/knowledge-transfer/README.md).**
 
 ## 📋 Prerequisites
 

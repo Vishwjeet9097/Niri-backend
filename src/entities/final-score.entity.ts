@@ -7,46 +7,46 @@ import {
   OneToOne,
   JoinColumn,
   Index,
-} from "typeorm";
-import { Submission } from "./submission.entity";
+} from 'typeorm';
+import { Submission } from './submission.entity';
 
-@Entity("final_scores")
-@Index(["stateUt"])
-@Index(["totalScore"])
-@Index(["createdAt"])
+@Entity('final_scores')
+@Index(['stateUt'])
+@Index(['totalScore'])
+@Index(['createdAt'])
 export class FinalScore {
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ name: 'submission_id' })
   submissionId: string;
 
   @OneToOne(() => Submission)
-  @JoinColumn({ name: "submissionId" })
+  @JoinColumn({ name: 'submission_id' })
   submission: Submission;
 
-  @Column()
+  @Column({ name: 'state_ut' })
   stateUt: string;
 
-  @Column({ type: "decimal", precision: 10, scale: 2 })
+  @Column({ name: 'total_score', type: 'decimal', precision: 10, scale: 2 })
   totalScore: number;
 
-  @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
+  @Column({ name: 'percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
   percentage: number;
 
-  @Column({ type: "jsonb" })
+  @Column({ name: 'score_breakdown', type: 'jsonb' })
   scoreBreakdown: Record<string, any>;
 
-  @Column({ type: "text" })
+  @Column({ name: 'calculation_methodology', type: 'text' })
   calculationMethodology: string;
 
-  @Column()
+  @Column({ name: 'approved_by' })
   approvedBy: string;
 
-  @Column({ type: "jsonb", nullable: true })
+  @Column({ name: 'category_scores', type: 'jsonb', nullable: true })
   categoryScores: Record<string, any>;
 
-  @Column({ type: "varchar", default: "2.0" })
+  @Column({ name: 'scoring_version', type: 'varchar', default: '2.0' })
   scoringVersion: string;
 
   @CreateDateColumn()

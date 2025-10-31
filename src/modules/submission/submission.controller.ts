@@ -170,8 +170,7 @@ if (files?.length) {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER,
-    UserRole.ADMIN
+    UserRole.MOSPI_APPROVER
   )
   async findAll(@Query() queryDto: any, @Request() req) {
     // Manual validation for status parameter
@@ -603,32 +602,5 @@ if (files?.length) {
       req.user.role,
       req.user.stateUt
     );
-  }
-
-  // Helper method to clean empty file objects from formData
-  private cleanEmptyFileObjects(obj: any): void {
-    if (!obj || typeof obj !== "object") return;
-
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        if (obj[key] && typeof obj[key] === "object") {
-          // Check if it's an empty file object (has only 'file' property with empty object)
-          if (obj[key].file && typeof obj[key].file === "object") {
-            if (Object.keys(obj[key].file).length === 0) {
-              // Remove the file property if it's empty
-              delete obj[key].file;
-            }
-          }
-
-          if (Array.isArray(obj[key])) {
-            // If it's an array, clean each item
-            obj[key].forEach((item: any) => this.cleanEmptyFileObjects(item));
-          } else {
-            // Recursively clean nested objects
-            this.cleanEmptyFileObjects(obj[key]);
-          }
-        }
-      }
-    }
   }
 }
