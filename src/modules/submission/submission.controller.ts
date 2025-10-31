@@ -603,4 +603,8 @@ if (files?.length) {
       req.user.stateUt
     );
   }
+
+   // Helper method to clean empty file objects from formData
+  private cleanEmptyFileObjects(obj: any): void {
+  }
 }
