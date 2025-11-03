@@ -116,6 +116,7 @@ export class S3StorageStrategy implements IStorageStrategy {
     const key = filePath;
     const cmd = new GetObjectCommand({ Bucket: this.bucket, Key: key });
     const url = await getSignedUrl(this.s3, cmd, { expiresIn: this.defaultExpirySec });
+    this.logger.log('s3StorageStrategy.getSignedUrl returning', url);
     return url;
   }
 
