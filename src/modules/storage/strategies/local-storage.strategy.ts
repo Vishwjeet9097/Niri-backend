@@ -11,7 +11,7 @@ export class LocalStorageStrategy implements IStorageStrategy {
   private basePath: string;
 
   constructor() {
-    this.basePath = process.env.STORAGE_PATH_LOCAL || './uploads';
+    this.basePath = process.env.STORAGE_PATH_LOCAL;
     // ensure base dir exists
     ensureDirSync(this.basePath);
   }
@@ -56,7 +56,7 @@ export class LocalStorageStrategy implements IStorageStrategy {
       originalName: (file as any).originalname || basename(dest),
       filePath: relativePath,
       // fileUrl: return path that client can use to download — keep as relative /uploads/...
-      fileUrl: `/uploads/${relativePath}`,
+      fileUrl: `${relativePath}`,
       fileSize: stats.size,
       mimeType: (file as any).mimetype || 'application/octet-stream',
       uploadedAt: new Date(),
@@ -81,7 +81,8 @@ export class LocalStorageStrategy implements IStorageStrategy {
   async getSignedUrl(filePath: string): Promise<string> {
     // For local storage return static route URL; make sure your app serves `this.basePath` at /uploads
     // If not served, return absolute path on disk
-    const utf = `/uploads/${filePath}`;
+    const utf = `${filePath}`;
+    this.logger.log('LocalStorageStrategy.getSignedUrl returning', utf);
     return utf;
   }
 
