@@ -371,9 +371,9 @@ export class SubmissionService {
         ) {
           const fileObj = isDataUrl(node.file)
             ? fileFromDataUrl(
-                node.file,
-                node.originalName || `file_${Date.now()}`
-              )
+              node.file,
+              node.originalName || `file_${Date.now()}`
+            )
             : node.file;
 
           const uploaded = await self.storageService.uploadFile(
@@ -553,7 +553,7 @@ export class SubmissionService {
       );
       this.logger.debug(
         "Example attachedFiles[0]: " +
-          JSON.stringify(newAttachedFiles[0] || {}, null, 2)
+        JSON.stringify(newAttachedFiles[0] || {}, null, 2)
       );
       let savedSubmission;
       try {
@@ -2325,4 +2325,135 @@ export class SubmissionService {
       throw error;
     }
   }
+
+
+  // ...existing code...
+  /**
+   * Update only specific keys inside submission.formData[category][section]
+   * fields: array where each item can be either
+   *  - { field: "keyName", value: any }
+   *  - { keyName: any }   (single-key object)
+   */
+ 
+  async updateFormSectionFields(
+    submissionId: string,
+    category: string,
+    section: string,
+    fields: any[],
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    this.logger.log(
+      `Updating form section for submissionId=${submissionId} category=${category} section=${section} by user ${userId}`
+    );
+
+    if (!submissionId || !category || !section || !Array.isArray(fields)) {
+      throw new BadRequestException(
+        "submissionId, category, section and fields[] are required"
+      );
+    }
+
+    // Use submissionRepository and submissionId (external ID) for all lookups/updates
+    const submission = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!submission) {
+      throw new NotFoundException(`Submission not found for submissionId: ${submissionId}`);
+    }
+
+    // Access checks (performed using repository result)
+    // Nodal officer must belong to same state and must be owner
+    if (userRole === UserRole.NODAL_OFFICER) {
+      if (submission.stateUt !== userStateUt) {
+        throw new ForbiddenException("Access denied: submission not in your state");
+      }
+      if (submission.submittedBy !== userId) {
+        throw new ForbiddenException("Nodal Officers can update only their own submissions");
+      }
+    }
+
+    // State approver must belong to same state
+    if (userRole === UserRole.STATE_APPROVER && submission.stateUt !== userStateUt) {
+      throw new ForbiddenException("Access denied: submission not in your state");
+    }
+
+    // Restrict edits once MOSPI processing or final approval/rejection has progressed
+    const immutableStatuses = [
+      SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+      SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+      SubmissionStatus.APPROVED,
+      SubmissionStatus.REJECTED_FINAL,
+    ];
+    if (immutableStatuses.includes(submission.status)) {
+      throw new BadRequestException(
+        `Cannot modify submission in status ${submission.status}`
+      );
+    }
+
+    // Work on a shallow copy of formData to avoid mutating the entity before update
+    const newFormData: any = submission.formData ? JSON.parse(JSON.stringify(submission.formData)) : {};
+
+    // Ensure category and section exist
+    if (!newFormData[category] || typeof newFormData[category] !== "object") {
+      newFormData[category] = {};
+    }
+    if (!newFormData[category][section] || typeof newFormData[category][section] !== "object") {
+      newFormData[category][section] = {};
+    }
+
+    const targetSection = newFormData[category][section];
+
+    // Apply each provided field update (only update explicit keys)
+    for (const item of fields) {
+      if (item && typeof item === "object") {
+        // two supported shapes:
+        // { field: "key", value: v }
+        if ("field" in item && "value" in item) {
+          const key = String(item.field);
+          targetSection[key] = item.value;
+          continue;
+        }
+
+        // or single-key object { key: value }
+        const keys = Object.keys(item);
+        if (keys.length === 1) {
+          const key = keys[0];
+          targetSection[key] = item[key];
+          continue;
+        }
+      }
+
+      // unsupported shape
+      throw new BadRequestException(
+        "Each field must be either { field, value } or a single-key object { key: value }"
+      );
+    }
+
+    // Persist update using repository (by internal id)
+    await this.submissionRepository.update(submission.id, {
+      formData: newFormData,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(
+      `Updated formData category=${category} section=${section} for submissionId=${submissionId}`
+    );
+
+    // Return fresh submission loaded via repository (using submissionId)
+    const refreshed = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!refreshed) {
+      // unlikely, but handle defensively
+      throw new NotFoundException(`Submission not found after update: ${submissionId}`);
+    }
+
+    return refreshed;
+  }
+
 }

@@ -609,4 +609,81 @@ export class SubmissionController {
 
   // Helper method to clean empty file objects from formData
   private cleanEmptyFileObjects(obj: any): void {}
+
+
+  //🧑‍💻🧑‍💻New API for completing the workflow
+  // ...existing code...
+  @Post("update-indicator")
+  // @UseGuards(RolesGuard)
+  // @Roles(UserRole.STATE_APPROVER)
+  @HttpCode(HttpStatus.OK)
+  async updateFormSection(
+    @Body() body: {
+      submissionId?: string;
+      category?: string;
+      section?: string;
+      fields?: any[];
+    },
+    @Request() req
+  ) {
+    const { submissionId, category, section, fields } = body;
+
+    if (!submissionId || !category || !section || !Array.isArray(fields)) {
+      throw new BadRequestException(
+        "Missing required fields: submission_id, category, section, fields[]"
+      );
+    }
+
+    // Delegate to service
+    return this.submissionService.updateFormSectionFields(
+      submissionId,
+      category,
+      section,
+      fields,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
+  }
+// ...existing code...
+
+
+@Post("indicator-submission-status")
+@UseGuards(RolesGuard)
+@Roles(UserRole.STATE_APPROVER)
+@HttpCode(HttpStatus.OK)
+async indicatorSubmissionAccepted(
+  @Body() body: {
+    submissionId?: string;
+    category?: string;
+    section?: string;
+    status: boolean;
+  },
+  @Request() req
+) {
+  const { submissionId, category, section, status } = body;
+
+  if (!submissionId || !category || !section || typeof status !== 'boolean') {
+    throw new BadRequestException(
+      "Missing required fields: submissionId, category, section, accepted"
+    );
+  }
+
+  // Create fields array with status
+  const fields = [
+    { status: status ? 'ACCEPTED' : 'REVERTED' }
+  ];
+
+  // Reuse existing service method
+  return this.submissionService.updateFormSectionFields(
+    submissionId,
+    category, 
+    section,
+    fields,
+    req.user.id,
+    req.user.role,
+    req.user.stateUt
+  );
+}
+
 }
