@@ -215,6 +215,74 @@ export class IndicatorService {
     return userIndicatorScopes.map((scope) => scope.user);
   }
 
+ async getAvailableIndicatorsForApprover(
+  stateUt: string,
+  approverUserId?: string
+) {
+  // 0️⃣ If no stateUt passed, infer it from the approver
+  const usersInState = await this.userRepository.find({
+  where: { stateUt },
+  select: ["id", "email", "stateUt"],
+});
+console.log("👥 Users in this state:", usersInState);
+
+const scopes = await this.userIndicatorScopeRepository.find({
+  where: { userId: In(usersInState.map((u) => u.id)) },
+});
+console.log("📊 Indicators assigned in this state:", scopes.length);
+  if ((!stateUt || !stateUt.trim()) && approverUserId) {
+    const approver = await this.userRepository.findOne({
+      where: { id: approverUserId },
+    });
+    stateUt = approver?.stateUt?.trim() || "";
+  }
+
+  if (!stateUt) {
+    console.warn(
+      "⚠️ getAvailableIndicatorsForApprover called without valid stateUt"
+    );
+    return [];
+  }
+
+  // 1️⃣ Get all active indicators
+  const allIndicators = await this.indicatorRepository.find({
+    where: { isActive: true },
+    order: { code: "ASC" },
+  });
+
+  // 2️⃣ Find indicatorIds assigned to OTHER users in the same state
+  const scopesInState = await this.userIndicatorScopeRepository
+    .createQueryBuilder("scope")
+    .innerJoin("scope.user", "user")
+    .where("user.stateUt = :stateUt", { stateUt })
+    .andWhere("user.id != :approverUserId", { approverUserId })
+    .select(["scope.indicatorId"])
+    .getMany();
+
+  // 3️⃣ Convert to a Set for filtering
+  const assignedToOthers = new Set(
+    scopesInState.map((s) => s.indicatorId.toString())
+  );
+
+  // 4️⃣ Keep indicators NOT already assigned
+  const available = allIndicators.filter(
+    (ind) => !assignedToOthers.has(ind.id.toString())
+  );
+
+  console.log(
+    `🟢 Found ${available.length} available indicators for state=${stateUt}`
+  );
+
+  return available.map((ind) => ({
+    id: ind.id,
+    code: ind.code,
+    name: ind.name,
+    category: ind.category,
+    isActive: ind.isActive,
+  }));
+}
+
+
   async getIndicatorStatistics(): Promise<any> {
     const totalIndicators = await this.indicatorRepository.count();
     const activeIndicators = await this.indicatorRepository.count({

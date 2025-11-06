@@ -20,6 +20,21 @@ import { UserRole } from "../../entities/user.entity";
 export class IndicatorController {
   constructor(private readonly indicatorService: IndicatorService) {}
 
+  @Get("available-for-approver")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER)
+  async getAvailableForApprover(
+    @Request() req,
+    @Query("stateUt") stateUt?: string
+  ) {
+    const user: any = (req as any).user || {};
+    const targetState = stateUt || user.stateUt;
+    return this.indicatorService.getAvailableIndicatorsForApprover(
+      targetState,
+      user.sub || user.id
+    );
+  }
+
   @Get()
   @UseGuards(RolesGuard)
   @Roles(
