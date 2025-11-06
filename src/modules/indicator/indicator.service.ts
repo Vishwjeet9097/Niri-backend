@@ -132,6 +132,28 @@ export class IndicatorService {
       throw new Error(`Indicators not found: ${missingCodes.join(", ")}`);
     }
 
+    // NEW: Find existing assignments for these indicators assigned to OTHER users
+    const indicatorIds = indicators.map((ind) => ind.id);
+    const existingScopes = await this.userIndicatorScopeRepository.find({
+      where: { indicatorId: In(indicatorIds) },
+      relations: ["user"],
+    });
+
+    // find conflicts: assigned to users other than `userId`
+    const conflicts = existingScopes.filter((s) => s.userId !== userId);
+
+    if (conflicts.length > 0) {
+      // Map to codes for human message
+      const conflictIndicatorIds = conflicts.map((c) => c.indicatorId);
+      const conflictIndicators = indicators.filter((i) =>
+        conflictIndicatorIds.includes(i.id)
+      );
+      const conflictCodes = conflictIndicators.map((i) => i.code);
+      throw new Error(
+        `Indicator(s) already assigned: ${conflictCodes.join(", ")}`
+      );
+    }
+
     // Remove existing assignments for this user
     await this.userIndicatorScopeRepository.delete({ userId });
 
