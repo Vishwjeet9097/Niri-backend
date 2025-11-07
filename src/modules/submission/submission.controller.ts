@@ -276,6 +276,28 @@ export class SubmissionController {
     return submission;
   }
 
+  @Get("user/:userId")
+@UseGuards(RolesGuard)
+@Roles(
+  UserRole.NODAL_OFFICER,
+  UserRole.STATE_APPROVER,
+  UserRole.MOSPI_REVIEWER,
+  UserRole.MOSPI_APPROVER,
+  UserRole.ADMIN
+)
+async findByUser(@Param("userId") userId: string, @Request() req) {
+  const submission = await this.submissionService.findByUser(
+    userId,
+    req.user.role,
+    req.user.stateUt
+  );
+
+  if (!submission) {
+    return { message: "No submission found for this user", data: null };
+  }
+
+  return { message: "Submission found", data: submission };
+}
   @Put(":id")
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)

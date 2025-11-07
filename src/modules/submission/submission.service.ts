@@ -785,6 +785,13 @@ export class SubmissionService {
       throw error;
     }
   }
+async findByUser(userId: string, role: UserRole, stateUt: string) {
+  return this.submissionRepository.findOne({
+    where: { user: { id: userId } },
+    relations: ["user"],
+    order: { createdAt: "DESC" },
+  });
+}
 
   async update(
     id: string,
