@@ -371,9 +371,9 @@ export class SubmissionService {
         ) {
           const fileObj = isDataUrl(node.file)
             ? fileFromDataUrl(
-              node.file,
-              node.originalName || `file_${Date.now()}`
-            )
+                node.file,
+                node.originalName || `file_${Date.now()}`
+              )
             : node.file;
 
           const uploaded = await self.storageService.uploadFile(
@@ -464,12 +464,14 @@ export class SubmissionService {
         this.logger.error("Failed to stringify DTO: " + e.message);
       }
       // Step 1: Validate user role
-      if (userRole !== UserRole.NODAL_OFFICER) {
+      const allowedRoles = [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER];
+
+      if (!allowedRoles.includes(userRole)) {
         this.logger.error(
-          `Invalid user role: ${userRole}. Expected: NODAL_OFFICER`
+          `Invalid user role: ${userRole}. Expected one of: ${allowedRoles.join(", ")}`
         );
         throw new ForbiddenException(
-          "Only Nodal Officers can create submissions"
+          "Only Nodal Officers or State Approvers can create submissions"
         );
       }
 
@@ -553,7 +555,7 @@ export class SubmissionService {
       );
       this.logger.debug(
         "Example attachedFiles[0]: " +
-        JSON.stringify(newAttachedFiles[0] || {}, null, 2)
+          JSON.stringify(newAttachedFiles[0] || {}, null, 2)
       );
       let savedSubmission;
       try {
@@ -785,13 +787,13 @@ export class SubmissionService {
       throw error;
     }
   }
-async findByUser(userId: string, role: UserRole, stateUt: string) {
-  return this.submissionRepository.findOne({
-    where: { user: { id: userId } },
-    relations: ["user"],
-    order: { createdAt: "DESC" },
-  });
-}
+  async findByUser(userId: string, role: UserRole, stateUt: string) {
+    return this.submissionRepository.findOne({
+      where: { user: { id: userId } },
+      relations: ["user"],
+      order: { createdAt: "DESC" },
+    });
+  }
 
   async update(
     id: string,
@@ -2333,7 +2335,6 @@ async findByUser(userId: string, role: UserRole, stateUt: string) {
     }
   }
 
-
   // ...existing code...
   /**
    * Update only specific keys inside submission.formData[category][section]
@@ -2341,7 +2342,7 @@ async findByUser(userId: string, role: UserRole, stateUt: string) {
    *  - { field: "keyName", value: any }
    *  - { keyName: any }   (single-key object)
    */
- 
+
   async updateFormSectionFields(
     submissionId: string,
     category: string,
@@ -2368,23 +2369,34 @@ async findByUser(userId: string, role: UserRole, stateUt: string) {
     });
 
     if (!submission) {
-      throw new NotFoundException(`Submission not found for submissionId: ${submissionId}`);
+      throw new NotFoundException(
+        `Submission not found for submissionId: ${submissionId}`
+      );
     }
 
     // Access checks (performed using repository result)
     // Nodal officer must belong to same state and must be owner
     if (userRole === UserRole.NODAL_OFFICER) {
       if (submission.stateUt !== userStateUt) {
-        throw new ForbiddenException("Access denied: submission not in your state");
+        throw new ForbiddenException(
+          "Access denied: submission not in your state"
+        );
       }
       if (submission.submittedBy !== userId) {
-        throw new ForbiddenException("Nodal Officers can update only their own submissions");
+        throw new ForbiddenException(
+          "Nodal Officers can update only their own submissions"
+        );
       }
     }
 
     // State approver must belong to same state
-    if (userRole === UserRole.STATE_APPROVER && submission.stateUt !== userStateUt) {
-      throw new ForbiddenException("Access denied: submission not in your state");
+    if (
+      userRole === UserRole.STATE_APPROVER &&
+      submission.stateUt !== userStateUt
+    ) {
+      throw new ForbiddenException(
+        "Access denied: submission not in your state"
+      );
     }
 
     // Restrict edits once MOSPI processing or final approval/rejection has progressed
@@ -2401,13 +2413,18 @@ async findByUser(userId: string, role: UserRole, stateUt: string) {
     }
 
     // Work on a shallow copy of formData to avoid mutating the entity before update
-    const newFormData: any = submission.formData ? JSON.parse(JSON.stringify(submission.formData)) : {};
+    const newFormData: any = submission.formData
+      ? JSON.parse(JSON.stringify(submission.formData))
+      : {};
 
     // Ensure category and section exist
     if (!newFormData[category] || typeof newFormData[category] !== "object") {
       newFormData[category] = {};
     }
-    if (!newFormData[category][section] || typeof newFormData[category][section] !== "object") {
+    if (
+      !newFormData[category][section] ||
+      typeof newFormData[category][section] !== "object"
+    ) {
       newFormData[category][section] = {};
     }
 
@@ -2457,10 +2474,11 @@ async findByUser(userId: string, role: UserRole, stateUt: string) {
 
     if (!refreshed) {
       // unlikely, but handle defensively
-      throw new NotFoundException(`Submission not found after update: ${submissionId}`);
+      throw new NotFoundException(
+        `Submission not found after update: ${submissionId}`
+      );
     }
 
     return refreshed;
   }
-
 }

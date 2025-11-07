@@ -85,7 +85,7 @@ export class SubmissionController {
 
   @Post()
   @UseGuards(RolesGuard, IndicatorAccessMiddleware)
-  @Roles(UserRole.NODAL_OFFICER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
   @UseInterceptors(AnyFilesInterceptor())
   async create(
     @UploadedFiles() files: Express.Multer.File[],
@@ -277,27 +277,27 @@ export class SubmissionController {
   }
 
   @Get("user/:userId")
-@UseGuards(RolesGuard)
-@Roles(
-  UserRole.NODAL_OFFICER,
-  UserRole.STATE_APPROVER,
-  UserRole.MOSPI_REVIEWER,
-  UserRole.MOSPI_APPROVER,
-  UserRole.ADMIN
-)
-async findByUser(@Param("userId") userId: string, @Request() req) {
-  const submission = await this.submissionService.findByUser(
-    userId,
-    req.user.role,
-    req.user.stateUt
-  );
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
+  )
+  async findByUser(@Param("userId") userId: string, @Request() req) {
+    const submission = await this.submissionService.findByUser(
+      userId,
+      req.user.role,
+      req.user.stateUt
+    );
 
-  if (!submission) {
-    return { message: "No submission found for this user", data: null };
+    if (!submission) {
+      return { message: "No submission found for this user", data: null };
+    }
+
+    return { message: "Submission found", data: submission };
   }
-
-  return { message: "Submission found", data: submission };
-}
   @Put(":id")
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
@@ -632,7 +632,6 @@ async findByUser(@Param("userId") userId: string, @Request() req) {
   // Helper method to clean empty file objects from formData
   private cleanEmptyFileObjects(obj: any): void {}
 
-
   //🧑‍💻🧑‍💻New API for completing the workflow
   // ...existing code...
   @Post("update-indicator")
@@ -640,7 +639,8 @@ async findByUser(@Param("userId") userId: string, @Request() req) {
   // @Roles(UserRole.STATE_APPROVER)
   @HttpCode(HttpStatus.OK)
   async updateFormSection(
-    @Body() body: {
+    @Body()
+    body: {
       submissionId?: string;
       category?: string;
       section?: string;
@@ -667,45 +667,42 @@ async findByUser(@Param("userId") userId: string, @Request() req) {
       req.user.stateUt
     );
   }
-// ...existing code...
+  // ...existing code...
 
+  @Post("indicator-submission-status")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER)
+  @HttpCode(HttpStatus.OK)
+  async indicatorSubmissionAccepted(
+    @Body()
+    body: {
+      submissionId?: string;
+      category?: string;
+      section?: string;
+      status: boolean;
+    },
+    @Request() req
+  ) {
+    const { submissionId, category, section, status } = body;
 
-@Post("indicator-submission-status")
-@UseGuards(RolesGuard)
-@Roles(UserRole.STATE_APPROVER)
-@HttpCode(HttpStatus.OK)
-async indicatorSubmissionAccepted(
-  @Body() body: {
-    submissionId?: string;
-    category?: string;
-    section?: string;
-    status: boolean;
-  },
-  @Request() req
-) {
-  const { submissionId, category, section, status } = body;
+    if (!submissionId || !category || !section || typeof status !== "boolean") {
+      throw new BadRequestException(
+        "Missing required fields: submissionId, category, section, accepted"
+      );
+    }
 
-  if (!submissionId || !category || !section || typeof status !== 'boolean') {
-    throw new BadRequestException(
-      "Missing required fields: submissionId, category, section, accepted"
+    // Create fields array with status
+    const fields = [{ status: status ? "ACCEPTED" : "REVERTED" }];
+
+    // Reuse existing service method
+    return this.submissionService.updateFormSectionFields(
+      submissionId,
+      category,
+      section,
+      fields,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
     );
   }
-
-  // Create fields array with status
-  const fields = [
-    { status: status ? 'ACCEPTED' : 'REVERTED' }
-  ];
-
-  // Reuse existing service method
-  return this.submissionService.updateFormSectionFields(
-    submissionId,
-    category, 
-    section,
-    fields,
-    req.user.id,
-    req.user.role,
-    req.user.stateUt
-  );
-}
-
 }
