@@ -3,7 +3,8 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
 import { Indicator } from "../../entities/indicator.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
-import { User } from "../../entities/user.entity";
+import { User, UserRole } from "../../entities/user.entity";
+import { Submission } from '../../entities/submission.entity';
 
 @Injectable()
 export class IndicatorService {
@@ -14,7 +15,74 @@ export class IndicatorService {
     private userIndicatorScopeRepository: Repository<UserIndicatorScope>,
     @InjectRepository(User)
     private userRepository: Repository<User>
+    ,@InjectRepository(Submission)
+    private submissionRepository: Repository<Submission>
   ) {}
+  /**
+   * Fetch indicator status from nested submission's formData
+   * @param submissionId string
+   * @param parentKey string
+   * @param sectionKey string
+   * @param field string
+   */
+  async getIndicatorStatusFromSubmission(
+    submissionId: string,
+    parentKey: string,
+    sectionKey: string,
+    field: string
+  ): Promise<any> {
+    const submission = await this.submissionRepository.findOne({ where: { submissionId } });
+    if (!submission) {
+      throw new Error('Submission not found');
+    }
+    const formData = submission.formData || {};
+    if (!formData[parentKey] || !formData[parentKey][sectionKey]) {
+      throw new Error('Parent key or section key not found in form data');
+    }
+    if (!(field in formData[parentKey][sectionKey])) {
+      throw new Error('Field not found in section data');
+    }
+    return {
+      parentKey,
+      sectionKey,
+      field,
+      value: formData[parentKey][sectionKey][field]
+    };
+  }
+
+  async getIndicatorsByStatus(submissionId: string, status: string): Promise<any> {
+    const submission = await this.submissionRepository.findOne({ where: { submissionId } });
+    if (!submission) {
+      throw new Error('Submission not found');
+    }
+    
+    const formData = submission.formData || {};
+    const result: any[] = [];
+    
+    const searchForStatus = (obj: any, path: string[] = []) => {
+      for (const key in obj) {
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          searchForStatus(obj[key], [...path, key]);
+        } else if (key === 'status' && obj[key] === status) {
+          const sectionData = {
+            path: path.join('.'),
+            parentKey: path[0],
+            sectionKey: path[1],
+            status: obj[key],
+            ...obj
+          };
+          result.push(sectionData);
+        }
+      }
+    };
+    
+    searchForStatus(formData);
+    
+    return {
+      submissionId,
+      indicators: result
+    };
+  }
 
   async findAll(): Promise<Indicator[]> {
     return this.indicatorRepository.find({
@@ -282,6 +350,86 @@ console.log("📊 Indicators assigned in this state:", scopes.length);
   }));
 }
 
+
+  /**
+   * Get indicator statuses from nodal officers' submissions in the state approver's state
+   * @param currentUserId string - The state approver's user ID
+   */
+  async getStateIndicatorStatuses(currentUserId: string): Promise<any> {
+    // 1. Get the state approver's details
+    const stateApprover = await this.userRepository.findOne({ 
+      where: { 
+        id: currentUserId,
+        role: UserRole.STATE_APPROVER 
+      } 
+    });
+
+    if (!stateApprover) {
+      throw new Error('User not found or not a state approver');
+    }
+
+    // 2. Find all nodal officers in the same state
+    const nodalOfficers = await this.userRepository.find({
+      where: {
+        stateUt: stateApprover.stateUt,
+        role: UserRole.NODAL_OFFICER
+      }
+    });
+
+    if (!nodalOfficers.length) {
+      return {
+        stateUt: stateApprover.stateUt,
+        submissions: []
+      };
+    }
+
+    // 3. Get submissions from these nodal officers
+    const submissions = await this.submissionRepository.find({
+      where: {
+        submittedBy: In(nodalOfficers.map(officer => officer.id))
+      },
+      relations: ['user']  // Include user details
+    });
+
+    // 4. Process each submission to extract indicator statuses
+    const processedSubmissions = submissions.map(submission => {
+      const formData = submission.formData || {};
+      const statuses: any[] = [];
+
+      const extractStatuses = (obj: any, path: string[] = []) => {
+        for (const key in obj) {
+          if (typeof obj[key] === 'object' && obj[key] !== null) {
+            extractStatuses(obj[key], [...path, key]);
+          } else if (key === 'status') {
+            statuses.push({
+              path: path.join('.'),
+              parentKey: path[0],
+              sectionKey: path[1],
+              status: obj[key],
+              ...obj
+            });
+          }
+        }
+      };
+
+      extractStatuses(formData);
+
+      return {
+        submissionId: submission.submissionId,
+        nodalOfficer: {
+          id: submission.user.id,
+          name: `${submission.user.firstName} ${submission.user.lastName}`,
+          email: submission.user.email
+        },
+        statuses
+      };
+    });
+
+    return {
+      stateUt: stateApprover.stateUt,
+      submissions: processedSubmissions
+    };
+  }
 
   async getIndicatorStatistics(): Promise<any> {
     const totalIndicators = await this.indicatorRepository.count();
