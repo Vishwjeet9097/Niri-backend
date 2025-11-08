@@ -2431,30 +2431,32 @@ export class SubmissionService {
     const targetSection = newFormData[category][section];
 
     // Apply each provided field update (only update explicit keys)
+  // ...existing code...
+    // Apply each provided field update (only update explicit keys)
     for (const item of fields) {
       if (item && typeof item === "object") {
-        // two supported shapes:
-        // { field: "key", value: v }
-        if ("field" in item && "value" in item) {
-          const key = String(item.field);
-          targetSection[key] = item.value;
-          continue;
-        }
-
-        // or single-key object { key: value }
+        // Accept multi-key objects: { key1: value1, key2: value2, ... }
         const keys = Object.keys(item);
-        if (keys.length === 1) {
-          const key = keys[0];
-          targetSection[key] = item[key];
+        if (keys.length >= 1) {
+          for (const key of keys) {
+            // If value is array and targetSection[key] is array, replace it
+            if (Array.isArray(item[key]) && Array.isArray(targetSection[key])) {
+              targetSection[key] = [...item[key]];
+            } else {
+              targetSection[key] = item[key];
+            }
+          }
           continue;
         }
       }
 
       // unsupported shape
       throw new BadRequestException(
-        "Each field must be either { field, value } or a single-key object { key: value }"
+        "Each field must be an object with one or more key-value pairs"
       );
     }
+// ...existing code...
+// ...existing code...
 
     // Persist update using repository (by internal id)
     await this.submissionRepository.update(submission.id, {
