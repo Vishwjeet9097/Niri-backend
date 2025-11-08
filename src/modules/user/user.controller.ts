@@ -248,11 +248,17 @@ export class UserController {
     @Body() updateUserDto: UpdateUserDto,
     @Request() req
   ) {
+      const effectiveStateUt = updateUserDto.stateUt?.length
+  ? updateUserDto.stateUt
+  : req.user.stateUt;
+
+ 
     return this.userService.update(
       id,
       updateUserDto,
       req.user.role,
-      req.user.stateUt
+      //req.user.stateUt
+     effectiveStateUt
     );
   }
 
