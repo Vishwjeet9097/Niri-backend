@@ -65,6 +65,93 @@ export class IndicatorController {
     };
   }
 
+  /**
+   * API to fetch indicator status from submission formData
+   * GET /indicators/status?submissionId=...&indicatorCode=...
+   */
+  @Get('status')
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async getIndicatorStatus(
+    @Query('submissionId') submissionId: string,
+    @Query('parentKey') parentKey: string,
+    @Query('sectionKey') sectionKey: string,
+    @Query('field') field: string
+  ) {
+    try {
+      const result = await this.indicatorService.getIndicatorStatusFromSubmission(submissionId, parentKey, sectionKey, field);
+      return {
+        status: true,
+        data: result,
+        message: 'Indicator status fetched successfully',
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: error.message || 'Error fetching indicator status',
+      };
+    }
+  }
+
+  /**
+   * API to fetch all indicators with a specific status from submission formData
+   * GET /indicators/by-status?submissionId=...&status=...
+   */
+  @Get('by-status')
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async getIndicatorsByStatus(
+    @Query('submissionId') submissionId: string,
+    @Query('status') status: string
+  ) {
+    try {
+      const result = await this.indicatorService.getIndicatorsByStatus(submissionId, status);
+      return {
+        status: true,
+        data: result,
+        message: 'Indicators fetched successfully',
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: error.message || 'Error fetching indicators',
+      };
+    }
+  }
+
+  /**
+   * API to fetch indicator statuses from all nodal officers in state approver's state
+   * GET /indicators/state-statuses
+   */
+  @Get('state-statuses')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER)
+  async getStateIndicatorStatuses(@Request() req) {
+    try {
+      const result = await this.indicatorService.getStateIndicatorStatuses(req.user.id);
+      return {
+        status: true,
+        data: result,
+        message: 'State indicator statuses fetched successfully',
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: error.message || 'Error fetching state indicator statuses',
+      };
+    }
+  }
+
   @Get(":id")
   @UseGuards(RolesGuard)
   @Roles(
@@ -100,6 +187,7 @@ export class IndicatorController {
   async findByCategory(@Param("category") category: string) {
     return this.indicatorService.findByCategory(category);
   }
+
 
   @Get("search")
   @UseGuards(RolesGuard)
