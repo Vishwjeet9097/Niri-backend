@@ -14,6 +14,20 @@ export interface DashboardSummary {
   submissionsByStatus: Record<SubmissionStatus, number>;
   submissionsByMonth: Array<{ month: string; count: number }>;
 }
+export interface DashboardCounts {
+  nodal: {
+    totalAssigned: number;
+    totalIndicatorsReceived: number;
+    acceptedFromNodal: number;
+    pendingSubmission: number;
+    returnedToNodal: number;
+  };
+  mospi: {
+    submittedToMoSPI: number;
+    returnedFromMoSPI: number;
+    approvedByMoSPI: number;
+  };
+}
 
 @Injectable()
 export class DashboardService {
@@ -253,4 +267,147 @@ export class DashboardService {
     };
     return statusColors[status] || "gray";
   }
+
+async getStateApproverDashboardCounts(
+  userRole: UserRole,
+  userStateUt: string
+): Promise<DashboardCounts> {
+  // ✅ 1. Total indicators assigned to Nodal Officers in this state
+  const totalAssigned = await this.submissionRepository.query(
+    `
+    SELECT COUNT(DISTINCT uis.indicator_id) AS count
+    FROM user_indicator_scope uis
+    JOIN users u ON uis.user_id = u.id
+    WHERE u.role = $1 
+      AND u.state_ut = $2
+    `,
+    [UserRole.NODAL_OFFICER, userStateUt]
+  );
+  const totalAssignedCount = parseInt(totalAssigned[0]?.count || "0");
+
+  // ✅ 2. Total indicators received
+  const totalIndicatorsReceivedQuery = await this.submissionRepository.query(
+    `
+    SELECT COUNT(DISTINCT uis.indicator_id) AS count
+    FROM user_indicator_scope uis
+    JOIN users u ON uis.user_id = u.id
+    WHERE u.role = $1 
+      AND u.state_ut = $2
+    `,
+    [UserRole.NODAL_OFFICER, userStateUt]
+  );
+  const totalIndicatorsReceived = parseInt(totalIndicatorsReceivedQuery[0]?.count || "0");
+
+  // ✅ 3. Count submission statuses (top-level)
+  const statusCounts = await this.submissionRepository
+    .createQueryBuilder("submission")
+    .select("submission.status", "status")
+    .addSelect("COUNT(*)", "count")
+    .where("submission.stateUt = :stateUt", { stateUt: userStateUt })
+    .groupBy("submission.status")
+    .getRawMany();
+
+  const byStatus = statusCounts.reduce(
+    (acc, item) => ({ ...acc, [item.status]: parseInt(item.count) }),
+    {} as Record<string, number>
+  );
+
+  // ✅ 4. Count Accepted indicators (from JSON)
+  let acceptedFromNodal = 0;
+  try {
+    const acceptedCountQuery = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM jsonb_array_elements_text(
+            jsonb_path_query_array(s.form_data, '$.**.status')
+          ) AS st(val)
+          WHERE st.val = 'ACCEPTED'
+        ) AS cnt
+        FROM submissions s
+        WHERE s."stateUt" = $1
+      ) t;
+      `,
+      [userStateUt]
+    );
+    acceptedFromNodal = parseInt(acceptedCountQuery[0]?.count || "0");
+  } catch {
+    const fallback = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(matches), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"ACCEPTED"', 'g')
+        ) AS matches
+        FROM submissions s
+        WHERE s."stateUt" = $1
+      ) t;
+      `,
+      [userStateUt]
+    );
+    acceptedFromNodal = parseInt(fallback[0]?.count || "0");
+  }
+
+  // ✅ 5. Count Reverted indicators (from JSON)
+  let returnedToNodal = 0;
+  try {
+    const revertedCountQuery = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM jsonb_array_elements_text(
+            jsonb_path_query_array(s.form_data, '$.**.status')
+          ) AS st(val)
+          WHERE st.val = 'REVERTED'
+        ) AS cnt
+        FROM submissions s
+        WHERE s."stateUt" = $1
+      ) t;
+      `,
+      [userStateUt]
+    );
+    returnedToNodal = parseInt(revertedCountQuery[0]?.count || "0");
+  } catch {
+    const fallback = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(matches), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"REVERTED"', 'g')
+        ) AS matches
+        FROM submissions s
+        WHERE s."stateUt" = $1
+      ) t;
+      `,
+      [userStateUt]
+    );
+    returnedToNodal = parseInt(fallback[0]?.count || "0");
+  }
+
+  // ✅ 6. Pending = Assigned but not yet submitted
+  const pendingSubmission = Math.max(totalAssignedCount - totalIndicatorsReceived, 0);
+
+  // ✅ 7. MoSPI metrics (same)
+  const submittedToMoSPI =
+    (byStatus[SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER] || 0) +
+    (byStatus[SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER] || 0);
+  const returnedFromMoSPI = byStatus[SubmissionStatus.RETURNED_FROM_MOSPI] || 0;
+  const approvedByMoSPI = byStatus[SubmissionStatus.APPROVED] || 0;
+
+  // ✅ 8. Return final structured response
+  return {
+    nodal: {
+      totalAssigned: totalAssignedCount,
+      totalIndicatorsReceived,
+      acceptedFromNodal,
+      pendingSubmission,
+      returnedToNodal,
+    },
+    mospi: {
+      submittedToMoSPI,
+      returnedFromMoSPI,
+      approvedByMoSPI,
+    },
+  };
+}
+
+
 }
