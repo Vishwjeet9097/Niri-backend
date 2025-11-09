@@ -24,16 +24,18 @@ export class StorageController {
 
   @Post('upload/:submissionId')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.NODAL_OFFICER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(
     @Param('submissionId') submissionId: string,
     @UploadedFile() file: Express.Multer.File,
     @Request() req,
   ) {
-    
-    if (req.user.role !== UserRole.NODAL_OFFICER) {
-      throw new BadRequestException('Only Nodal Officers can upload files');
+
+    if (req.user.role !== UserRole.NODAL_OFFICER &&
+       req.user.role !== UserRole.STATE_APPROVER) {
+        console.log("Entering the condition");
+      throw new BadRequestException('Only Nodal Officers and State Approvers can upload files');
     }
 
     const result = await this.storageService.uploadFile(file, submissionId);
