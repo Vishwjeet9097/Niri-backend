@@ -351,7 +351,7 @@ export class SubmissionService {
         };
 
         attachedFiles.push(meta);
-        return uploaded.filePath; // ✅ replace node with just file path
+        return meta; // ✅ replace node with just file path
       }
 
       if (Array.isArray(node)) {
@@ -362,7 +362,12 @@ export class SubmissionService {
 
       if (typeof node === "object") {
         // ⛔ Skip already-uploaded metadata
-        if (node.filePath) return node.filePath;
+        if (node.filePath && (typeof node.filePath === 'string') && !node.fileName) {
+  // old-style stored path string — keep as-is (backcompat)
+  return node.filePath;
+}
+// if node already looks like metadata (has filePath+fileName), return node itself:
+if (node.filePath && node.fileName) return node;
 
         // 🧾 Handle nested objects containing a file
         if (
@@ -553,10 +558,7 @@ export class SubmissionService {
       this.logger.debug(
         `Mapped attachedFiles count: ${newAttachedFiles.length}`
       );
-      this.logger.debug(
-        "Example attachedFiles[0]: " +
-          JSON.stringify(newAttachedFiles[0] || {}, null, 2)
-      );
+
       let savedSubmission;
       try {
         savedSubmission = await this.submissionRepository.save(submission);
