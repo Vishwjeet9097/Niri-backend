@@ -135,23 +135,36 @@ export class SubmissionController {
           path: fieldPath.slice(1).join("/"),
         });
 
-        // store path into form JSON
-        current[lastKey] = storedFile.filePath;
-
-        // normalise uploadedAt to ISO-string and ensure fileUrl exists
+        // Build normalized uploadedAt string
         const uploadedAtStr =
           storedFile.uploadedAt instanceof Date
             ? storedFile.uploadedAt.toISOString()
             : String(storedFile.uploadedAt || new Date().toISOString());
 
-        parsedSubmission.attachedFiles.push({
+        // Build full metadata object (store this in formData)
+        const fileMeta = {
+          id: (storedFile as any).id ?? null,
           fileName: storedFile.fileName || file.originalname || "",
           originalName: storedFile.originalName || file.originalname || "",
           filePath: storedFile.filePath || "",
-          fileUrl: storedFile.fileUrl ?? "", // include property so service/entity isn't missing it
+          fileUrl: storedFile.fileUrl ?? "",
           fileSize: storedFile.fileSize ?? file.size ?? 0,
           mimeType: storedFile.mimeType || file.mimetype || "",
           uploadedAt: uploadedAtStr,
+        };
+
+        // store full metadata into form JSON (not just the path)
+        current[lastKey] = fileMeta;
+
+        // also add to parsedSubmission.attachedFiles (keep your existing behavior)
+        parsedSubmission.attachedFiles.push({
+          fileName: fileMeta.fileName,
+          originalName: fileMeta.originalName,
+          filePath: fileMeta.filePath,
+          fileUrl: fileMeta.fileUrl,
+          fileSize: fileMeta.fileSize,
+          mimeType: fileMeta.mimeType,
+          uploadedAt: fileMeta.uploadedAt,
         });
       }
     }
