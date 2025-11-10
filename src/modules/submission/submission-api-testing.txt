@@ -53,7 +53,8 @@ submission JSON file example :
                 "percentage": 10,
                 "marksObtained": 5
             },
-            "section1_3": [
+            "section1_3": {
+              [
                 {
                     "id": "1761442768176",
                     "cityName": "Mumbai",
@@ -61,7 +62,8 @@ submission JSON file example :
                     "ratingDate": "2025-10-07T18:30:00.000Z",
                     "rating": "AA+"
                 }
-            ],
+            ]
+            },
             "section1_4": [
                 {
                     "id": "1761442789710",

@@ -326,12 +326,36 @@ export class UserService {
 
       const savedUser = await manager.save(user);
 
-      // Create indicator scope mappings for NODAL_OFFICER
+           // Create indicator scope mappings for NODAL_OFFICER
       if (role === UserRole.NODAL_OFFICER && indicatorCodes) {
         const indicators = await manager.find(Indicator, {
           where: { code: In(indicatorCodes), isActive: true },
         });
 
+        // --- NEW: check if any of these indicators are already assigned to another active user
+        const indicatorIds = indicators.map((i) => i.id);
+        if (indicatorIds.length > 0) {
+          const existingScopes = await manager.find(UserIndicatorScope, {
+            where: { indicatorId: In(indicatorIds) },
+            relations: ["user"],
+          });
+
+          // Filter any scope where userId is not the user we're creating (should be all, since user is new)
+          if (existingScopes.length > 0) {
+            // Map to indicator codes for message
+            const conflictedIndicatorIds = existingScopes.map((s) => s.indicatorId);
+            const conflictedIndicators = indicators.filter((i) =>
+              conflictedIndicatorIds.includes(i.id)
+            );
+            const conflictCodes = conflictedIndicators.map((i) => i.code);
+            // Throw conflict to rollback transaction
+            throw new ConflictException(
+              `Indicator(s) already assigned: ${conflictCodes.join(", ")}`
+            );
+          }
+        }
+
+        // If no conflicts, create scopes
         const userIndicatorScopes = indicators.map((indicator) =>
           manager.create(UserIndicatorScope, {
             userId: savedUser.id,
@@ -341,6 +365,7 @@ export class UserService {
 
         await manager.save(UserIndicatorScope, userIndicatorScopes);
       }
+
 
       // Generate JWT token
       const payload = {
@@ -517,43 +542,64 @@ export class UserService {
     }));
   }
 
-  // Get only indicator codes for a user (for simplified response)
-  async getUserIndicatorCodes(userId: string): Promise<number[]> {
+    // Get only indicator codes for a user (for simplified response)
+  async getUserIndicatorCodes(userId: string): Promise<string[]> {
     const userIndicatorScopes = await this.userIndicatorScopeRepository
       .createQueryBuilder("scope")
       .leftJoinAndSelect("scope.indicator", "indicator")
       .where("scope.userId = :userId", { userId })
       .getMany();
 
-    return userIndicatorScopes.map((scope) => {
-      // Convert string codes like "1.1", "2.3" to numbers like 1.1, 2.3
-      const code = scope.indicator.code;
-      return parseFloat(code);
-    });
+    // Return codes as strings (e.g. "1.1", "2.3") — DO NOT convert to number
+    return userIndicatorScopes.map((scope) => scope.indicator.code);
   }
 
-  // Update user's indicator codes
+
   async updateUserIndicatorCodes(
     userId: string,
     indicatorCodes: (string | number)[]
   ): Promise<void> {
-    // First, delete all existing indicator scopes for this user
-    await this.userIndicatorScopeRepository.delete({ userId });
-
-    // If no indicator codes provided, just return (all scopes already deleted)
-    if (!indicatorCodes || indicatorCodes.length === 0) {
-      return;
-    }
-
     // Convert numbers to strings for database lookup
-    const stringCodes = indicatorCodes.map((code) =>
+    const stringCodes = (indicatorCodes || []).map((code) =>
       typeof code === "number" ? code.toString() : code
     );
+
+    // If no indicator codes provided, just delete existing and return
+    if (!stringCodes || stringCodes.length === 0) {
+      await this.userIndicatorScopeRepository.delete({ userId });
+      return;
+    }
 
     // Get indicators by codes
     const indicators = await this.indicatorRepository.find({
       where: { code: In(stringCodes), isActive: true },
     });
+
+    // Get indicatorIds to assign
+    const indicatorIds = indicators.map((i) => i.id);
+
+    // --- NEW: Find existing scopes for these indicators assigned to OTHER users
+    if (indicatorIds.length > 0) {
+      const existingScopes = await this.userIndicatorScopeRepository.find({
+        where: { indicatorId: In(indicatorIds) },
+      });
+
+      const conflicts = existingScopes.filter((s) => s.userId !== userId);
+      if (conflicts.length > 0) {
+        // Map to codes
+        const conflictIndicatorIds = conflicts.map((c) => c.indicatorId);
+        const conflictIndicators = indicators.filter((i) =>
+          conflictIndicatorIds.includes(i.id)
+        );
+        const conflictCodes = conflictIndicators.map((i) => i.code);
+        throw new ConflictException(
+          `Indicator(s) already assigned: ${conflictCodes.join(", ")}`
+        );
+      }
+    }
+
+    // No conflicts: delete existing scopes for this user and save new ones (atomic outside may be okay)
+    await this.userIndicatorScopeRepository.delete({ userId });
 
     // Create new indicator scopes
     const indicatorScopes = indicators.map((indicator) => {
@@ -568,6 +614,7 @@ export class UserService {
       await this.userIndicatorScopeRepository.save(indicatorScopes);
     }
   }
+
 
   // Get indicators by codes
   async getIndicatorsByCodes(codes: string[]) {
