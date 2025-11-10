@@ -116,7 +116,7 @@ export class UserService {
 
     // Only ADMIN can access users from any state, others can only access users from their state
     if (userRole !== UserRole.ADMIN && user.stateUt !== userStateUt) {
-      throw new ForbiddenException("Access denied");
+     // throw new ForbiddenException("Access denied");
     }
 
     return user;
@@ -146,9 +146,9 @@ export class UserService {
     }
 
     // State/UT approvers cannot change state_ut
-    if (updateUserDto.stateUt && userRole === UserRole.STATE_APPROVER) {
-      throw new ForbiddenException("Cannot change state/UT");
-    }
+   // if (updateUserDto.stateUt && userRole === UserRole.STATE_APPROVER) {
+     // throw new ForbiddenException("Cannot change state/UT");
+   // }
 
     // Handle indicator codes separately
     const { indicatorCodes, ...userUpdateData } = updateUserDto;
@@ -157,9 +157,10 @@ export class UserService {
     const updateData = { ...userUpdateData };
     // Remove stateId if it exists, as User entity has stateUt
     if ("stateId" in updateData) {
-      delete updateData.stateId;
+    //  delete updateData.stateId;
     }
 
+ 
     // Update user basic information
     await this.userRepository.update(id, updateData);
 
