@@ -723,6 +723,7 @@ export class SubmissionController {
 @Get("state/:stateUt/cumulative-preview")
 @UseGuards(RolesGuard)
 @Roles(
+  UserRole.NODAL_OFFICER,
   UserRole.STATE_APPROVER,
   UserRole.MOSPI_REVIEWER,
   UserRole.MOSPI_APPROVER,

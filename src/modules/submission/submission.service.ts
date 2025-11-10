@@ -2505,7 +2505,8 @@ async buildCumulativePreview(params: {
     userRole !== UserRole.ADMIN &&
     userRole !== UserRole.MOSPI_REVIEWER &&
     userRole !== UserRole.MOSPI_APPROVER &&
-    userRole !== UserRole.STATE_APPROVER
+    userRole !== UserRole.STATE_APPROVER &&
+    userRole !== UserRole.NODAL_OFFICER
   ) throw new ForbiddenException('Access denied');
 
   if (userRole === UserRole.STATE_APPROVER && userStateUt && userStateUt !== stateUt) {
