@@ -8,7 +8,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, DataSource } from "typeorm";
+import { Repository, DataSource, In } from "typeorm";
 import {
   Submission,
   SubmissionStatus,
@@ -53,8 +53,11 @@ export class SubmissionService {
     private indicatorRepository: Repository<Indicator>,
     private dataSource: DataSource,
     private scoringService: ScoringService,
-    private storageService: StorageService
+    private storageService: StorageService,
+    @InjectRepository(User)
+  private readonly userRepository: Repository<User>
   ) {}
+  
 
   // Helper function to get user name
   private async getUserName(userId: string): Promise<string> {
@@ -2483,4 +2486,233 @@ export class SubmissionService {
 
     return refreshed;
   }
+
+  // ---------------- CUMULATIVE PREVIEW (STATE) ----------------
+async buildCumulativePreview(params: {
+  stateUt: string;
+  year?: string;
+  userRole: UserRole;
+  userStateUt?: string;
+  debug?: string; // optional ?debug=1
+}) {
+  const { stateUt, year, userRole, userStateUt, debug } = params;
+  const DEBUG = debug === '1';
+
+  // ---------- Access control ----------
+  if (
+    userRole !== UserRole.ADMIN &&
+    userRole !== UserRole.MOSPI_REVIEWER &&
+    userRole !== UserRole.MOSPI_APPROVER &&
+    userRole !== UserRole.STATE_APPROVER
+  ) throw new ForbiddenException('Access denied');
+
+  if (userRole === UserRole.STATE_APPROVER && userStateUt && userStateUt !== stateUt) {
+    throw new ForbiddenException('You can only preview your own state');
+  }
+
+  // ---------- Helpers ----------
+  const categoryToParentKey = (category?: string) => {
+    switch ((category || '').toLowerCase()) {
+      case 'infrastructure financing':   return 'infraFinancing';
+      case 'infrastructure development': return 'infraDevelopment';
+      case 'ppp development':            return 'pppDevelopment';
+      case 'infrastructure enablers':    return 'infraEnablers';
+      default: return '';
+    }
+  };
+  const codeToSectionKey = (code: string) => `section${String(code).replace('.', '_')}`;
+  const deepGet = (obj: any, path: string): any =>
+    path.split('.').reduce((a, k) => (a && typeof a === 'object' ? a[k] : undefined), obj);
+
+  const normalizeYear = (y: any): string | null => {
+    if (!y) return null;
+    return String(y).trim(); // keep "2025-26" as-is
+  };
+
+  const pickSubmissionYear = (s: any): string | null => {
+    if (s?.metadata?.fiscalYear) return normalizeYear(s.metadata.fiscalYear);
+    if (s?.formData?.meta?.year)  return normalizeYear(s.formData.meta.year);
+    if (typeof s?.fiscalYear === 'string') return normalizeYear(s.fiscalYear);
+    if (typeof s?.year === 'string')       return normalizeYear(s.year);
+    if (typeof s?.formData?.year === 'string') return normalizeYear(s.formData.year);
+    return null;
+  };
+
+  const pickScalarRecord = (rec: any) => (Array.isArray(rec) ? (rec.length ? rec[0] : null) : rec);
+
+  // Find the record for a specific indicator inside a submission
+  const findIndicatorPayload = (submission: any, ind: Indicator) => {
+    const statuses: any[] | undefined = submission?.statuses;
+    const formData = submission?.formData;
+
+    // A) statuses[] (preferred)
+    if (Array.isArray(statuses) && statuses.length) {
+      const sectionKey = codeToSectionKey(ind.code);        // e.g. "section1_1"
+      const parentKey  = categoryToParentKey(ind.category); // e.g. "infraFinancing"
+      const wantPath   = parentKey ? `${parentKey}.${sectionKey}`.toLowerCase() : null;
+
+      if (wantPath) {
+        const exact = statuses.find(s => typeof s?.path === 'string' && s.path.toLowerCase() === wantPath);
+        if (exact) return exact;
+      }
+      const bySection = statuses.find(s => (s?.sectionKey || '').toLowerCase() === sectionKey.toLowerCase());
+      if (bySection) return bySection;
+
+      const loose = statuses.find(s => s?.indicatorCode === ind.code || s?.code === ind.code || s?.name === ind.name);
+      if (loose) return loose;
+    }
+
+    // B) legacy formData fallbacks
+    if (formData) {
+      if (formData[ind.code] != null) return formData[ind.code];
+      if (formData[ind.id]   != null) return formData[ind.id];
+      if (formData[ind.name] != null) return formData[ind.name];
+
+      const sectionKey = codeToSectionKey(ind.code);
+      const parents = [
+        'infraFinancing','infraDevelopment','pppDevelopment','infraEnablers',
+        'infrastructureFinancing','infrastructureDevelopment','infrastructureEnablers'
+      ];
+      for (const p of parents) {
+        const node = deepGet(formData, `${p}.${sectionKey}`);
+        if (node != null) return (node && typeof node === 'object' && 'data' in node) ? node.data : node;
+      }
+      const containerPaths = [
+        `sections.${ind.sectionId}.${sectionKey}`,
+        `sections.${ind.sectionId}.indicators.${ind.code}`,
+        `responses.${ind.code}`,
+        `payload.${ind.code}`,
+        `data.${ind.code}`,
+      ];
+      for (const path of containerPaths) {
+        const node = deepGet(formData, path);
+        if (node != null) return (node && typeof node === 'object' && 'data' in node) ? node.data : node;
+      }
+    }
+    return null;
+  };
+
+  const pickIndicatorMeta = (recordIn: any, submission: any) => {
+    const rec = pickScalarRecord(recordIn);
+    return {
+      status: (rec?.status ?? submission?.status ?? 'NOT_STARTED') as string,
+      score: rec?.marksObtained ?? rec?.score ?? null,
+      remarks: rec?.remarks ?? rec?.comment ?? null,
+      year: normalizeYear(rec?.year ?? rec?.fiscalYear ?? pickSubmissionYear(submission)),
+      updatedAt: rec?.updatedAt ?? submission?.updatedAt ?? null,
+    };
+  };
+
+  // ---------- 1) Indicators ----------
+  const indicators: Indicator[] = await this.indicatorRepository.find({
+    where: { isActive: true } as any,
+    order: { sectionId: 'ASC', code: 'ASC' as any },
+  });
+
+  // ---------- 2) Submissions for state ----------
+  let allSubsRaw: Submission[] = [];
+  try {
+    allSubsRaw = await this.submissionRepository
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.statuses', 'statuses')
+      .where('s.stateUt = :stateUt', { stateUt })
+      .getMany();
+  } catch {
+    allSubsRaw = await this.submissionRepository.find({ where: { stateUt } as any, loadRelationIds: false });
+  }
+
+  // Year filter in-memory (entity likely has no "year" column)
+  const subs = year
+    ? allSubsRaw.filter(s => (pickSubmissionYear(s) ?? '') === String(year))
+    : allSubsRaw;
+
+  // ---------- 3) Choose best submission per indicator ----------
+  const bestByIndicator = new Map<string, Submission | null>();
+  const dbg: any = DEBUG ? { totals: { submissions: subs.length }, perIndicator: {} } : undefined;
+
+  for (const ind of indicators) {
+    const candidates = subs.filter(s => findIndicatorPayload(s, ind) != null);
+
+    const accepted = candidates.find(s => {
+      const rec = pickScalarRecord(findIndicatorPayload(s, ind));
+      const st = String(rec?.status || (s as any)?.status || '').toUpperCase();
+      return st === 'ACCEPTED' || st === 'APPROVED' || st === 'ACCEPTED_BY_STATE_APPROVER';
+    });
+
+    const best =
+      accepted ??
+      (candidates.length
+        ? candidates.sort(
+            (a, b) =>
+              new Date((b as any).updatedAt || (b as any).createdAt || 0).getTime() -
+              new Date((a as any).updatedAt || (a as any).createdAt || 0).getTime()
+          )[0]
+        : null);
+
+    bestByIndicator.set(ind.id, best);
+
+    if (DEBUG) (dbg.perIndicator[ind.code] = { candidates: candidates.length, pickedAccepted: !!accepted });
+  }
+
+  // ---------- 4) Build grouped response ----------
+  type PreviewItem = {
+    id: string; code: string; name: string; category?: string; sectionId?: string;
+    maxScore?: number | string; data: any; status: string; score: number | null; remarks: string | null;
+    updatedAt: string | Date | null; year: string | null;
+  };
+
+  const grouped: Record<string, PreviewItem[]> = {};
+
+  for (const ind of indicators) {
+    const best = bestByIndicator.get(ind.id) as any;
+    const record = best ? findIndicatorPayload(best, ind) : null;
+    const meta = pickIndicatorMeta(record, best);
+
+    const category = ind.category || 'Uncategorized';
+    if (!grouped[category]) grouped[category] = [];
+
+    grouped[category].push({
+      id: ind.id,
+      code: ind.code,
+      name: ind.name,
+      category: ind.category,
+      sectionId: ind.sectionId,
+      maxScore: ind.maxScore,
+      data: record ?? null,
+      status: meta.status,
+      score: meta.score,
+      remarks: meta.remarks,
+      updatedAt: meta.updatedAt,
+      year: meta.year,
+    });
+
+    if (DEBUG) {
+      Object.assign(dbg.perIndicator[ind.code], {
+        foundPayload: !!record,
+        status: meta.status,
+        score: meta.score,
+        year: meta.year,
+      });
+    }
+  }
+
+  // ---------- 5) Return ----------
+  return {
+    status: true,
+    message: `Cumulative preview for ${stateUt}`,
+    data: {
+      stateUt,
+      users: 0, // we’re not computing people anymore
+      totalIndicators: indicators.length,
+      categories: Object.keys(grouped),
+      indicators: grouped,
+      ...(DEBUG ? { debug: dbg } : {}),
+    },
+  };
+}
+
+
+
+
+
 }

@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  Req,
 } from "@nestjs/common";
 import { IndicatorService } from "./indicator.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -19,6 +20,33 @@ import { UserRole } from "../../entities/user.entity";
 @UseGuards(JwtAuthGuard)
 export class IndicatorController {
   constructor(private readonly indicatorService: IndicatorService) {}
+
+  @Get("state-approver/indicators")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER)
+  async getStateApproverIndicators(@Request() req) {
+    try {
+      if (!req.user?.stateUt) {
+        return {
+          status: false,
+          message: 'No state/UT assigned to the current user',
+          data: null
+        };
+      }
+
+      const indicators = await this.indicatorService.getIndicatorsByState(req.user.stateUt);
+      return {
+        status: true,
+        data: indicators,
+        message: `Indicators for your state (${req.user.stateUt}) fetched successfully`,
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: error.message || 'Error fetching state indicators',
+      };
+    }
+  }
 
   @Get("available-for-approver")
   @UseGuards(RolesGuard)
@@ -65,10 +93,7 @@ export class IndicatorController {
     };
   }
 
-  /**
-   * API to fetch indicator status from submission formData
-   * GET /indicators/status?submissionId=...&indicatorCode=...
-   */
+
   @Get('status')
   @UseGuards(RolesGuard)
   @Roles(
@@ -133,24 +158,42 @@ export class IndicatorController {
    * API to fetch indicator statuses from all nodal officers in state approver's state
    * GET /indicators/state-statuses
    */
-  @Get('state-statuses')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.STATE_APPROVER)
-  async getStateIndicatorStatuses(@Request() req) {
-    try {
-      const result = await this.indicatorService.getStateIndicatorStatuses(req.user.id);
-      return {
-        status: true,
-        data: result,
-        message: 'State indicator statuses fetched successfully',
-      };
-    } catch (error) {
-      return {
-        status: false,
-        message: error.message || 'Error fetching state indicator statuses',
-      };
-    }
-  }
+  // @Get('state-statuses')
+  // @UseGuards(RolesGuard)
+  // @Roles(UserRole.STATE_APPROVER)
+  // async getStateIndicatorStatuses(@Request() req, @Query('year') year?: string) {
+  //   try {
+  //     const result = await this.indicatorService.getStateIndicatorStatuses(req.user.id, year);
+  //     return {
+  //       status: true,
+  //       data: result,
+  //       message: 'State indicator statuses fetched successfully',
+  //     };
+  //   } catch (error) {
+  //     return {
+  //       status: false,
+  //       message: error.message || 'Error fetching state indicator statuses',
+  //     };
+  //   }
+  // }
+
+  // indicator.controller.ts
+@Get('state-statuses')
+ @UseGuards(RolesGuard)
+ @Roles(UserRole.STATE_APPROVER)
+async stateStatuses(
+  @Req() req: Request & { user?: { id: string } },
+  @Query('year') year?: string
+) {
+  // assuming req.user.id is your logged-in State Approver
+  const data = await this.indicatorService.getStateIndicatorStatuses(req.user.id, year);
+  return {
+    status: true,
+    message: 'State indicator statuses fetched successfully',
+    data, // contains { stateUt, submissions, summary: { acceptedCount, totalIndicators, ... } }
+  };
+}
+
 
   @Get(":id")
   @UseGuards(RolesGuard)

@@ -705,4 +705,29 @@ export class SubmissionController {
       req.user.stateUt
     );
   }
+
+  // --- cumulative preview for a state ---
+@Get("state/:stateUt/cumulative-preview")
+@UseGuards(RolesGuard)
+@Roles(
+  UserRole.STATE_APPROVER,
+  UserRole.MOSPI_REVIEWER,
+  UserRole.MOSPI_APPROVER,
+  UserRole.ADMIN
+)
+async getCumulativePreviewForState(
+  @Param("stateUt") stateUt: string,
+  @Request() req,
+  @Query("year") year?: string,
+  @Query("includeAssignments") includeAssignments?: string
+) {
+  return this.submissionService.buildCumulativePreview({
+    stateUt,
+    year,
+    // includeAssignments: includeAssignments === "true",
+    userRole: req.user.role,
+    userStateUt: req.user.stateUt,
+  });
+}
+
 }
