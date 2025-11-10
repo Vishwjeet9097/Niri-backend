@@ -63,4 +63,13 @@ export class DashboardController {
       req.user.stateUt
     );
   }
+
+  // inside DashboardController class
+@Get("nodal-metrics")
+@UseGuards(RolesGuard)
+@Roles(UserRole.NODAL_OFFICER)
+async getNodalMetrics(@Request() req) {
+  // req.user.id must be present (JWT middleware)
+  return this.dashboardService.getNodalOfficerDashboardCounts(req.user.id);
+}
 }
