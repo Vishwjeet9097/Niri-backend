@@ -89,8 +89,7 @@ export class AuthService {
     ? ""
     : stateUt;
 
-    console.log(`Creating user with stateUt: '${normalizedStateUt}'`);
-     
+      
     const user = this.userRepository.create({
       email,
       password: hashedPassword,
@@ -171,6 +170,8 @@ export class AuthService {
     loginDto: LoginDto
   ): Promise<{ user: Partial<User>; accessToken: string }> {
     const { email, password } = loginDto;
+
+    console.log(`Attempting login for email: ${loginDto}`);
 
     // Check database health before login
     const dbHealth = await this.databaseHealthService.checkDatabaseHealth();

@@ -51,7 +51,7 @@ export class UserService {
     }
 
     // Only ADMIN can see all users, others can only see users from their state
-    if (userRole !== UserRole.ADMIN) {
+    if (userRole !== UserRole.ADMIN  && userRole !== UserRole.MOSPI_APPROVER) {
       query = query.andWhere("user.stateUt = :stateUt", {
         stateUt: userStateUt,
       });
