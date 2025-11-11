@@ -252,7 +252,7 @@ export class UserController {
   ? updateUserDto.stateUt
   : req.user.stateUt;
 
- 
+   
     return this.userService.update(
       id,
       updateUserDto,
