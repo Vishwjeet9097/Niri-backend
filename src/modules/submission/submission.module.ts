@@ -9,6 +9,7 @@ import { SubmissionController } from "./submission.controller";
 import { IndicatorAccessMiddleware } from "../../middleware/indicator-access.middleware";
 import { ScoringModule } from "../scoring/scoring.module";
 import { StorageModule } from "../storage/storage.module";
+import { User } from "@/entities/user.entity";
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { StorageModule } from "../storage/storage.module";
       FinalScore,
       UserIndicatorScope,
       Indicator,
+      User
     ]),
     ScoringModule,
     StorageModule,

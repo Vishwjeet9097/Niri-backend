@@ -31,6 +31,8 @@ export class AuthService {
   async register(
     createUserDto: CreateUserDto
   ): Promise<{ user: Partial<User>; accessToken: string }> {
+
+   
     const {
       email,
       password,
@@ -79,6 +81,15 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create user
+
+    const normalizedStateUt =
+  stateUt == null || // null or undefined
+  stateUt === "" ||
+  (typeof stateUt === "object" && Object.keys(stateUt).length === 0)
+    ? ""
+    : stateUt;
+
+      
     const user = this.userRepository.create({
       email,
       password: hashedPassword,
@@ -86,7 +97,7 @@ export class AuthService {
       lastName,
       contactNumber,
       role,
-      stateUt,
+      stateUt: normalizedStateUt
     });
 
     const savedUser = await this.userRepository.save(user);
@@ -159,6 +170,8 @@ export class AuthService {
     loginDto: LoginDto
   ): Promise<{ user: Partial<User>; accessToken: string }> {
     const { email, password } = loginDto;
+
+    console.log(`Attempting login for email: ${loginDto}`);
 
     // Check database health before login
     const dbHealth = await this.databaseHealthService.checkDatabaseHealth();

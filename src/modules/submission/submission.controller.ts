@@ -85,7 +85,7 @@ export class SubmissionController {
 
   @Post()
   @UseGuards(RolesGuard, IndicatorAccessMiddleware)
-  @Roles(UserRole.NODAL_OFFICER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
   @UseInterceptors(AnyFilesInterceptor())
   async create(
     @UploadedFiles() files: Express.Multer.File[],
@@ -135,23 +135,36 @@ export class SubmissionController {
           path: fieldPath.slice(1).join("/"),
         });
 
-        // store path into form JSON
-        current[lastKey] = storedFile.filePath;
-
-        // normalise uploadedAt to ISO-string and ensure fileUrl exists
+        // Build normalized uploadedAt string
         const uploadedAtStr =
           storedFile.uploadedAt instanceof Date
             ? storedFile.uploadedAt.toISOString()
             : String(storedFile.uploadedAt || new Date().toISOString());
 
-        parsedSubmission.attachedFiles.push({
+        // Build full metadata object (store this in formData)
+        const fileMeta = {
+          id: (storedFile as any).id ?? null,
           fileName: storedFile.fileName || file.originalname || "",
           originalName: storedFile.originalName || file.originalname || "",
           filePath: storedFile.filePath || "",
-          fileUrl: storedFile.fileUrl ?? "", // include property so service/entity isn't missing it
+          fileUrl: storedFile.fileUrl ?? "",
           fileSize: storedFile.fileSize ?? file.size ?? 0,
           mimeType: storedFile.mimeType || file.mimetype || "",
           uploadedAt: uploadedAtStr,
+        };
+
+        // store full metadata into form JSON (not just the path)
+        current[lastKey] = fileMeta;
+
+        // also add to parsedSubmission.attachedFiles (keep your existing behavior)
+        parsedSubmission.attachedFiles.push({
+          fileName: fileMeta.fileName,
+          originalName: fileMeta.originalName,
+          filePath: fileMeta.filePath,
+          fileUrl: fileMeta.fileUrl,
+          fileSize: fileMeta.fileSize,
+          mimeType: fileMeta.mimeType,
+          uploadedAt: fileMeta.uploadedAt,
         });
       }
     }
@@ -276,6 +289,28 @@ export class SubmissionController {
     return submission;
   }
 
+  @Get("user/:userId")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
+  )
+  async findByUser(@Param("userId") userId: string, @Request() req) {
+    const submission = await this.submissionService.findByUser(
+      userId,
+      req.user.role,
+      req.user.stateUt
+    );
+
+    if (!submission) {
+      return { message: "No submission found for this user", data: null };
+    }
+
+    return { message: "Submission found", data: submission };
+  }
   @Put(":id")
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
@@ -609,4 +644,104 @@ export class SubmissionController {
 
   // Helper method to clean empty file objects from formData
   private cleanEmptyFileObjects(obj: any): void {}
+
+  //🧑‍💻🧑‍💻New API for completing the workflow
+  // ...existing code...
+  @Post("update-indicator")
+  // @UseGuards(RolesGuard)
+  // @Roles(UserRole.STATE_APPROVER)
+  @HttpCode(HttpStatus.OK)
+  async updateFormSection(
+    @Body()
+    body: {
+      submissionId?: string;
+      category?: string;
+      section?: string;
+      fields?: any[];
+    },
+    @Request() req
+  ) {
+    const { submissionId, category, section, fields } = body;
+
+    if (!submissionId || !category || !section || !Array.isArray(fields)) {
+      throw new BadRequestException(
+        "Missing required fields: submission_id, category, section, fields[]"
+      );
+    }
+
+    // Delegate to service
+    return this.submissionService.updateFormSectionFields(
+      submissionId,
+      category,
+      section,
+      fields,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
+  }
+  // ...existing code...
+
+  @Post("indicator-submission-status")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER)
+  @HttpCode(HttpStatus.OK)
+  async indicatorSubmissionAccepted(
+    @Body()
+    body: {
+      submissionId?: string;
+      category?: string;
+      section?: string;
+      status: boolean;
+    },
+    @Request() req
+  ) {
+    const { submissionId, category, section, status } = body;
+
+    if (!submissionId || !category || !section || typeof status !== "boolean") {
+      throw new BadRequestException(
+        "Missing required fields: submissionId, category, section, accepted"
+      );
+    }
+
+    // Create fields array with status
+    const fields = [{ status: status ? "ACCEPTED" : "REVERTED" }];
+
+    // Reuse existing service method
+    return this.submissionService.updateFormSectionFields(
+      submissionId,
+      category,
+      section,
+      fields,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
+  }
+
+  // --- cumulative preview for a state ---
+@Get("state/:stateUt/cumulative-preview")
+@UseGuards(RolesGuard)
+@Roles(
+  UserRole.NODAL_OFFICER,
+  UserRole.STATE_APPROVER,
+  UserRole.MOSPI_REVIEWER,
+  UserRole.MOSPI_APPROVER,
+  UserRole.ADMIN
+)
+async getCumulativePreviewForState(
+  @Param("stateUt") stateUt: string,
+  @Request() req,
+  @Query("year") year?: string,
+  @Query("includeAssignments") includeAssignments?: string
+) {
+  return this.submissionService.buildCumulativePreview({
+    stateUt,
+    year,
+    // includeAssignments: includeAssignments === "true",
+    userRole: req.user.role,
+    userStateUt: req.user.stateUt,
+  });
+}
+
 }
