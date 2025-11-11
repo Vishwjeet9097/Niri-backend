@@ -56,7 +56,7 @@ export class Submission {
   @Column({ name: "submission_id", unique: true })
   submissionId: string;
 
-  @Column({ name: "state_ut" })
+  @Column({ name: "stateUt" })
   stateUt: string;
 
   @Column({ name: "submitted_by" })
@@ -69,7 +69,7 @@ export class Submission {
   @Column({ name: "rejection_count", default: 0 })
   rejectionCount: number;
 
-  @Column({ name: "form_data", type: "jsonb" , nullable: true})
+  @Column({ name: "form_data", type: "jsonb", nullable: true })
   formData: any;
 
   @Column({
@@ -86,8 +86,13 @@ export class Submission {
   })
   indicatorComment: Record<string, ReviewComment[]>;
 
- @Column({ name: 'attached_files', type: 'jsonb', nullable: true, default: () => "'[]'::jsonb" })
-attachedFiles: any;
+  @Column({
+    name: "attached_files",
+    type: "jsonb",
+    nullable: true,
+    default: () => "'[]'::jsonb",
+  })
+  attachedFiles: any;
   // attachedFiles: SubmissionFile[];
 
   @Column({

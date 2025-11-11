@@ -18,35 +18,35 @@ export class FinalScore {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'submission_id' })
+  @Column({ name: 'submissionId' })
   submissionId: string;
 
   @OneToOne(() => Submission)
-  @JoinColumn({ name: 'submission_id' })
+  @JoinColumn({ name: 'submissionId' })
   submission: Submission;
 
-  @Column({ name: 'state_ut' })
+  @Column({ name: 'stateUt' })
   stateUt: string;
 
-  @Column({ name: 'total_score', type: 'decimal', precision: 10, scale: 2 })
+  @Column({ name: 'totalScore', type: 'decimal', precision: 10, scale: 2 })
   totalScore: number;
 
   @Column({ name: 'percentage', type: 'decimal', precision: 5, scale: 2, nullable: true })
   percentage: number;
 
-  @Column({ name: 'score_breakdown', type: 'jsonb' })
+  @Column({ name: 'scoreBreakdown', type: 'jsonb' })
   scoreBreakdown: Record<string, any>;
 
-  @Column({ name: 'calculation_methodology', type: 'text' })
+  @Column({ name: 'calculationMethodology', type: 'text' })
   calculationMethodology: string;
 
-  @Column({ name: 'approved_by' })
+  @Column({ name: 'approvedBy' })
   approvedBy: string;
 
-  @Column({ name: 'category_scores', type: 'jsonb', nullable: true })
+  @Column({ name: 'categoryScores', type: 'jsonb', nullable: true })
   categoryScores: Record<string, any>;
 
-  @Column({ name: 'scoring_version', type: 'varchar', default: '2.0' })
+  @Column({ name: 'scoringVersion', type: 'varchar', default: '2.0' })
   scoringVersion: string;
 
   @CreateDateColumn()

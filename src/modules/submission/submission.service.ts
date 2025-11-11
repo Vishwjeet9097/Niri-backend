@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
-
   BadRequestException,
   InternalServerErrorException,
   ConflictException,
@@ -65,7 +64,6 @@ export class SubmissionService {
 
     return user ? `${user.firstName} ${user.lastName}` : "Unknown User";
   }
-
 
   // Helper function to filter form data based on user's indicator access
   private async filterFormDataByIndicatorAccess(
@@ -281,158 +279,167 @@ export class SubmissionService {
     return groupedComments;
   }
 
-    // Helper: recursively scan formData, upload detected files to S3, replace file nodes with metadata, and return an attachedFiles array
-private async processAndUploadFiles(
-  formData: any,
-  submissionId: string,
-): Promise<{ processedFormData: any; attachedFiles: SubmissionFile[] }> {
-  const attachedFiles: SubmissionFile[] = [];
-  const self = this;
+  // Helper: recursively scan formData, upload detected files to S3, replace file nodes with metadata, and return an attachedFiles array
+  private async processAndUploadFiles(
+    formData: any,
+    submissionId: string
+  ): Promise<{ processedFormData: any; attachedFiles: SubmissionFile[] }> {
+    const attachedFiles: SubmissionFile[] = [];
+    const self = this;
 
-  // Detect data URL strings like "data:<mime>;base64,<payload>"
-  function isDataUrl(str: any): str is string {
-    return typeof str === 'string' && /^data:[\w/+.-]+;base64,/.test(str);
-  }
-
-  // Create a multer-like file object from a data URL
-  function fileFromDataUrl(dataUrl: string, suggestedName?: string): Express.Multer.File {
-    const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-    if (!m) throw new Error('Invalid data URL');
-    const mime = m[1];
-    const payload = m[2];
-    const buffer = Buffer.from(payload, 'base64');
-    const originalname = suggestedName || `upload_${Date.now()}`;
-
-    // Minimal Express.Multer.File shape required by your storageService.uploadFile
-    const file: Express.Multer.File = {
-      fieldname: 'file',
-      originalname,
-      encoding: '7bit',
-      mimetype: mime,
-      size: buffer.length,
-      buffer,
-      destination: '',
-      filename: '',
-      path: '',
-      stream: undefined as any,
-    } as any;
-
-    return file;
-  }
-
-  // Slightly stricter file-like detector for objects
-  function looksLikeFileObject(obj: any): boolean {
-    if (!obj || typeof obj !== 'object') return false;
-    if (obj.buffer || obj.path || obj.stream) {
-      // require either originalname or mimetype or size
-      return !!(obj.originalname || obj.mimetype || typeof obj.size === 'number');
-    }
-    if ((obj.fieldname || obj.originalname || obj.filename) && (obj.mimetype || typeof obj.size === 'number')) {
-      return true;
-    }
-    return false;
-  }
-
-  async function recurse(node: any, keyPath = ''): Promise<any> {
-    if (node == null) return node;
-
-    // If primitive string that's a data URL, convert & upload
-    if (isDataUrl(node)) {
-      self.logger.log(`[upload] Detected data URL at ${keyPath}; converting to file and uploading`);
-      const fileObj = fileFromDataUrl(node as string, `file_${keyPath.replace(/\W+/g, '_') || Date.now()}`);
-      const uploaded = await self.storageService.uploadFile(fileObj, submissionId);
-      self.logger.log(`[upload] Uploaded ${uploaded.filePath || uploaded.fileUrl || '(no path)'} for ${submissionId}`);
-
-      const meta: SubmissionFile = {
-        fileName: uploaded.fileName || uploaded.originalName || fileObj.originalname || 'file',
-        originalName: uploaded.originalName || fileObj.originalname || '',
-        filePath: uploaded.filePath || '',
-        fileUrl: uploaded.fileUrl || '',
-        fileSize: uploaded.fileSize || fileObj.size || 0,
-        mimeType: uploaded.mimeType || fileObj.mimetype || '',
-        uploadedAt: new Date(),
-      };
-
-      attachedFiles.push(meta);
-      return meta;
+    function isDataUrl(str: any): str is string {
+      return typeof str === "string" && /^data:[\w/+.-]+;base64,/.test(str);
     }
 
-    if (Array.isArray(node)) {
-      const res = [];
-      for (let i = 0; i < node.length; i++) {
-        res.push(await recurse(node[i], `${keyPath}[${i}]`));
-      }
-      return res;
+    function fileFromDataUrl(
+      dataUrl: string,
+      suggestedName?: string
+    ): Express.Multer.File {
+      const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+      if (!m) throw new Error("Invalid data URL");
+      const mime = m[1];
+      const payload = m[2];
+      const buffer = Buffer.from(payload, "base64");
+      const originalname = suggestedName || `upload_${Date.now()}`;
+
+      return {
+        fieldname: "file",
+        originalname,
+        encoding: "7bit",
+        mimetype: mime,
+        size: buffer.length,
+        buffer,
+        destination: "",
+        filename: "",
+        path: "",
+        stream: undefined as any,
+      } as any;
     }
 
-    if (typeof node === 'object') {
-      // If object already contains filePath/fileUrl -> skip upload
-      if (node.filePath || node.fileUrl) return node;
+    function looksLikeFileObject(obj: any): boolean {
+      if (!obj || typeof obj !== "object") return false;
+      if (obj.buffer || obj.path || obj.stream) return true;
+      if (obj.fieldname && obj.originalname) return true;
+      return false;
+    }
+    this.logger.debug(
+      `processAndUploadFiles() received formData: ${JSON.stringify(formData, null, 2)}`
+    );
 
-      // If object has a direct 'file' field containing a data URL, handle it
-      if (node.file && isDataUrl(node.file)) {
-        self.logger.log(`[upload] Found object.file (data URL) at ${keyPath}`);
-        const fileObj = fileFromDataUrl(node.file as string, node.originalName || node.fileName || `file_${Date.now()}`);
-        const uploaded = await self.storageService.uploadFile(fileObj, submissionId);
-        self.logger.log(`[upload] Uploaded ${uploaded.filePath || uploaded.fileUrl || '(no path)'} for ${submissionId}`);
+    async function recurse(node: any, keyPath = ""): Promise<any> {
+      if (node == null) return node;
+
+      // 📦 Handle direct data URLs
+      if (isDataUrl(node)) {
+        const fileObj = fileFromDataUrl(
+          node,
+          `file_${keyPath.replace(/\W+/g, "_") || Date.now()}`
+        );
+        const uploaded = await self.storageService.uploadFile(
+          fileObj,
+          submissionId
+        );
 
         const meta: SubmissionFile = {
-          fileName: uploaded.fileName || uploaded.originalName || fileObj.originalname || 'file',
-          originalName: uploaded.originalName || fileObj.originalname || '',
-          filePath: uploaded.filePath || '',
-          fileUrl: uploaded.fileUrl || '',
-          fileSize: uploaded.fileSize || fileObj.size || 0,
-          mimeType: uploaded.mimeType || fileObj.mimetype || '',
-          uploadedAt: new Date(),
+          fileName: uploaded.fileName,
+          originalName: uploaded.originalName,
+          filePath: uploaded.filePath, // ✅ only store path
+          fileUrl: "", // 🚫 no signed URL
+          fileSize: uploaded.fileSize,
+          mimeType: uploaded.mimeType,
+          uploadedAt: uploaded.uploadedAt,
         };
 
         attachedFiles.push(meta);
-
-        // preserve other fields in node and replace 'file' with metadata
-        const clone = { ...node, file: meta };
-        return clone;
+        return uploaded.filePath; // ✅ replace node with just file path
       }
 
-      // If object *looks* like a Multer/Express file object, upload it
-      if (looksLikeFileObject(node)) {
-        self.logger.log(`[upload] Found file-like object at ${keyPath}; uploading`);
-        const uploaded = await self.storageService.uploadFile(node as Express.Multer.File, submissionId);
-        self.logger.log(`[upload] Uploaded ${uploaded.filePath || uploaded.fileUrl || '(no path)'} for ${submissionId}`);
-
-        const meta: SubmissionFile = {
-          fileName: uploaded.fileName || uploaded.originalName || node.originalname || 'file',
-          originalName: uploaded.originalName || node.originalname || '',
-          filePath: uploaded.filePath || '',
-          fileUrl: uploaded.fileUrl || '',
-          fileSize: uploaded.fileSize || node.size || 0,
-          mimeType: uploaded.mimeType || node.mimetype || '',
-          uploadedAt: new Date(),
-        };
-
-        attachedFiles.push(meta);
-        return meta;
+      if (Array.isArray(node)) {
+        return Promise.all(
+          node.map((item, i) => recurse(item, `${keyPath}[${i}]`))
+        );
       }
 
-      // otherwise traverse object keys
-      const out: any = {};
-      for (const k of Object.keys(node)) {
-        out[k] = await recurse(node[k], keyPath ? `${keyPath}.${k}` : k);
+      if (typeof node === "object") {
+        // ⛔ Skip already-uploaded metadata
+        if (node.filePath) return node.filePath;
+
+        // 🧾 Handle nested objects containing a file
+        if (
+          node.file &&
+          (isDataUrl(node.file) || looksLikeFileObject(node.file))
+        ) {
+          const fileObj = isDataUrl(node.file)
+            ? fileFromDataUrl(
+                node.file,
+                node.originalName || `file_${Date.now()}`
+              )
+            : node.file;
+
+          const uploaded = await self.storageService.uploadFile(
+            fileObj,
+            submissionId
+          );
+
+          const meta: SubmissionFile = {
+            fileName: uploaded.fileName,
+            originalName: uploaded.originalName,
+            filePath: uploaded.filePath,
+            fileUrl: "",
+            fileSize: uploaded.fileSize,
+            mimeType: uploaded.mimeType,
+            uploadedAt: uploaded.uploadedAt,
+          };
+
+          attachedFiles.push(meta);
+          return uploaded.filePath; // ✅ just store S3 path in formData
+        }
+
+        // 📦 Handle raw multer-like file objects
+        if (looksLikeFileObject(node)) {
+          const uploaded = await self.storageService.uploadFile(
+            node as Express.Multer.File,
+            submissionId
+          );
+
+          const meta: SubmissionFile = {
+            fileName: uploaded.fileName,
+            originalName: uploaded.originalName,
+            filePath: uploaded.filePath,
+            fileUrl: "",
+            fileSize: uploaded.fileSize,
+            mimeType: uploaded.mimeType,
+            uploadedAt: uploaded.uploadedAt,
+          };
+
+          attachedFiles.push(meta);
+          return uploaded.filePath;
+        }
+
+        // 🚶 Traverse nested objects
+        const out: any = {};
+        for (const k of Object.keys(node)) {
+          out[k] = await recurse(node[k], keyPath ? `${keyPath}.${k}` : k);
+        }
+        return out;
       }
-      return out;
+
+      // primitives
+      return node;
     }
 
-    // primitive values (non-data-url strings, numbers, booleans)
-    return node;
+    const processedFormData = await recurse(formData);
+    return { processedFormData, attachedFiles };
   }
 
-  const processedFormData = await recurse(formData, '');
-  return { processedFormData, attachedFiles };
-}
-async uploadFile(file: Express.Multer.File, context: { submissionId: string; path: string }) {
-  const uploadPath = `submissions/${context.submissionId}/${context.path}`;
-  const stored = await this.storageService.uploadFile(file, uploadPath);
-  return stored; // should contain { url, key, bucket } if your service is consistent
-}
+  async uploadFile(
+    file: Express.Multer.File,
+    context: { submissionId: string; path: string }
+  ) {
+    const uploadPath = `${context.submissionId}/${context.path}`;
+    const stored = await this.storageService.uploadFile(file, uploadPath);
+    return stored; // should contain { url, key, bucket } if your service is consistent
+  }
 
   async create(
     createSubmissionDto: CreateSubmissionDto,
@@ -450,12 +457,12 @@ async uploadFile(file: Express.Multer.File, context: { submissionId: string; pat
       this.logger.log(
         `UserId: ${userId}, UserRole: ${userRole}, StateUt: ${stateUt}`
       );
-     
+
       try {
-  this.logger.log(JSON.stringify(createSubmissionDto));
-} catch(e) {
-  this.logger.error('Failed to stringify DTO: ' + e.message);
-}
+        this.logger.log(JSON.stringify(createSubmissionDto));
+      } catch (e) {
+        this.logger.error("Failed to stringify DTO: " + e.message);
+      }
       // Step 1: Validate user role
       if (userRole !== UserRole.NODAL_OFFICER) {
         this.logger.error(
@@ -490,55 +497,89 @@ async uploadFile(file: Express.Multer.File, context: { submissionId: string; pat
       );
 
       // Step 4: Create submission
-  let processedFormData = createSubmissionDto.formData;
-let newAttachedFiles: SubmissionFile[] = [];
+      let processedFormData = createSubmissionDto.formData;
+      let newAttachedFiles: SubmissionFile[] = [];
 
-try {
-  this.logger.log(`In try block for file processing and upload`);
-  const result = await this.processAndUploadFiles(createSubmissionDto.formData, createSubmissionDto.submissionId);
-  if (!result) this.logger.warn('processAndUploadFiles returned undefined!');
-  this.logger.log(`processAndUploadFiles() result: ${JSON.stringify(result)}`);
-  processedFormData = result.processedFormData;
-  newAttachedFiles = result.attachedFiles || [];
-  this.logger.log(`Uploaded ${newAttachedFiles.length} files for submission ${createSubmissionDto.submissionId}`);
-} catch (err) {
-  // decide policy: either fail the create or continue without files.
-  // Here we fail so user is explicitly informed.
-  this.logger.error(`Error uploading files for submissionId ${createSubmissionDto.submissionId}: ${(err as any).message || err}`);
-  throw new InternalServerErrorException('Failed to upload attached files');
-}
+      if (
+        Array.isArray((createSubmissionDto as any).attachedFiles) &&
+        (createSubmissionDto as any).attachedFiles.length
+      ) {
+        newAttachedFiles = (createSubmissionDto as any).attachedFiles.map(
+          (f: any) => {
+            // normalize keys and types; ensure required fileUrl exists; convert uploadedAt -> Date
+            const fileUrl = f.fileUrl ?? f.fileurl ?? "";
+            const uploadedAtRaw = f.uploadedAt ?? f.uploaded_at ?? null;
 
-const submission = this.submissionRepository.create({
-  submissionId: createSubmissionDto.submissionId,
-  formData: processedFormData,
-  submittedBy: userId,
-  stateUt,
-  status: status,
-  currentOwnerRole: currentOwnerRole,
-  attachedFiles: newAttachedFiles,
-});
+            return {
+              fileName: f.fileName ?? f.filename ?? "",
+              originalName: f.originalName ?? f.originalname ?? "",
+              filePath: f.filePath ?? f.filepath ?? "",
+              fileUrl:
+                typeof fileUrl === "string" ? fileUrl : String(fileUrl || ""),
+              fileSize:
+                typeof f.fileSize === "number"
+                  ? f.fileSize
+                  : Number(f.fileSize) || 0,
+              mimeType: f.mimeType ?? f.mimetype ?? "",
+              uploadedAt:
+                uploadedAtRaw instanceof Date
+                  ? uploadedAtRaw
+                  : uploadedAtRaw
+                    ? new Date(uploadedAtRaw)
+                    : new Date(),
+            } as SubmissionFile;
+          }
+        );
+      }
+
+      const submission = this.submissionRepository.create({
+        submissionId: createSubmissionDto.submissionId,
+        formData: processedFormData,
+        submittedBy: userId,
+        stateUt,
+        status: status,
+        currentOwnerRole: currentOwnerRole,
+        attachedFiles: newAttachedFiles,
+      });
 
       // Step 5: Save submission
-      this.logger.debug('Submission saving payload: ' + JSON.stringify(submission, null, 2));
+      this.logger.debug(
+        "Submission saving payload: " + JSON.stringify(submission, null, 2)
+      );
 
       // after you build "submission" object and before saving:
-let savedSubmission;
-try {
-  savedSubmission = await this.submissionRepository.save(submission);
-} catch (saveErr) {
-  // rollback uploaded files
-  try {
-    const filePaths = newAttachedFiles.map(f => f.filePath).filter(Boolean);
-    if (filePaths.length) {
-      await this.storageService.deleteSubmissionFiles(createSubmissionDto.submissionId, filePaths);
-      this.logger.log(`Rolled back ${filePaths.length} uploaded files for submission ${createSubmissionDto.submissionId}`);
-    }
-  } catch (delErr) {
-    this.logger.error(`Failed to cleanup uploaded files after save failure for ${createSubmissionDto.submissionId}: ${delErr.message}`);
-  }
-  throw saveErr;
-}
-
+      this.logger.debug(
+        `Mapped attachedFiles count: ${newAttachedFiles.length}`
+      );
+      this.logger.debug(
+        "Example attachedFiles[0]: " +
+          JSON.stringify(newAttachedFiles[0] || {}, null, 2)
+      );
+      let savedSubmission;
+      try {
+        savedSubmission = await this.submissionRepository.save(submission);
+      } catch (saveErr) {
+        // rollback uploaded files
+        try {
+          const filePaths = newAttachedFiles
+            .map((f) => f.filePath)
+            .filter(Boolean);
+          if (filePaths.length) {
+            await this.storageService.deleteSubmissionFiles(
+              createSubmissionDto.submissionId,
+              filePaths
+            );
+            this.logger.log(
+              `Rolled back ${filePaths.length} uploaded files for submission ${createSubmissionDto.submissionId}`
+            );
+          }
+        } catch (delErr) {
+          this.logger.error(
+            `Failed to cleanup uploaded files after save failure for ${createSubmissionDto.submissionId}: ${delErr.message}`
+          );
+        }
+        throw saveErr;
+      }
 
       this.logger.log(`Submission created successfully: ${savedSubmission.id}`);
       this.logger.log(
@@ -1126,8 +1167,10 @@ try {
 
       // Handle RETURNED_FROM_MOSPI status by changing it to SUBMITTED_TO_MOSPI_REVIEWER first
       if (submission.status === SubmissionStatus.RETURNED_FROM_MOSPI) {
-        console.log("Status is RETURNED_FROM_MOSPI, updating to SUBMITTED_TO_MOSPI_REVIEWER first...");
-        
+        console.log(
+          "Status is RETURNED_FROM_MOSPI, updating to SUBMITTED_TO_MOSPI_REVIEWER first..."
+        );
+
         // Update submission status to SUBMITTED_TO_MOSPI_REVIEWER
         await this.submissionRepository.update(submission.id, {
           status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
@@ -1138,10 +1181,16 @@ try {
         // Update the submission object for further processing
         submission.status = SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER;
         submission.currentOwnerRole = UserRole.MOSPI_REVIEWER;
-        
-        console.log("Status updated to SUBMITTED_TO_MOSPI_REVIEWER, continuing with normal flow...");
-      } else if (submission.status === SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER) {
-        console.log("Status is already SUBMITTED_TO_MOSPI_REVIEWER, continuing with normal flow...");
+
+        console.log(
+          "Status updated to SUBMITTED_TO_MOSPI_REVIEWER, continuing with normal flow..."
+        );
+      } else if (
+        submission.status === SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER
+      ) {
+        console.log(
+          "Status is already SUBMITTED_TO_MOSPI_REVIEWER, continuing with normal flow..."
+        );
       } else if (submission.status !== SubmissionStatus.SUBMITTED_TO_STATE) {
         console.log("Status check failed - throwing BadRequestException");
         throw new BadRequestException(

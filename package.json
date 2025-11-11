@@ -1,5 +1,5 @@
 {
-  "name": "niri-backend",
+  "name": "niri_dev-backend",
   "version": "1.0.0",
   "description": "National Infrastructure Readiness Index (NIRI) Backend API",
   "author": "NIRI Development Team",
@@ -47,6 +47,7 @@
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
+    "fs-extra": "^11.3.2",
     "multer": "^1.4.5-lts.1",
     "nestjs-cls": "^4.0.0",
     "passport": "^0.7.0",

@@ -1,6 +1,6 @@
 # National Infrastructure Readiness Index (NIRI) Backend API
 
-## 📋 Table of Contents
+## #📋 Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
@@ -100,7 +100,7 @@ National Infrastructure Readiness Index (NIRI) Backend API एक comprehensive 
 
 ```bash
 git clone <repository-url>
-cd niri-backend
+cd niri_dev-backend
 ```
 
 ### 2. Install Dependencies
@@ -229,10 +229,10 @@ npm run start:prod
 
 ```bash
 # Build image
-docker build -t niri-backend .
+docker build -t niri_dev-backend .
 
 # Run container
-docker run -p 3000:3000 niri-backend
+docker run -p 3000:3000 niri_dev-backend
 ```
 
 ### Docker Compose
@@ -388,7 +388,7 @@ S3_BUCKET_NAME=your-production-bucket
 
 ```bash
 # Build production image
-docker build -t niri-backend:latest .
+docker build -t niri_dev-backend:latest .
 
 # Run with environment variables
 docker run -d \
@@ -396,7 +396,7 @@ docker run -d \
   -e NODE_ENV=production \
   -e DB_HOST=your-db-host \
   -e DB_PASSWORD=your-password \
-  niri-backend:latest
+  niri_dev-backend:latest
 ```
 
 ## 🔧 Troubleshooting
