@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Submission, SubmissionStatus } from "../../entities/submission.entity";
@@ -31,6 +31,7 @@ export interface DashboardCounts {
 
 @Injectable()
 export class DashboardService {
+  private readonly logger = new Logger(DashboardService.name);
   constructor(
     @InjectRepository(Submission)
     private submissionRepository: Repository<Submission>
@@ -268,55 +269,57 @@ export class DashboardService {
     return statusColors[status] || "gray";
   }
 
-async getStateApproverDashboardCounts(
-  userRole: UserRole,
-  userStateUt: string
-): Promise<DashboardCounts> {
-  // ✅ 1. Total indicators assigned to Nodal Officers in this state
-  const totalAssigned = await this.submissionRepository.query(
-    `
-    SELECT COUNT(DISTINCT uis.indicator_id) AS count
-    FROM user_indicator_scope uis
-    JOIN users u ON uis.user_id = u.id
-    WHERE u.role = $1 
-      AND u.state_ut = $2
-    `,
-    [UserRole.NODAL_OFFICER, userStateUt]
-  );
-  const totalAssignedCount = parseInt(totalAssigned[0]?.count || "0");
-
-  // ✅ 2. Total indicators received
-  const totalIndicatorsReceivedQuery = await this.submissionRepository.query(
-    `
-    SELECT COUNT(DISTINCT uis.indicator_id) AS count
-    FROM user_indicator_scope uis
-    JOIN users u ON uis.user_id = u.id
-    WHERE u.role = $1 
-      AND u.state_ut = $2
-    `,
-    [UserRole.NODAL_OFFICER, userStateUt]
-  );
-  const totalIndicatorsReceived = parseInt(totalIndicatorsReceivedQuery[0]?.count || "0");
-
-  // ✅ 3. Count submission statuses (top-level)
-  const statusCounts = await this.submissionRepository
-    .createQueryBuilder("submission")
-    .select("submission.status", "status")
-    .addSelect("COUNT(*)", "count")
-    .where("submission.stateUt = :stateUt", { stateUt: userStateUt })
-    .groupBy("submission.status")
-    .getRawMany();
-
-  const byStatus = statusCounts.reduce(
-    (acc, item) => ({ ...acc, [item.status]: parseInt(item.count) }),
-    {} as Record<string, number>
-  );
-
-  // ✅ 4. Count Accepted indicators (from JSON)
-  let acceptedFromNodal = 0;
-  try {
-    const acceptedCountQuery = await this.submissionRepository.query(
+  async getStateApproverDashboardCounts(
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<DashboardCounts> {
+    // ✅ 1. Total indicators assigned to Nodal Officers in this state
+    const totalAssigned = await this.submissionRepository.query(
       `
+    SELECT COUNT(DISTINCT uis.indicator_id) AS count
+    FROM user_indicator_scope uis
+    JOIN users u ON uis.user_id = u.id
+    WHERE u.role = $1 
+      AND u.state_ut = $2
+    `,
+      [UserRole.NODAL_OFFICER, userStateUt]
+    );
+    const totalAssignedCount = parseInt(totalAssigned[0]?.count || "0");
+
+    // ✅ 2. Total indicators received
+    const totalIndicatorsReceivedQuery = await this.submissionRepository.query(
+      `
+    SELECT COUNT(DISTINCT uis.indicator_id) AS count
+    FROM user_indicator_scope uis
+    JOIN users u ON uis.user_id = u.id
+    WHERE u.role = $1 
+      AND u.state_ut = $2
+    `,
+      [UserRole.NODAL_OFFICER, userStateUt]
+    );
+    const totalIndicatorsReceived = parseInt(
+      totalIndicatorsReceivedQuery[0]?.count || "0"
+    );
+
+    // ✅ 3. Count submission statuses (top-level)
+    const statusCounts = await this.submissionRepository
+      .createQueryBuilder("submission")
+      .select("submission.status", "status")
+      .addSelect("COUNT(*)", "count")
+      .where("submission.stateUt = :stateUt", { stateUt: userStateUt })
+      .groupBy("submission.status")
+      .getRawMany();
+
+    const byStatus = statusCounts.reduce(
+      (acc, item) => ({ ...acc, [item.status]: parseInt(item.count) }),
+      {} as Record<string, number>
+    );
+
+    // ✅ 4. Count Accepted indicators (from JSON)
+    let acceptedFromNodal = 0;
+    try {
+      const acceptedCountQuery = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(cnt), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM jsonb_array_elements_text(
@@ -328,12 +331,12 @@ async getStateApproverDashboardCounts(
         WHERE s."stateUt" = $1
       ) t;
       `,
-      [userStateUt]
-    );
-    acceptedFromNodal = parseInt(acceptedCountQuery[0]?.count || "0");
-  } catch {
-    const fallback = await this.submissionRepository.query(
-      `
+        [userStateUt]
+      );
+      acceptedFromNodal = parseInt(acceptedCountQuery[0]?.count || "0");
+    } catch {
+      const fallback = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(matches), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"ACCEPTED"', 'g')
@@ -342,16 +345,16 @@ async getStateApproverDashboardCounts(
         WHERE s."stateUt" = $1
       ) t;
       `,
-      [userStateUt]
-    );
-    acceptedFromNodal = parseInt(fallback[0]?.count || "0");
-  }
+        [userStateUt]
+      );
+      acceptedFromNodal = parseInt(fallback[0]?.count || "0");
+    }
 
-  // ✅ 5. Count Reverted indicators (from JSON)
-  let returnedToNodal = 0;
-  try {
-    const revertedCountQuery = await this.submissionRepository.query(
-      `
+    // ✅ 5. Count Reverted indicators (from JSON)
+    let returnedToNodal = 0;
+    try {
+      const revertedCountQuery = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(cnt), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM jsonb_array_elements_text(
@@ -363,12 +366,12 @@ async getStateApproverDashboardCounts(
         WHERE s."stateUt" = $1
       ) t;
       `,
-      [userStateUt]
-    );
-    returnedToNodal = parseInt(revertedCountQuery[0]?.count || "0");
-  } catch {
-    const fallback = await this.submissionRepository.query(
-      `
+        [userStateUt]
+      );
+      returnedToNodal = parseInt(revertedCountQuery[0]?.count || "0");
+    } catch {
+      const fallback = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(matches), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"REVERTED"', 'g')
@@ -377,37 +380,190 @@ async getStateApproverDashboardCounts(
         WHERE s."stateUt" = $1
       ) t;
       `,
-      [userStateUt]
+        [userStateUt]
+      );
+      returnedToNodal = parseInt(fallback[0]?.count || "0");
+    }
+
+    // ✅ 6. Pending = Assigned but not yet submitted
+    const pendingSubmission = Math.max(
+      totalAssignedCount - totalIndicatorsReceived,
+      0
     );
-    returnedToNodal = parseInt(fallback[0]?.count || "0");
+
+    // ✅ 7. MoSPI metrics (same)
+    const submittedToMoSPI =
+      (byStatus[SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER] || 0) +
+      (byStatus[SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER] || 0);
+    const returnedFromMoSPI =
+      byStatus[SubmissionStatus.RETURNED_FROM_MOSPI] || 0;
+    const approvedByMoSPI = byStatus[SubmissionStatus.APPROVED] || 0;
+
+    // ✅ 8. Return final structured response
+    return {
+      nodal: {
+        totalAssigned: totalAssignedCount,
+        totalIndicatorsReceived,
+        acceptedFromNodal,
+        pendingSubmission,
+        returnedToNodal,
+      },
+      mospi: {
+        submittedToMoSPI,
+        returnedFromMoSPI,
+        approvedByMoSPI,
+      },
+    };
   }
 
-  // ✅ 6. Pending = Assigned but not yet submitted
-  const pendingSubmission = Math.max(totalAssignedCount - totalIndicatorsReceived, 0);
+async getNodalOfficerDashboardCounts(userId: string): Promise<{
+  totalAssigned: number;
+  totalSubmitted: number;
+  approved: number;
+  reverted: number;
+  underReview: number;
+  pendingSubmission: number;
+}> {
+  this.logger.log(`[NodalDashboard] Computing metrics based on section.status for userId=${userId}`);
 
-  // ✅ 7. MoSPI metrics (same)
-  const submittedToMoSPI =
-    (byStatus[SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER] || 0) +
-    (byStatus[SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER] || 0);
-  const returnedFromMoSPI = byStatus[SubmissionStatus.RETURNED_FROM_MOSPI] || 0;
-  const approvedByMoSPI = byStatus[SubmissionStatus.APPROVED] || 0;
+  // 1️⃣ Total indicators assigned to this Nodal Officer
+  const totalAssignedRes = await this.submissionRepository.query(
+    `
+    SELECT COUNT(DISTINCT uis.indicator_id) AS count
+    FROM user_indicator_scope uis
+    WHERE uis.user_id = $1
+    `,
+    [userId]
+  );
+  const totalAssigned = parseInt(totalAssignedRes[0]?.count || "0");
+  this.logger.log(`[NodalDashboard] totalAssigned = ${totalAssigned}`);
 
-  // ✅ 8. Return final structured response
+  // 2️⃣ Total Submitted (any section that has a "status" key)
+  let totalSubmitted = 0;
+  try {
+    const totalSubmittedQuery = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM jsonb_array_elements_text(
+            jsonb_path_query_array(s.form_data, '$.**.status')
+          ) AS st(val)
+        ) AS cnt
+        FROM submissions s
+        WHERE s.submitted_by = $1
+      ) t;
+      `,
+      [userId]
+    );
+    totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
+  } catch (err) {
+    this.logger.warn(`[NodalDashboard] JSONPath failed for totalSubmitted, falling back to regex`);
+    const fallback = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(matches), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"', 'g')
+        ) AS matches
+        FROM submissions s
+        WHERE s.submitted_by = $1
+      ) t;
+      `,
+      [userId]
+    );
+    totalSubmitted = parseInt(fallback[0]?.count || "0");
+  }
+  this.logger.log(`[NodalDashboard] totalSubmitted sections = ${totalSubmitted}`);
+
+  // 3️⃣ Approved sections (status = "ACCEPTED")
+  let approved = 0;
+  try {
+    const approvedQuery = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM jsonb_array_elements_text(
+            jsonb_path_query_array(s.form_data, '$.**.status')
+          ) AS st(val)
+          WHERE st.val = 'ACCEPTED'
+        ) AS cnt
+        FROM submissions s
+        WHERE s.submitted_by = $1
+      ) t;
+      `,
+      [userId]
+    );
+    approved = parseInt(approvedQuery[0]?.count || "0");
+  } catch {
+    const fallback = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(matches), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"ACCEPTED"', 'g')
+        ) AS matches
+        FROM submissions s
+        WHERE s.submitted_by = $1
+      ) t;
+      `,
+      [userId]
+    );
+    approved = parseInt(fallback[0]?.count || "0");
+  }
+  this.logger.log(`[NodalDashboard] approved sections (status=ACCEPTED) = ${approved}`);
+
+  // 4️⃣ Reverted sections (status = "REVERTED")
+  let reverted = 0;
+  try {
+    const revertedQuery = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM jsonb_array_elements_text(
+            jsonb_path_query_array(s.form_data, '$.**.status')
+          ) AS st(val)
+          WHERE st.val = 'REVERTED'
+        ) AS cnt
+        FROM submissions s
+        WHERE s.submitted_by = $1
+      ) t;
+      `,
+      [userId]
+    );
+    reverted = parseInt(revertedQuery[0]?.count || "0");
+  } catch {
+    const fallback = await this.submissionRepository.query(
+      `
+      SELECT COALESCE(SUM(matches), 0) AS count FROM (
+        SELECT (
+          SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"REVERTED"', 'g')
+        ) AS matches
+        FROM submissions s
+        WHERE s.submitted_by = $1
+      ) t;
+      `,
+      [userId]
+    );
+    reverted = parseInt(fallback[0]?.count || "0");
+  }
+  this.logger.log(`[NodalDashboard] reverted sections (status=REVERTED) = ${reverted}`);
+
+  // 5️⃣ Under Review = submitted - (accepted + reverted)
+  const underReview = Math.max(totalSubmitted - approved - reverted, 0);
+
+  // 6️⃣ Pending = assigned - submitted
+  const pendingSubmission = Math.max(totalAssigned - totalSubmitted, 0);
+
+  this.logger.log(
+    `[NodalDashboard] Final => totalAssigned=${totalAssigned}, totalSubmitted=${totalSubmitted}, approved=${approved}, reverted=${reverted}, underReview=${underReview}, pendingSubmission=${pendingSubmission}`
+  );
+
   return {
-    nodal: {
-      totalAssigned: totalAssignedCount,
-      totalIndicatorsReceived,
-      acceptedFromNodal,
-      pendingSubmission,
-      returnedToNodal,
-    },
-    mospi: {
-      submittedToMoSPI,
-      returnedFromMoSPI,
-      approvedByMoSPI,
-    },
+    totalAssigned,
+    totalSubmitted,
+    approved,
+    reverted,
+    underReview,
+    pendingSubmission,
   };
 }
-
 
 }
