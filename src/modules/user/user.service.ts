@@ -642,4 +642,32 @@ export class UserService {
       assigned: indicatorIds,
     };
   }
+
+
+
+   //Restrict for state assigned users
+
+    async assignedStateByStateApprover(roleName: UserRole) {   
+    if (!roleName) {
+        throw new Error("roleName is required");
+      }
+    const stateAssignedData = await this.userRepository.find({
+                select: ["stateUt"],        
+                where: { isActive:true, role: roleName }
+              });
+ 
+    // Collect all state values (which may be comma-separated)
+    const stateUtValues = stateAssignedData.map((user) => user.stateUt); 
+    
+    // Split comma-separated values and flatten into a single array
+    const allStates = stateUtValues.flatMap((stateString) => 
+      stateString.split(',').map((state) => state.trim())
+    );
+    
+    // Remove duplicates and filter out empty strings
+    const uniqueStateUtValues = [...new Set(allStates)].filter(state => state.length > 0);
+    
+    return uniqueStateUtValues; 
+  }
+
 }
