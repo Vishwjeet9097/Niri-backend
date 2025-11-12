@@ -303,4 +303,15 @@ export class UserController {
   async findOne(@Param("id") id: string, @Request() req) {
     return this.userService.findOne(id, req.user.role, req.user.stateUt);
   }
+
+  //Restrict for state assigned users
+
+  @Get("states/assigned-state-by-state-approver/:roleName")
+  @UseGuards(RolesGuard)  
+  async assignedStateByState ( 
+    @Param('roleName') roleName: UserRole,
+    @Request() req
+  ) {   
+       return this.userService.assignedStateByStateApprover(roleName);
+  }
 }
