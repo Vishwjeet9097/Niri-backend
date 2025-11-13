@@ -56,7 +56,7 @@ export class Submission {
   @Column({ name: "submission_id", unique: true })
   submissionId: string;
 
-  @Column({ name: "state_ut" })
+  @Column({ name: "stateUt" })
   stateUt: string;
 
   @Column({ name: "submitted_by" })
