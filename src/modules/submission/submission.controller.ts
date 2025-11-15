@@ -684,7 +684,7 @@ export class SubmissionController {
 
   @Post("indicator-submission-status")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.STATE_APPROVER)
+  @Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_APPROVER, UserRole.MOSPI_REVIEWER)
   @HttpCode(HttpStatus.OK)
   async indicatorSubmissionAccepted(
     @Body()
@@ -692,11 +692,12 @@ export class SubmissionController {
       submissionId?: string;
       category?: string;
       section?: string;
-      status: boolean;
+      status?: boolean;
+      mospi_status?: string;
     },
     @Request() req
   ) {
-    const { submissionId, category, section, status } = body;
+    const { submissionId, category, section, status, mospi_status } = body;
 
     if (!submissionId || !category || !section || typeof status !== "boolean") {
       throw new BadRequestException(
@@ -704,8 +705,15 @@ export class SubmissionController {
       );
     }
 
+    let fields: any = [];
     // Create fields array with status
-    const fields = [{ status: status ? "ACCEPTED" : "REVERTED" }];
+    if(req.user.role === UserRole.STATE_APPROVER ){
+      fields = [{ status: status ? "ACCEPTED" : "REVERTED" }];
+    }
+    else{
+      fields = [{ mospi_status: mospi_status }];
+    }
+
 
     // Reuse existing service method
     return this.submissionService.updateFormSectionFields(
