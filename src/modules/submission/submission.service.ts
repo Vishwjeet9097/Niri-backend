@@ -2396,7 +2396,7 @@ if (node.filePath && node.fileName) return node;
 
     // State approver must belong to same state
     if (
-      userRole === UserRole.STATE_APPROVER &&
+      // userRole === UserRole.STATE_APPROVER &&
       submission.stateUt !== userStateUt
     ) {
       throw new ForbiddenException(
