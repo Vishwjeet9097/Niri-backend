@@ -2509,7 +2509,12 @@ async buildCumulativePreview(params: {
     userRole !== UserRole.NODAL_OFFICER
   ) throw new ForbiddenException('Access denied');
 
-  if (userRole === UserRole.STATE_APPROVER && userStateUt && userStateUt !== stateUt) {
+  // Normalize state comparison (case-insensitive and trim whitespace)
+  const normalizedStateUt = stateUt?.trim().toLowerCase();
+  const normalizedUserStateUt = userStateUt?.trim().toLowerCase();
+
+  if (userRole === UserRole.STATE_APPROVER && normalizedUserStateUt && normalizedUserStateUt !== normalizedStateUt) {
+    this.logger.warn(`STATE_APPROVER access denied: userStateUt="${userStateUt}" !== stateUt="${stateUt}"`);
     throw new ForbiddenException('You can only preview your own state');
   }
 
