@@ -44,6 +44,13 @@ export interface SubmissionFile {
   uploadedAt: Date;
 }
 
+export interface SectionStatus {
+  sectionId: string; // e.g., "infraFinancing", "infraDevelopment", "pppDevelopment", "infraEnablers"
+  isCompleted: boolean;
+  completedAt?: Date;
+  lastModifiedAt?: Date;
+}
+
 @Entity("submissions")
 @Index(["stateUt"])
 @Index(["status"])
@@ -94,6 +101,13 @@ export class Submission {
   })
   attachedFiles: any;
   // attachedFiles: SubmissionFile[];
+
+  @Column({
+    name: "section_status",
+    type: "jsonb",
+    default: () => "'[]'",
+  })
+  sectionStatus: SectionStatus[];
 
   @Column({
     type: "enum",
