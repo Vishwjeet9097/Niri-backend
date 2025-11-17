@@ -635,7 +635,39 @@ if (node.filePath && node.fileName) return node;
     } else if (userRole === UserRole.STATE_APPROVER) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
     } else if (userRole === UserRole.MOSPI_REVIEWER) {
-      query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
+      // MoSPI Reviewer can only see submissions from their assigned state(s)
+      // Handle multiple states: userStateUt can be comma-separated like "Odisha, Maharashtra"
+      // Split by comma and check if submission's stateUt matches any of the assigned states
+      const assignedStates = userStateUt
+        ? userStateUt.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+      
+      this.logger.log(
+        `[MOSPI_REVIEWER] UserId: ${userId}, UserStateUt: ${userStateUt}, AssignedStates: ${JSON.stringify(assignedStates)}`
+      );
+      
+      if (assignedStates.length > 0) {
+        // Use IN clause for multiple states, or exact match for single state
+        // Use case-insensitive comparison to handle state name variations
+        if (assignedStates.length === 1) {
+          query.andWhere("LOWER(TRIM(submission.stateUt)) = LOWER(TRIM(:stateUt))", { 
+            stateUt: assignedStates[0] 
+          });
+        } else {
+          // For multiple states, use case-insensitive IN comparison
+          const lowerAssignedStates = assignedStates.map(s => s.toLowerCase());
+          query.andWhere(
+            "LOWER(TRIM(submission.stateUt)) IN (:...assignedStates)",
+            { assignedStates: lowerAssignedStates }
+          );
+        }
+      }
+      // If no status filter is provided, default to SUBMITTED_TO_MOSPI_REVIEWER
+      if (!status) {
+        query.andWhere("submission.status = :defaultStatus", {
+          defaultStatus: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+        });
+      }
     } else if (userRole === UserRole.MOSPI_APPROVER) {
       // MoSPI Approver can see submissions from all states
       // No state filter - they see all submissions submitted to them
