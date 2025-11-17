@@ -50,7 +50,7 @@ National Infrastructure Readiness Index (NIRI) Backend API एक comprehensive 
 
 - **Dual Storage**: Local filesystem और AWS S3
 - **File Upload**: Single और multiple file uploads
-- **File Validation**: Size limits (10MB), MIME type validation
+- **File Validation**: Size limits (50MB), MIME type validation
 - **File Organization**: Structured folder management
 - **File Security**: Role-based access control
 
