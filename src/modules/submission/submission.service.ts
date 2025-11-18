@@ -59,6 +59,53 @@ export class SubmissionService {
   ) {}
   
 
+  // Helper function to check if a MOSPI reviewer is assigned to a state
+  // Handles both single state and comma-separated multiple states
+  private async hasMospiReviewerForState(stateUt: string): Promise<boolean> {
+    if (!stateUt || !stateUt.trim()) {
+      return false;
+    }
+
+    // Normalize the state name (trim and lowercase for comparison)
+    const normalizedStateUt = stateUt.trim().toLowerCase();
+
+    // Query all MOSPI_REVIEWER users
+    const mospiReviewers = await this.userRepository.find({
+      where: { role: UserRole.MOSPI_REVIEWER },
+      select: ['id', 'stateUt'],
+    });
+
+    this.logger.log(
+      `Checking for MOSPI reviewer for state: ${stateUt}. Found ${mospiReviewers.length} MOSPI reviewers total.`
+    );
+
+    // Check if any MOSPI reviewer has this state assigned
+    for (const reviewer of mospiReviewers) {
+      if (!reviewer.stateUt) {
+        continue;
+      }
+
+      // Handle comma-separated states (e.g., "Odisha, Maharashtra")
+      const assignedStates = reviewer.stateUt
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+      // Check if the submission's state matches any of the reviewer's assigned states
+      if (assignedStates.includes(normalizedStateUt)) {
+        this.logger.log(
+          `Found MOSPI reviewer (ID: ${reviewer.id}) assigned to state: ${stateUt}. Reviewer's assigned states: ${reviewer.stateUt}`
+        );
+        return true;
+      }
+    }
+
+    this.logger.warn(
+      `No MOSPI reviewer found for state: ${stateUt}. Cannot forward submission.`
+    );
+    return false;
+  }
+
   // Helper function to get user name
   private async getUserName(userId: string): Promise<string> {
     const user = await this.dataSource
@@ -506,6 +553,22 @@ if (node.filePath && node.fileName) return node;
         `Initial Status: ${status}, Owner Role: ${currentOwnerRole}`
       );
 
+      // Step 3.5: Validate MOSPI reviewer assignment if STATE_APPROVER is creating submission with SUBMITTED_TO_MOSPI_REVIEWER status
+      if (
+        userRole === UserRole.STATE_APPROVER &&
+        status === SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER
+      ) {
+        const hasReviewer = await this.hasMospiReviewerForState(stateUt);
+        if (!hasReviewer) {
+          this.logger.error(
+            `No MOSPI reviewer assigned to state: ${stateUt}. Cannot create submission with SUBMITTED_TO_MOSPI_REVIEWER status.`
+          );
+          throw new BadRequestException(
+            `No MOSPI Reviewer assigned to state: ${stateUt}. Please contact administrator to assign a MOSPI Reviewer to your state before submitting.`
+          );
+        }
+      }
+
       // Step 4: Create submission
       let processedFormData = createSubmissionDto.formData;
       let newAttachedFiles: SubmissionFile[] = [];
@@ -633,6 +696,8 @@ if (node.filePath && node.fileName) return node;
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
       query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
     } else if (userRole === UserRole.STATE_APPROVER) {
+      // STATE_APPROVER can see all submissions from their state (all statuses including APPROVED)
+      // This includes: SUBMITTED_TO_STATE, SUBMITTED_TO_MOSPI_REVIEWER, SUBMITTED_TO_MOSPI_APPROVER, APPROVED, etc.
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
     } else if (userRole === UserRole.MOSPI_REVIEWER) {
       // MoSPI Reviewer can only see submissions from their assigned state(s)
@@ -662,19 +727,27 @@ if (node.filePath && node.fileName) return node;
           );
         }
       }
-      // If no status filter is provided, default to SUBMITTED_TO_MOSPI_REVIEWER
+      // If no status filter is provided, default to showing SUBMITTED_TO_MOSPI_REVIEWER, SUBMITTED_TO_MOSPI_APPROVER, and APPROVED
+      // This allows MOSPI_REVIEWER to see submissions they need to review, submissions they've forwarded to approver, and approved submissions
       if (!status) {
-        query.andWhere("submission.status = :defaultStatus", {
-          defaultStatus: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+        query.andWhere("submission.status IN (:...defaultStatuses)", {
+          defaultStatuses: [
+            SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+            SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+            SubmissionStatus.APPROVED,
+          ],
         });
       }
     } else if (userRole === UserRole.MOSPI_APPROVER) {
       // MoSPI Approver can see submissions from all states
       // No state filter - they see all submissions submitted to them
-      // If no status filter is provided, default to SUBMITTED_TO_MOSPI_APPROVER
+      // If no status filter is provided, default to SUBMITTED_TO_MOSPI_APPROVER and APPROVED
       if (!status) {
-        query.andWhere("submission.status = :defaultStatus", {
-          defaultStatus: SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+        query.andWhere("submission.status IN (:...defaultStatuses)", {
+          defaultStatuses: [
+            SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+            SubmissionStatus.APPROVED,
+          ],
         });
       }
     }
@@ -1250,7 +1323,20 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
-      console.log("Status check passed, processing comments...");
+      console.log("Status check passed, checking for MOSPI reviewer...");
+      
+      // Validate that a MOSPI reviewer is assigned to this state
+      const hasReviewer = await this.hasMospiReviewerForState(submission.stateUt);
+      if (!hasReviewer) {
+        this.logger.error(
+          `No MOSPI reviewer assigned to state: ${submission.stateUt}. Cannot forward submission.`
+        );
+        throw new BadRequestException(
+          `No MOSPI Reviewer assigned to state: ${submission.stateUt}. Please contact administrator to assign a MOSPI Reviewer to your state before submitting.`
+        );
+      }
+
+      console.log("MOSPI reviewer check passed, processing comments...");
       // Add comment if provided using helper function
       let updatedComments = [...submission.reviewComments];
       if (forwardDto.comment) {
@@ -2147,12 +2233,43 @@ if (node.filePath && node.fileName) return node;
         updatedComments.push(comment);
       }
 
-      await this.submissionRepository.update(id, {
-        status: forwardDto.status,
-        currentOwnerRole: UserRole.MOSPI_APPROVER,
-        reviewComments: updatedComments,
-        indicatorComment: this.groupCommentsByIndicator(updatedComments),
-      });
+      // Use raw SQL with proper PostgreSQL JSONB array handling (same as forwardToMoSPIReviewer)
+      this.logger.log(`Updating submission with status: ${forwardDto.status}`);
+      this.logger.log(
+        `Review comments to update: ${JSON.stringify(updatedComments)}`
+      );
+
+      // Log the exact data being saved
+      this.logger.log(`=== DATABASE UPDATE DATA ===`);
+      this.logger.log(`Submission ID: ${id}`);
+      this.logger.log(`Status: ${forwardDto.status}`);
+      this.logger.log(`Current Owner Role: ${UserRole.MOSPI_APPROVER}`);
+      this.logger.log(`Review Comments Count: ${updatedComments.length}`);
+      this.logger.log(
+        `Review Comments JSON: ${JSON.stringify(updatedComments)}`
+      );
+
+      // Use raw SQL with proper PostgreSQL array syntax
+      const indicatorComments = this.groupCommentsByIndicator(updatedComments);
+      const result = await this.dataSource.query(
+        `UPDATE submissions 
+         SET status = $1, 
+             current_owner_role = $2, 
+             review_comments = $3::jsonb,
+             indicator_comment = $4::jsonb,
+             "updatedAt" = CURRENT_TIMESTAMP 
+         WHERE id = $5
+         RETURNING id, status, current_owner_role, review_comments, indicator_comment`,
+        [
+          forwardDto.status,
+          UserRole.MOSPI_APPROVER,
+          JSON.stringify(updatedComments), // Pass as JSON string
+          JSON.stringify(indicatorComments), // Pass indicator comments as JSON string
+          id,
+        ]
+      );
+
+      this.logger.log(`Update result: ${JSON.stringify(result)}`);
 
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(
@@ -2433,8 +2550,9 @@ if (node.filePath && node.fileName) return node;
     }
 
     // State approver must belong to same state
+    // MOSPI_APPROVER and MOSPI_REVIEWER can access submissions from any state
     if (
-      // userRole === UserRole.STATE_APPROVER &&
+      userRole === UserRole.STATE_APPROVER &&
       submission.stateUt !== userStateUt
     ) {
       throw new ForbiddenException(
@@ -2443,13 +2561,21 @@ if (node.filePath && node.fileName) return node;
     }
 
     // Restrict edits once MOSPI processing or final approval/rejection has progressed
+    // However, allow MOSPI_REVIEWER to update indicators when status is SUBMITTED_TO_MOSPI_REVIEWER
+    // And allow MOSPI_APPROVER to update indicators when status is SUBMITTED_TO_MOSPI_APPROVER
     const immutableStatuses = [
       SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
       SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
       SubmissionStatus.APPROVED,
       SubmissionStatus.REJECTED_FINAL,
     ];
-    if (immutableStatuses.includes(submission.status)) {
+    
+    // Allow MOSPI roles to update indicators in their respective statuses
+    const canUpdateInCurrentStatus = 
+      (userRole === UserRole.MOSPI_REVIEWER && submission.status === SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER) ||
+      (userRole === UserRole.MOSPI_APPROVER && submission.status === SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER);
+    
+    if (immutableStatuses.includes(submission.status) && !canUpdateInCurrentStatus) {
       throw new BadRequestException(
         `Cannot modify submission in status ${submission.status}`
       );
