@@ -248,17 +248,16 @@ export class UserController {
     @Body() updateUserDto: UpdateUserDto,
     @Request() req
   ) {
-      const effectiveStateUt = updateUserDto.stateUt?.length
-  ? updateUserDto.stateUt
-  : req.user.stateUt;
+    const effectiveStateUt = updateUserDto.stateUt?.length
+      ? updateUserDto.stateUt
+      : req.user.stateUt;
 
-   
     return this.userService.update(
       id,
       updateUserDto,
       req.user.role,
       //req.user.stateUt
-     effectiveStateUt
+      effectiveStateUt
     );
   }
 
@@ -272,7 +271,7 @@ export class UserController {
   )
   async deactivate(@Param("id") id: string, @Request() req) {
     await this.userService.deactivate(id, req.user.role, req.user.stateUt);
-    return { message: "User deactivated successfully" };
+    return { message: "User deleted successfully" };
   }
 
   @Delete("bulk/delete")
@@ -307,11 +306,11 @@ export class UserController {
   //Restrict for state assigned users
 
   @Get("states/assigned-state-by-state-approver/:roleName")
-  @UseGuards(RolesGuard)  
-  async assignedStateByState ( 
-    @Param('roleName') roleName: UserRole,
+  @UseGuards(RolesGuard)
+  async assignedStateByState(
+    @Param("roleName") roleName: UserRole,
     @Request() req
-  ) {   
-       return this.userService.assignedStateByStateApprover(roleName);
+  ) {
+    return this.userService.assignedStateByStateApprover(roleName);
   }
 }
