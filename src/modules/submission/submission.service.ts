@@ -698,11 +698,49 @@ if (node.filePath && node.fileName) return node;
       query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
     } else if (userRole === UserRole.STATE_APPROVER) {
       query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
-    } else if (
-      userRole === UserRole.MOSPI_REVIEWER ||
-      userRole === UserRole.MOSPI_APPROVER
-    ) {
-      query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
+    } else if (userRole === UserRole.MOSPI_REVIEWER) {
+      // MoSPI Reviewer can only see submissions from their assigned state(s)
+      // Handle multiple states: userStateUt can be comma-separated like "Odisha, Maharashtra"
+      // Split by comma and check if submission's stateUt matches any of the assigned states
+      const assignedStates = userStateUt
+        ? userStateUt.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+      
+      this.logger.log(
+        `[MOSPI_REVIEWER] UserId: ${userId}, UserStateUt: ${userStateUt}, AssignedStates: ${JSON.stringify(assignedStates)}`
+      );
+      
+      if (assignedStates.length > 0) {
+        // Use IN clause for multiple states, or exact match for single state
+        // Use case-insensitive comparison to handle state name variations
+        if (assignedStates.length === 1) {
+          query.andWhere("LOWER(TRIM(submission.stateUt)) = LOWER(TRIM(:stateUt))", { 
+            stateUt: assignedStates[0] 
+          });
+        } else {
+          // For multiple states, use case-insensitive IN comparison
+          const lowerAssignedStates = assignedStates.map(s => s.toLowerCase());
+          query.andWhere(
+            "LOWER(TRIM(submission.stateUt)) IN (:...assignedStates)",
+            { assignedStates: lowerAssignedStates }
+          );
+        }
+      }
+      // If no status filter is provided, default to SUBMITTED_TO_MOSPI_REVIEWER
+      if (!status) {
+        query.andWhere("submission.status = :defaultStatus", {
+          defaultStatus: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+        });
+      }
+    } else if (userRole === UserRole.MOSPI_APPROVER) {
+      // MoSPI Approver can see submissions from all states
+      // No state filter - they see all submissions submitted to them
+      // If no status filter is provided, default to SUBMITTED_TO_MOSPI_APPROVER
+      if (!status) {
+        query.andWhere("submission.status = :defaultStatus", {
+          defaultStatus: SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+        });
+      }
     }
     // Only ADMIN can see all submissions
 
@@ -3316,7 +3354,8 @@ async buildCumulativePreview(params: {
     }
 
     // B) legacy formData fallbacks
-    if (formData) {
+    if (formData && typeof formData === 'object') {
+      // Direct lookups by code/id/name
       if (formData[ind.code] != null) return formData[ind.code];
       if (formData[ind.id]   != null) return formData[ind.id];
       if (formData[ind.name] != null) return formData[ind.name];
@@ -3326,10 +3365,20 @@ async buildCumulativePreview(params: {
         'infraFinancing','infraDevelopment','pppDevelopment','infraEnablers',
         'infrastructureFinancing','infrastructureDevelopment','infrastructureEnablers'
       ];
+      
+      // Try each parent category
       for (const p of parents) {
         const node = deepGet(formData, `${p}.${sectionKey}`);
-        if (node != null) return (node && typeof node === 'object' && 'data' in node) ? node.data : node;
+        // Check if node exists and is not null/undefined
+        // Empty objects {} and empty arrays [] are valid - they indicate the section exists
+        if (node != null) {
+          // Return the full node to preserve status field
+          // The status is stored on the node itself (e.g., formData.infraFinancing.section1_1.status)
+          return node;
+        }
       }
+      
+      // Try alternative container paths
       const containerPaths = [
         `sections.${ind.sectionId}.${sectionKey}`,
         `sections.${ind.sectionId}.indicators.${ind.code}`,
@@ -3339,7 +3388,10 @@ async buildCumulativePreview(params: {
       ];
       for (const path of containerPaths) {
         const node = deepGet(formData, path);
-        if (node != null) return (node && typeof node === 'object' && 'data' in node) ? node.data : node;
+        if (node != null) {
+          // Return the full node to preserve status field
+          return node;
+        }
       }
     }
     return null;
@@ -3347,8 +3399,35 @@ async buildCumulativePreview(params: {
 
   const pickIndicatorMeta = (recordIn: any, submission: any) => {
     const rec = pickScalarRecord(recordIn);
+    
+    // Extract status: check record first, then submission status, then default to NOT_STARTED
+    // The status might be on the record itself (from formData section) or on the submission
+    let status = rec?.status;
+    if (!status && submission?.formData) {
+      // Try to find status in formData structure if not directly on record
+      // This handles cases where status is stored separately from data
+      const formData = submission.formData;
+      if (rec && typeof rec === 'object') {
+        // Check if record has a code or sectionKey to locate it in formData
+        const sectionKey = rec.sectionKey || (rec.code ? codeToSectionKey(rec.code) : null);
+        const parentKey = rec.parentKey || categoryToParentKey(rec.category);
+        if (sectionKey && parentKey) {
+          const node = deepGet(formData, `${parentKey}.${sectionKey}`);
+          if (node?.status) {
+            status = node.status;
+          }
+        }
+      }
+    }
+    if (!status) {
+      status = submission?.status;
+    }
+    if (!status) {
+      status = 'NOT_STARTED';
+    }
+    
     return {
-      status: (rec?.status ?? submission?.status ?? 'NOT_STARTED') as string,
+      status: status as string,
       score: rec?.marksObtained ?? rec?.score ?? null,
       remarks: rec?.remarks ?? rec?.comment ?? null,
       year: normalizeYear(rec?.year ?? rec?.fiscalYear ?? pickSubmissionYear(submission)),
@@ -3365,26 +3444,69 @@ async buildCumulativePreview(params: {
   // ---------- 2) Submissions for state ----------
   let allSubsRaw: Submission[] = [];
   try {
+    // Try case-insensitive comparison for stateUt
     allSubsRaw = await this.submissionRepository
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.statuses', 'statuses')
-      .where('s.stateUt = :stateUt', { stateUt })
+      .where('LOWER(s.stateUt) = LOWER(:stateUt)', { stateUt })
       .getMany();
-  } catch {
-    allSubsRaw = await this.submissionRepository.find({ where: { stateUt } as any, loadRelationIds: false });
+  } catch (err) {
+    this.logger.warn(`Failed to query with join, falling back: ${err}`);
+    // Fallback: get all submissions and filter in-memory (case-insensitive)
+    const allSubs = await this.submissionRepository.find({ loadRelationIds: false });
+    allSubsRaw = allSubs.filter(s => s.stateUt && s.stateUt.toLowerCase() === stateUt.toLowerCase());
+  }
+
+  this.logger.log(`[buildCumulativePreview] Found ${allSubsRaw.length} submissions for stateUt=${stateUt}`);
+  if (allSubsRaw.length > 0) {
+    this.logger.log(`[buildCumulativePreview] Sample submission IDs: ${allSubsRaw.slice(0, 3).map(s => s.submissionId).join(', ')}`);
+    // Log sample formData structure
+    const sample = allSubsRaw[0];
+    if (sample?.formData) {
+      const formDataKeys = Object.keys(sample.formData);
+      this.logger.log(`[buildCumulativePreview] Sample formData keys: ${formDataKeys.join(', ')}`);
+      if (formDataKeys.length > 0) {
+        const firstKey = formDataKeys[0];
+        const firstCategory = sample.formData[firstKey];
+        if (firstCategory && typeof firstCategory === 'object') {
+          const sectionKeys = Object.keys(firstCategory).slice(0, 3);
+          this.logger.log(`[buildCumulativePreview] Sample ${firstKey} sections: ${sectionKeys.join(', ')}`);
+        }
+      }
+    }
   }
 
   // Year filter in-memory (entity likely has no "year" column)
   const subs = year
     ? allSubsRaw.filter(s => (pickSubmissionYear(s) ?? '') === String(year))
     : allSubsRaw;
+  
+  if (year && subs.length !== allSubsRaw.length) {
+    this.logger.log(`[buildCumulativePreview] Filtered to ${subs.length} submissions for year=${year}`);
+  }
 
   // ---------- 3) Choose best submission per indicator ----------
   const bestByIndicator = new Map<string, Submission | null>();
   const dbg: any = DEBUG ? { totals: { submissions: subs.length }, perIndicator: {} } : undefined;
 
   for (const ind of indicators) {
-    const candidates = subs.filter(s => findIndicatorPayload(s, ind) != null);
+    const candidates = subs.filter(s => {
+      const payload = findIndicatorPayload(s, ind);
+      return payload != null;
+    });
+
+    // Debug logging for first few indicators
+    if (ind.code === '1.1' || ind.code === '1.2' || ind.code === '2.1') {
+      this.logger.log(`[buildCumulativePreview] Indicator ${ind.code}: found ${candidates.length} candidate submissions`);
+      if (candidates.length > 0) {
+        const sampleCandidate = candidates[0];
+        const samplePayload = findIndicatorPayload(sampleCandidate, ind);
+        this.logger.log(`[buildCumulativePreview] Indicator ${ind.code}: sample payload keys: ${samplePayload && typeof samplePayload === 'object' ? Object.keys(samplePayload).join(', ') : 'not an object'}`);
+        if (samplePayload && typeof samplePayload === 'object') {
+          this.logger.log(`[buildCumulativePreview] Indicator ${ind.code}: sample payload status: ${samplePayload.status || 'no status field'}`);
+        }
+      }
+    }
 
     const accepted = candidates.find(s => {
       const rec = pickScalarRecord(findIndicatorPayload(s, ind));
@@ -3424,6 +3546,28 @@ async buildCumulativePreview(params: {
     const category = ind.category || 'Uncategorized';
     if (!grouped[category]) grouped[category] = [];
 
+    // Extract data from record - if record has a 'data' property, use that, otherwise use the record itself
+    // But exclude status, score, remarks, etc. from the data field (those are in meta)
+    let dataField = null;
+    if (record) {
+      const rec = pickScalarRecord(record);
+      if (rec && typeof rec === 'object') {
+        // If record has a 'data' property, use that
+        if ('data' in rec && rec.data != null) {
+          dataField = rec.data;
+        } else {
+          // Otherwise, use the record but exclude metadata fields
+          const { status, score, marksObtained, remarks, comment, updatedAt, year, fiscalYear, ...dataOnly } = rec;
+          // Only include if there's actual data (not just metadata)
+          if (Object.keys(dataOnly).length > 0) {
+            dataField = dataOnly;
+          }
+        }
+      } else {
+        dataField = rec;
+      }
+    }
+
     grouped[category].push({
       id: ind.id,
       code: ind.code,
@@ -3431,7 +3575,7 @@ async buildCumulativePreview(params: {
       category: ind.category,
       sectionId: ind.sectionId,
       maxScore: ind.maxScore,
-      data: record ?? null,
+      data: dataField,
       status: meta.status,
       score: meta.score,
       remarks: meta.remarks,
