@@ -70,14 +70,15 @@ export class StorageService {
     submissionId: string,
     fileType?: string
   ): Promise<StoredFile> {
-    if (!file) {
+    // Validate that file exists and has required properties
+    if (!file || !file.originalname || (!file.buffer && !file.path)) {
       throw new BadRequestException("No file provided");
     }
 
-    // Validate file size (10MB limit)
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    // Validate file size (50MB limit)
+    const maxSize = 50 * 1024 * 1024; // 50MB
     if (file.size > maxSize) {
-      throw new BadRequestException("File size exceeds 10MB limit");
+      throw new BadRequestException("File size exceeds 50MB limit");
     }
 
     // Validate file type

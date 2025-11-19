@@ -286,20 +286,51 @@ export class DashboardService {
     );
     const totalAssignedCount = parseInt(totalAssigned[0]?.count || "0");
 
-    // ✅ 2. Total indicators received
-    const totalIndicatorsReceivedQuery = await this.submissionRepository.query(
-      `
-    SELECT COUNT(DISTINCT uis.indicator_id) AS count
-    FROM user_indicator_scope uis
-    JOIN users u ON uis.user_id = u.id
-    WHERE u.role = $1 
-      AND u.state_ut = $2
-    `,
-      [UserRole.NODAL_OFFICER, userStateUt]
-    );
-    const totalIndicatorsReceived = parseInt(
-      totalIndicatorsReceivedQuery[0]?.count || "0"
-    );
+    // ✅ 2. Total indicators received (submitted by NODAL_OFFICERS)
+    // Count the number of indicators/sections that have been submitted by NODAL_OFFICERS
+    // This counts status fields in form_data from submissions where submitted_by is a NODAL_OFFICER
+    let totalIndicatorsReceived = 0;
+    try {
+      const totalIndicatorsReceivedQuery =
+        await this.submissionRepository.query(
+          `
+        SELECT COALESCE(SUM(cnt), 0) AS count FROM (
+          SELECT (
+            SELECT COUNT(*) FROM jsonb_array_elements_text(
+              jsonb_path_query_array(s.form_data, '$.**.status')
+            ) AS st(val)
+          ) AS cnt
+          FROM submissions s
+          JOIN users u ON s.submitted_by = u.id
+          WHERE u.role = $1
+            AND u.state_ut = $2
+            AND s."stateUt" = $2
+        ) t;
+        `,
+          [UserRole.NODAL_OFFICER, userStateUt]
+        );
+      totalIndicatorsReceived = parseInt(
+        totalIndicatorsReceivedQuery[0]?.count || "0"
+      );
+    } catch (err) {
+      // Fallback: Count using regex
+      const fallbackQuery = await this.submissionRepository.query(
+        `
+        SELECT COALESCE(SUM(matches), 0) AS count FROM (
+          SELECT (
+            SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"', 'g')
+          ) AS matches
+          FROM submissions s
+          JOIN users u ON s.submitted_by = u.id
+          WHERE u.role = $1
+            AND u.state_ut = $2
+            AND s."stateUt" = $2
+        ) t;
+        `,
+        [UserRole.NODAL_OFFICER, userStateUt]
+      );
+      totalIndicatorsReceived = parseInt(fallbackQuery[0]?.count || "0");
+    }
 
     // ✅ 3. Count submission statuses (top-level)
     const statusCounts = await this.submissionRepository
@@ -315,7 +346,7 @@ export class DashboardService {
       {} as Record<string, number>
     );
 
-    // ✅ 4. Count Accepted indicators (from JSON)
+    // ✅ 4. Count Accepted indicators (from JSON) - ONLY from NODAL_OFFICER submissions
     let acceptedFromNodal = 0;
     try {
       const acceptedCountQuery = await this.submissionRepository.query(
@@ -328,10 +359,12 @@ export class DashboardService {
           WHERE st.val = 'ACCEPTED'
         ) AS cnt
         FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
         WHERE s."stateUt" = $1
+          AND u.role = $2
       ) t;
       `,
-        [userStateUt]
+        [userStateUt, UserRole.NODAL_OFFICER]
       );
       acceptedFromNodal = parseInt(acceptedCountQuery[0]?.count || "0");
     } catch {
@@ -342,15 +375,17 @@ export class DashboardService {
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"ACCEPTED"', 'g')
         ) AS matches
         FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
         WHERE s."stateUt" = $1
+          AND u.role = $2
       ) t;
       `,
-        [userStateUt]
+        [userStateUt, UserRole.NODAL_OFFICER]
       );
       acceptedFromNodal = parseInt(fallback[0]?.count || "0");
     }
 
-    // ✅ 5. Count Reverted indicators (from JSON)
+    // ✅ 5. Count Reverted indicators (from JSON) - ONLY from NODAL_OFFICER submissions
     let returnedToNodal = 0;
     try {
       const revertedCountQuery = await this.submissionRepository.query(
@@ -363,10 +398,12 @@ export class DashboardService {
           WHERE st.val = 'REVERTED'
         ) AS cnt
         FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
         WHERE s."stateUt" = $1
+          AND u.role = $2
       ) t;
       `,
-        [userStateUt]
+        [userStateUt, UserRole.NODAL_OFFICER]
       );
       returnedToNodal = parseInt(revertedCountQuery[0]?.count || "0");
     } catch {
@@ -377,15 +414,18 @@ export class DashboardService {
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"REVERTED"', 'g')
         ) AS matches
         FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
         WHERE s."stateUt" = $1
+          AND u.role = $2
       ) t;
       `,
-        [userStateUt]
+        [userStateUt, UserRole.NODAL_OFFICER]
       );
       returnedToNodal = parseInt(fallback[0]?.count || "0");
     }
 
-    // ✅ 6. Pending = Assigned but not yet submitted
+    // ✅ 6. Pending = Assigned but not yet submitted by NODAL_OFFICER
+    // This counts indicators assigned to NODAL_OFFICERS that haven't been submitted yet
     const pendingSubmission = Math.max(
       totalAssignedCount - totalIndicatorsReceived,
       0
@@ -416,33 +456,35 @@ export class DashboardService {
     };
   }
 
-async getNodalOfficerDashboardCounts(userId: string): Promise<{
-  totalAssigned: number;
-  totalSubmitted: number;
-  approved: number;
-  reverted: number;
-  underReview: number;
-  pendingSubmission: number;
-}> {
-  this.logger.log(`[NodalDashboard] Computing metrics based on section.status for userId=${userId}`);
+  async getNodalOfficerDashboardCounts(userId: string): Promise<{
+    totalAssigned: number;
+    totalSubmitted: number;
+    approved: number;
+    reverted: number;
+    underReview: number;
+    pendingSubmission: number;
+  }> {
+    this.logger.log(
+      `[NodalDashboard] Computing metrics based on section.status for userId=${userId}`
+    );
 
-  // 1️⃣ Total indicators assigned to this Nodal Officer
-  const totalAssignedRes = await this.submissionRepository.query(
-    `
+    // 1️⃣ Total indicators assigned to this Nodal Officer
+    const totalAssignedRes = await this.submissionRepository.query(
+      `
     SELECT COUNT(DISTINCT uis.indicator_id) AS count
     FROM user_indicator_scope uis
     WHERE uis.user_id = $1
     `,
-    [userId]
-  );
-  const totalAssigned = parseInt(totalAssignedRes[0]?.count || "0");
-  this.logger.log(`[NodalDashboard] totalAssigned = ${totalAssigned}`);
+      [userId]
+    );
+    const totalAssigned = parseInt(totalAssignedRes[0]?.count || "0");
+    this.logger.log(`[NodalDashboard] totalAssigned = ${totalAssigned}`);
 
-  // 2️⃣ Total Submitted (any section that has a "status" key)
-  let totalSubmitted = 0;
-  try {
-    const totalSubmittedQuery = await this.submissionRepository.query(
-      `
+    // 2️⃣ Total Submitted (any section that has a "status" key)
+    let totalSubmitted = 0;
+    try {
+      const totalSubmittedQuery = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(cnt), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM jsonb_array_elements_text(
@@ -453,13 +495,15 @@ async getNodalOfficerDashboardCounts(userId: string): Promise<{
         WHERE s.submitted_by = $1
       ) t;
       `,
-      [userId]
-    );
-    totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
-  } catch (err) {
-    this.logger.warn(`[NodalDashboard] JSONPath failed for totalSubmitted, falling back to regex`);
-    const fallback = await this.submissionRepository.query(
-      `
+        [userId]
+      );
+      totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
+    } catch (err) {
+      this.logger.warn(
+        `[NodalDashboard] JSONPath failed for totalSubmitted, falling back to regex`
+      );
+      const fallback = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(matches), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"', 'g')
@@ -468,17 +512,19 @@ async getNodalOfficerDashboardCounts(userId: string): Promise<{
         WHERE s.submitted_by = $1
       ) t;
       `,
-      [userId]
+        [userId]
+      );
+      totalSubmitted = parseInt(fallback[0]?.count || "0");
+    }
+    this.logger.log(
+      `[NodalDashboard] totalSubmitted sections = ${totalSubmitted}`
     );
-    totalSubmitted = parseInt(fallback[0]?.count || "0");
-  }
-  this.logger.log(`[NodalDashboard] totalSubmitted sections = ${totalSubmitted}`);
 
-  // 3️⃣ Approved sections (status = "ACCEPTED")
-  let approved = 0;
-  try {
-    const approvedQuery = await this.submissionRepository.query(
-      `
+    // 3️⃣ Approved sections (status = "ACCEPTED")
+    let approved = 0;
+    try {
+      const approvedQuery = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(cnt), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM jsonb_array_elements_text(
@@ -490,12 +536,12 @@ async getNodalOfficerDashboardCounts(userId: string): Promise<{
         WHERE s.submitted_by = $1
       ) t;
       `,
-      [userId]
-    );
-    approved = parseInt(approvedQuery[0]?.count || "0");
-  } catch {
-    const fallback = await this.submissionRepository.query(
-      `
+        [userId]
+      );
+      approved = parseInt(approvedQuery[0]?.count || "0");
+    } catch {
+      const fallback = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(matches), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"ACCEPTED"', 'g')
@@ -504,17 +550,19 @@ async getNodalOfficerDashboardCounts(userId: string): Promise<{
         WHERE s.submitted_by = $1
       ) t;
       `,
-      [userId]
+        [userId]
+      );
+      approved = parseInt(fallback[0]?.count || "0");
+    }
+    this.logger.log(
+      `[NodalDashboard] approved sections (status=ACCEPTED) = ${approved}`
     );
-    approved = parseInt(fallback[0]?.count || "0");
-  }
-  this.logger.log(`[NodalDashboard] approved sections (status=ACCEPTED) = ${approved}`);
 
-  // 4️⃣ Reverted sections (status = "REVERTED")
-  let reverted = 0;
-  try {
-    const revertedQuery = await this.submissionRepository.query(
-      `
+    // 4️⃣ Reverted sections (status = "REVERTED")
+    let reverted = 0;
+    try {
+      const revertedQuery = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(cnt), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM jsonb_array_elements_text(
@@ -526,12 +574,12 @@ async getNodalOfficerDashboardCounts(userId: string): Promise<{
         WHERE s.submitted_by = $1
       ) t;
       `,
-      [userId]
-    );
-    reverted = parseInt(revertedQuery[0]?.count || "0");
-  } catch {
-    const fallback = await this.submissionRepository.query(
-      `
+        [userId]
+      );
+      reverted = parseInt(revertedQuery[0]?.count || "0");
+    } catch {
+      const fallback = await this.submissionRepository.query(
+        `
       SELECT COALESCE(SUM(matches), 0) AS count FROM (
         SELECT (
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"REVERTED"', 'g')
@@ -540,30 +588,31 @@ async getNodalOfficerDashboardCounts(userId: string): Promise<{
         WHERE s.submitted_by = $1
       ) t;
       `,
-      [userId]
+        [userId]
+      );
+      reverted = parseInt(fallback[0]?.count || "0");
+    }
+    this.logger.log(
+      `[NodalDashboard] reverted sections (status=REVERTED) = ${reverted}`
     );
-    reverted = parseInt(fallback[0]?.count || "0");
+
+    // 5️⃣ Under Review = submitted - (accepted + reverted)
+    const underReview = Math.max(totalSubmitted - approved - reverted, 0);
+
+    // 6️⃣ Pending = assigned - submitted
+    const pendingSubmission = Math.max(totalAssigned - totalSubmitted, 0);
+
+    this.logger.log(
+      `[NodalDashboard] Final => totalAssigned=${totalAssigned}, totalSubmitted=${totalSubmitted}, approved=${approved}, reverted=${reverted}, underReview=${underReview}, pendingSubmission=${pendingSubmission}`
+    );
+
+    return {
+      totalAssigned,
+      totalSubmitted,
+      approved,
+      reverted,
+      underReview,
+      pendingSubmission,
+    };
   }
-  this.logger.log(`[NodalDashboard] reverted sections (status=REVERTED) = ${reverted}`);
-
-  // 5️⃣ Under Review = submitted - (accepted + reverted)
-  const underReview = Math.max(totalSubmitted - approved - reverted, 0);
-
-  // 6️⃣ Pending = assigned - submitted
-  const pendingSubmission = Math.max(totalAssigned - totalSubmitted, 0);
-
-  this.logger.log(
-    `[NodalDashboard] Final => totalAssigned=${totalAssigned}, totalSubmitted=${totalSubmitted}, approved=${approved}, reverted=${reverted}, underReview=${underReview}, pendingSubmission=${pendingSubmission}`
-  );
-
-  return {
-    totalAssigned,
-    totalSubmitted,
-    approved,
-    reverted,
-    underReview,
-    pendingSubmission,
-  };
-}
-
 }

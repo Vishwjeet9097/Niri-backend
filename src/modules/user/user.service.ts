@@ -3,12 +3,14 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, DataSource, In } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
 import { Indicator } from "../../entities/indicator.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
+import { Submission } from "../../entities/submission.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
 
@@ -21,6 +23,8 @@ export class UserService {
     private indicatorRepository: Repository<Indicator>,
     @InjectRepository(UserIndicatorScope)
     private userIndicatorScopeRepository: Repository<UserIndicatorScope>,
+    @InjectRepository(Submission)
+    private submissionRepository: Repository<Submission>,
     private dataSource: DataSource
   ) {}
 
@@ -51,7 +55,7 @@ export class UserService {
     }
 
     // Only ADMIN can see all users, others can only see users from their state
-    if (userRole !== UserRole.ADMIN  && userRole !== UserRole.MOSPI_APPROVER) {
+    if (userRole !== UserRole.ADMIN && userRole !== UserRole.MOSPI_APPROVER) {
       query = query.andWhere("user.stateUt = :stateUt", {
         stateUt: userStateUt,
       });
@@ -116,7 +120,7 @@ export class UserService {
 
     // Only ADMIN can access users from any state, others can only access users from their state
     if (userRole !== UserRole.ADMIN && user.stateUt !== userStateUt) {
-     // throw new ForbiddenException("Access denied");
+      // throw new ForbiddenException("Access denied");
     }
 
     return user;
@@ -146,9 +150,9 @@ export class UserService {
     }
 
     // State/UT approvers cannot change state_ut
-   // if (updateUserDto.stateUt && userRole === UserRole.STATE_APPROVER) {
-     // throw new ForbiddenException("Cannot change state/UT");
-   // }
+    // if (updateUserDto.stateUt && userRole === UserRole.STATE_APPROVER) {
+    // throw new ForbiddenException("Cannot change state/UT");
+    // }
 
     // Handle indicator codes separately
     const { indicatorCodes, ...userUpdateData } = updateUserDto;
@@ -157,10 +161,9 @@ export class UserService {
     const updateData = { ...userUpdateData };
     // Remove stateId if it exists, as User entity has stateUt
     if ("stateId" in updateData) {
-    //  delete updateData.stateId;
+      //  delete updateData.stateId;
     }
 
- 
     // Update user basic information
     await this.userRepository.update(id, updateData);
 
@@ -193,7 +196,27 @@ export class UserService {
       );
     }
 
-    await this.userRepository.update(id, { isActive: false });
+    // Check if the user has any submissions
+    // If they do, prevent deletion
+    const submissionCount = await this.submissionRepository.count({
+      where: { submittedBy: id },
+    });
+
+    if (submissionCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete nodal officer. This user has ${submissionCount} submission(s) associated with them. Please remove or reassign the submissions before deleting.`
+      );
+    }
+
+    // Use transaction to ensure both operations happen atomically
+    await this.dataSource.transaction(async (manager) => {
+      // Delete all indicator scope assignments for this user first
+      // This ensures indicators become available again for the state approver
+      await manager.delete(UserIndicatorScope, { userId: id });
+
+      // Hard delete the user since they have no submissions
+      await manager.delete(User, id);
+    });
   }
 
   async bulkDeactivate(
@@ -327,7 +350,7 @@ export class UserService {
 
       const savedUser = await manager.save(user);
 
-           // Create indicator scope mappings for NODAL_OFFICER
+      // Create indicator scope mappings for NODAL_OFFICER
       if (role === UserRole.NODAL_OFFICER && indicatorCodes) {
         const indicators = await manager.find(Indicator, {
           where: { code: In(indicatorCodes), isActive: true },
@@ -344,7 +367,9 @@ export class UserService {
           // Filter any scope where userId is not the user we're creating (should be all, since user is new)
           if (existingScopes.length > 0) {
             // Map to indicator codes for message
-            const conflictedIndicatorIds = existingScopes.map((s) => s.indicatorId);
+            const conflictedIndicatorIds = existingScopes.map(
+              (s) => s.indicatorId
+            );
             const conflictedIndicators = indicators.filter((i) =>
               conflictedIndicatorIds.includes(i.id)
             );
@@ -366,7 +391,6 @@ export class UserService {
 
         await manager.save(UserIndicatorScope, userIndicatorScopes);
       }
-
 
       // Generate JWT token
       const payload = {
@@ -543,7 +567,7 @@ export class UserService {
     }));
   }
 
-    // Get only indicator codes for a user (for simplified response)
+  // Get only indicator codes for a user (for simplified response)
   async getUserIndicatorCodes(userId: string): Promise<string[]> {
     const userIndicatorScopes = await this.userIndicatorScopeRepository
       .createQueryBuilder("scope")
@@ -554,7 +578,6 @@ export class UserService {
     // Return codes as strings (e.g. "1.1", "2.3") — DO NOT convert to number
     return userIndicatorScopes.map((scope) => scope.indicator.code);
   }
-
 
   async updateUserIndicatorCodes(
     userId: string,
@@ -616,7 +639,6 @@ export class UserService {
     }
   }
 
-
   // Get indicators by codes
   async getIndicatorsByCodes(codes: string[]) {
     return this.indicatorRepository.find({
@@ -643,31 +665,30 @@ export class UserService {
     };
   }
 
+  //Restrict for state assigned users
 
-
-   //Restrict for state assigned users
-
-    async assignedStateByStateApprover(roleName: UserRole) {   
+  async assignedStateByStateApprover(roleName: UserRole) {
     if (!roleName) {
-        throw new Error("roleName is required");
-      }
+      throw new Error("roleName is required");
+    }
     const stateAssignedData = await this.userRepository.find({
-                select: ["stateUt"],        
-                where: { isActive:true, role: roleName }
-              });
- 
-    // Collect all state values (which may be comma-separated)
-    const stateUtValues = stateAssignedData.map((user) => user.stateUt); 
-    
-    // Split comma-separated values and flatten into a single array
-    const allStates = stateUtValues.flatMap((stateString) => 
-      stateString.split(',').map((state) => state.trim())
-    );
-    
-    // Remove duplicates and filter out empty strings
-    const uniqueStateUtValues = [...new Set(allStates)].filter(state => state.length > 0);
-    
-    return uniqueStateUtValues; 
-  }
+      select: ["stateUt"],
+      where: { isActive: true, role: roleName },
+    });
 
+    // Collect all state values (which may be comma-separated)
+    const stateUtValues = stateAssignedData.map((user) => user.stateUt);
+
+    // Split comma-separated values and flatten into a single array
+    const allStates = stateUtValues.flatMap((stateString) =>
+      stateString.split(",").map((state) => state.trim())
+    );
+
+    // Remove duplicates and filter out empty strings
+    const uniqueStateUtValues = [...new Set(allStates)].filter(
+      (state) => state.length > 0
+    );
+
+    return uniqueStateUtValues;
+  }
 }

@@ -487,6 +487,28 @@ if (node.filePath && node.fileName) return node;
     return { processedFormData, attachedFiles };
   }
 
+  // Deep merge helper to preserve existing nested section data while updating changed fields
+  private deepMergeFormData(existing: any, incoming: any): any {
+    // If either is an array, replace entirely (arrays treated as atomic lists)
+    if (Array.isArray(existing) || Array.isArray(incoming)) {
+      return incoming !== undefined ? incoming : existing;
+    }
+    // Merge plain objects
+    if (existing && typeof existing === 'object' && incoming && typeof incoming === 'object') {
+      const result: any = { ...existing };
+      for (const [key, value] of Object.entries(incoming)) {
+        if (value === undefined) {
+          // Skip undefined so we keep old value
+          continue;
+        }
+        result[key] = this.deepMergeFormData(existing[key], value);
+      }
+      return result;
+    }
+    // Primitive / null / function / other types: incoming wins if defined, else keep existing
+    return incoming !== undefined ? incoming : existing;
+  }
+
   async uploadFile(
     file: Express.Multer.File,
     context: { submissionId: string; path: string }
@@ -530,19 +552,57 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
-      // Step 2: Check if submission ID already exists
+      // Step 2: Check if user already has a submission (instead of checking submissionId)
       this.logger.log(
-        `Checking for existing submission with ID: ${createSubmissionDto.submissionId}`
+        `Checking for existing submission for user: ${userId}`
       );
-      const existingSubmission = await this.submissionRepository.findOne({
-        where: { submissionId: createSubmissionDto.submissionId },
+      const existingUserSubmission = await this.submissionRepository.findOne({
+        where: { submittedBy: userId },
+        relations: ["user"],
       });
 
-      if (existingSubmission) {
-        this.logger.error(
-          `Submission ID already exists: ${createSubmissionDto.submissionId}`
+      // If user already has a submission, update it instead of creating new
+      if (existingUserSubmission) {
+        this.logger.log(
+          `User ${userId} already has submission ${existingUserSubmission.id}. Updating instead of creating new.`
         );
-        throw new BadRequestException("Submission ID already exists");
+        
+        // Deep merge new formData with existing formData to preserve all nested section data
+        const mergedFormData = this.deepMergeFormData(
+          existingUserSubmission.formData || {},
+          createSubmissionDto.formData || {}
+        );
+        
+        this.logger.log(
+          `Deep merging formData - Existing keys: ${Object.keys(existingUserSubmission.formData || {}).length}, New keys: ${Object.keys(createSubmissionDto.formData || {}).length}, Merged keys: ${Object.keys(mergedFormData).length}`
+        );
+        
+        // Update section status based on merged formData
+        const updatedSectionStatus = this.updateSectionStatus(
+          existingUserSubmission.sectionStatus || [],
+          mergedFormData
+        );
+
+        await this.submissionRepository.update(existingUserSubmission.id, {
+          formData: mergedFormData,
+          sectionStatus: updatedSectionStatus,
+          updatedAt: new Date(),
+        });
+
+        const updatedSubmission = await this.submissionRepository.findOne({
+          where: { id: existingUserSubmission.id },
+          relations: ["user", "finalScore"],
+        });
+
+        this.logger.log(`Submission updated successfully: ${updatedSubmission.id}`);
+        this.logger.log(`=== CREATE SUBMISSION (UPDATE) SUCCESS ===`);
+
+        return {
+          status: true,
+          data: updatedSubmission,
+          message: "Submission updated successfully",
+          timestamp: new Date().toISOString(),
+        };
       }
 
       // Step 3: Determine status and owner role based on input
@@ -605,6 +665,9 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
+      // Step 4.5: Initialize section status based on formData
+      const initialSectionStatus = this.initializeSectionStatus(processedFormData);
+
       const submission = this.submissionRepository.create({
         submissionId: createSubmissionDto.submissionId,
         formData: processedFormData,
@@ -613,6 +676,7 @@ if (node.filePath && node.fileName) return node;
         status: status,
         currentOwnerRole: currentOwnerRole,
         attachedFiles: newAttachedFiles,
+        sectionStatus: initialSectionStatus,
       });
 
       // Step 5: Save submission
@@ -905,8 +969,8 @@ if (node.filePath && node.fileName) return node;
   }
   async findByUser(userId: string, role: UserRole, stateUt: string) {
     return this.submissionRepository.findOne({
-      where: { user: { id: userId } },
-      relations: ["user"],
+      where: { submittedBy: userId },
+      relations: ["user", "finalScore"],
       order: { createdAt: "DESC" },
     });
   }
@@ -954,11 +1018,35 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
-      // Step 4: Update submission
+      // Step 4: Update submission with section status
       this.logger.log(
         `Updating submission with data: ${JSON.stringify(updateSubmissionDto)}`
       );
-      await this.submissionRepository.update(id, updateSubmissionDto);
+      
+      // Deep merge formData if being updated to preserve all nested section data
+      let updateData: any = { ...updateSubmissionDto };
+      if (updateSubmissionDto.formData) {
+        // Deep merge new formData with existing formData
+        const mergedFormData = this.deepMergeFormData(
+          submission.formData || {},
+          updateSubmissionDto.formData || {}
+        );
+        
+        this.logger.log(
+          `Deep merging formData - Existing keys: ${Object.keys(submission.formData || {}).length}, New keys: ${Object.keys(updateSubmissionDto.formData || {}).length}, Merged keys: ${Object.keys(mergedFormData).length}`
+        );
+        
+        // Update section status based on merged formData
+        const updatedSectionStatus = this.updateSectionStatus(
+          submission.sectionStatus || [],
+          mergedFormData
+        );
+        
+        updateData.formData = mergedFormData;
+        updateData.sectionStatus = updatedSectionStatus;
+      }
+      
+      await this.submissionRepository.update(id, updateData);
 
       // Step 5: Return updated submission
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
@@ -1073,6 +1161,26 @@ if (node.filePath && node.fileName) return node;
       const submission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(`Found submission with status: ${submission.status}`);
 
+      // Step 2.5: Check if all sections are completed
+      const completionCheck = await this.checkAllSectionsCompleted(
+        id,
+        userRole,
+        userStateUt
+      );
+
+      if (!completionCheck.allCompleted) {
+        this.logger.error(
+          `Cannot submit - incomplete sections: ${completionCheck.incompleteSections.join(", ")}`
+        );
+        throw new BadRequestException(
+          `Cannot submit to state. Please complete all sections. Incomplete sections: ${completionCheck.incompleteSections.join(", ")}`
+        );
+      }
+
+      this.logger.log(
+        `All sections completed (${completionCheck.completedCount}/${completionCheck.totalCount})`
+      );
+
       // Step 3: Validate submission status
       if (submission.status !== SubmissionStatus.DRAFT) {
         this.logger.error(
@@ -1143,6 +1251,26 @@ if (node.filePath && node.fileName) return node;
       const submission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(`Found submission with status: ${submission.status}`);
 
+      // Step 2.5: Check if all sections are completed before allowing submission
+      const completionCheck = await this.checkAllSectionsCompleted(
+        id,
+        userRole,
+        userStateUt
+      );
+
+      if (!completionCheck.allCompleted) {
+        this.logger.error(
+          `Cannot submit - incomplete sections: ${completionCheck.incompleteSections.join(", ")}`
+        );
+        throw new BadRequestException(
+          `Cannot submit. Please complete all sections first. Incomplete: ${completionCheck.incompleteSections.join(", ")}`
+        );
+      }
+
+      this.logger.log(
+        `All sections verified as completed (${completionCheck.completedCount}/${completionCheck.totalCount})`
+      );
+
       // Step 3: Validate submission status
       if (submission.status !== SubmissionStatus.DRAFT) {
         this.logger.error(
@@ -1156,8 +1284,17 @@ if (node.filePath && node.fileName) return node;
       // Use transaction to ensure all updates are atomic
       return this.dataSource.transaction(async (manager) => {
         // Step 4: Update form data
+        const mergedFormData = this.deepMergeFormData(
+          submission.formData || {},
+          submitDto.formData || {}
+        );
+        const updatedSectionStatus = this.updateSectionStatus(
+          submission.sectionStatus || [],
+          mergedFormData
+        );
         await manager.update(Submission, id, {
-          formData: submitDto.formData,
+          formData: mergedFormData,
+          sectionStatus: updatedSectionStatus,
           updatedAt: new Date(),
         });
 
@@ -1744,7 +1881,17 @@ if (node.filePath && node.fileName) return node;
           status: SubmissionStatus.SUBMITTED_TO_STATE,
           currentOwnerRole: UserRole.STATE_APPROVER,
           rejectionCount: submission.rejectionCount + 1,
-          formData: resubmitDto.formData || submission.formData,
+          formData: this.deepMergeFormData(
+            submission.formData || {},
+            resubmitDto.formData || {}
+          ),
+          sectionStatus: this.updateSectionStatus(
+            submission.sectionStatus || [],
+            this.deepMergeFormData(
+              submission.formData || {},
+              resubmitDto.formData || {}
+            )
+          ),
           reviewComments: updatedComments,
           indicatorComment: this.groupCommentsByIndicator(updatedComments),
         });
@@ -2386,6 +2533,170 @@ if (node.filePath && node.fileName) return node;
   }
 
   /**
+   * Initialize section status based on formData
+   * Checks which sections have data and marks them as completed
+   */
+  private initializeSectionStatus(formData: any): any[] {
+    const sectionStatus: any[] = [];
+    
+    if (!formData || typeof formData !== 'object') {
+      return sectionStatus;
+    }
+
+    // Define the main form steps/tabs to track
+    const sectionsToTrack = [
+      'infraFinancing',
+      'infraDevelopment',
+      'pppDevelopment',
+      'infraEnablers',
+    ];
+
+    const now = new Date();
+
+    sectionsToTrack.forEach(sectionId => {
+      const sectionData = formData[sectionId];
+      const isCompleted = this.isSectionCompleted(sectionData);
+      
+      sectionStatus.push({
+        sectionId,
+        isCompleted,
+        completedAt: isCompleted ? now : undefined,
+        lastModifiedAt: now,
+      });
+    });
+
+    this.logger.log(`Initialized section status: ${JSON.stringify(sectionStatus)}`);
+    return sectionStatus;
+  }
+
+  /**
+   * Check if a section is completed
+   * A section is considered completed if it has meaningful data
+   * For each step, we check if there are filled fields with actual values
+   */
+  private isSectionCompleted(sectionData: any): boolean {
+    if (!sectionData || typeof sectionData !== 'object') {
+      return false;
+    }
+
+    // If section is an array, check if it has items with data
+    if (Array.isArray(sectionData)) {
+      return sectionData.length > 0 && sectionData.some(item => 
+        item && typeof item === 'object' && Object.keys(item).length > 0
+      );
+    }
+
+    // For objects, count how many fields have meaningful data
+    let filledFieldsCount = 0;
+    let totalFields = 0;
+
+    const checkValue = (value: any): boolean => {
+      if (value === null || value === undefined || value === '') {
+        return false;
+      }
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      if (typeof value === 'object') {
+        return Object.keys(value).length > 0;
+      }
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+      return true;
+    };
+
+    // Recursively check nested objects
+    const countFields = (obj: any) => {
+      for (const [key, value] of Object.entries(obj)) {
+        // Skip metadata fields
+        if (key === 'status' || key === 'metadata' || key === '__typename') {
+          continue;
+        }
+
+        totalFields++;
+        
+        if (checkValue(value)) {
+          filledFieldsCount++;
+        }
+
+        // Check nested objects (but not too deep to avoid circular refs)
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          const nestedKeys = Object.keys(value);
+          if (nestedKeys.length > 0 && nestedKeys.length < 20) {
+            countFields(value);
+          }
+        }
+      }
+    };
+
+    countFields(sectionData);
+
+    // Section is completed if at least 50% of fields have data
+    // or if there's at least one meaningful field filled
+    const completionThreshold = totalFields > 0 ? (filledFieldsCount / totalFields) : 0;
+    
+    this.logger.debug(
+      `Section completion check: ${filledFieldsCount}/${totalFields} fields filled (${(completionThreshold * 100).toFixed(1)}%)`
+    );
+
+    return filledFieldsCount > 0 && (completionThreshold >= 0.3 || filledFieldsCount >= 3);
+  }
+
+  /**
+   * Update section status based on formData changes
+   */
+  private updateSectionStatus(
+    currentSectionStatus: any[],
+    updatedFormData: any
+  ): any[] {
+    const now = new Date();
+    const updatedStatus = [...(currentSectionStatus || [])];
+
+    // Only track the 4 main required sections
+    const requiredSections = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+
+    // Check only the required sections in the formData
+    for (const sectionId of requiredSections) {
+      if (!(sectionId in (updatedFormData || {}))) {
+        // Skip if section doesn't exist in formData
+        continue;
+      }
+
+      const sectionData = updatedFormData[sectionId];
+      const isCompleted = this.isSectionCompleted(sectionData);
+
+      // Find existing status entry
+      const statusIndex = updatedStatus.findIndex(s => s.sectionId === sectionId);
+
+      if (statusIndex >= 0) {
+        // Update existing entry
+        const wasCompleted = updatedStatus[statusIndex].isCompleted;
+        updatedStatus[statusIndex] = {
+          ...updatedStatus[statusIndex],
+          isCompleted,
+          completedAt: isCompleted && !wasCompleted ? now : updatedStatus[statusIndex].completedAt,
+          lastModifiedAt: now,
+        };
+      } else {
+        // Add new entry (only for required sections)
+        updatedStatus.push({
+          sectionId,
+          isCompleted,
+          completedAt: isCompleted ? now : undefined,
+          lastModifiedAt: now,
+        });
+      }
+    }
+
+    // Remove any array sections that shouldn't be tracked
+    const filteredStatus = updatedStatus.filter(s => requiredSections.includes(s.sectionId));
+
+    this.logger.log(`Updated section status (filtered to required sections only): ${JSON.stringify(filteredStatus)}`);
+    return filteredStatus;
+  }
+
+  /**
    * Groups comments by indicator sections (1.1, 1.2, 2.1, etc.)
    * Only groups comments with sectionId matching pattern "X.Y" where X and Y are digits
    */
@@ -2495,7 +2806,363 @@ if (node.filePath && node.fileName) return node;
     }
   }
 
+  /**
+   * Gets section status for a submission
+   */
+  async getSectionStatus(
+    id: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<any[]> {
+    try {
+      this.logger.log(`Getting section status for submission ${id}`);
+      
+      const submission = await this.findOne(id, userRole, userStateUt);
+      
+      return submission.sectionStatus || [];
+    } catch (error) {
+      this.logger.error(
+        `Error getting section status for submission ${id}: ${error.message}`
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Check if all sections are completed
+   * Returns an object with completion status and details
+   */
+  async checkAllSectionsCompleted(
+    id: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<{
+    allCompleted: boolean;
+    completedCount: number;
+    totalCount: number;
+    incompleteSections: string[];
+    sectionDetails: any[];
+  }> {
+    try {
+      const submission = await this.findOne(id, userRole, userStateUt);
+      const sectionStatus = submission.sectionStatus || [];
+      
+      // Only check the 4 main required sections, not array sections
+      const requiredSections = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+      
+      // Filter to only the required sections
+      const requiredSectionStatus = sectionStatus.filter(s => 
+        requiredSections.includes(s.sectionId)
+      );
+      
+      const completedRequiredSections = requiredSectionStatus.filter(s => s.isCompleted);
+      const incompleteRequiredSections = requiredSectionStatus
+        .filter(s => !s.isCompleted)
+        .map(s => s.sectionId);
+      
+      // Check if all 4 required sections exist and are completed
+      const allRequiredSectionsExist = requiredSections.every(reqSection =>
+        requiredSectionStatus.some(s => s.sectionId === reqSection)
+      );
+      
+      const allCompleted = allRequiredSectionsExist && incompleteRequiredSections.length === 0;
+      
+      this.logger.log(
+        `=== SECTION COMPLETION CHECK ===`
+      );
+      this.logger.log(
+        `Required sections: ${requiredSections.join(', ')}`
+      );
+      this.logger.log(
+        `All required sections exist: ${allRequiredSectionsExist}`
+      );
+      this.logger.log(
+        `Completed required sections (${completedRequiredSections.length}/${requiredSections.length}): ${completedRequiredSections.map(s => s.sectionId).join(', ')}`
+      );
+      this.logger.log(
+        `Incomplete sections: ${incompleteRequiredSections.join(', ') || 'none'}`
+      );
+      this.logger.log(
+        `All completed: ${allCompleted}`
+      );
+      this.logger.log(
+        `Section status array: ${JSON.stringify(requiredSectionStatus)}`
+      );
+      
+      return {
+        allCompleted,
+        completedCount: completedRequiredSections.length,
+        totalCount: requiredSections.length,
+        incompleteSections: incompleteRequiredSections,
+        sectionDetails: requiredSectionStatus, // Only return required section details
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error checking section completion for submission ${id}: ${error.message}`
+      );
+      throw error;
+    }
+  }
+
   // ...existing code...
+  /**
+   * Bulk update formData with entire category structures
+   * This method handles the case where frontend sends the complete form data structure
+   * with categories like infraFinancing, infraDevelopment, etc.
+   */
+  async bulkUpdateFormData(
+    submissionId: string,
+    formDataUpdate: Record<string, any>,
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    this.logger.log(
+      `Bulk updating form data for submissionId=${submissionId} by user ${userId}`
+    );
+
+    if (!submissionId) {
+      throw new BadRequestException("submissionId is required");
+    }
+
+    // Fetch the submission
+    const submission = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!submission) {
+      throw new NotFoundException(
+        `Submission not found for submissionId: ${submissionId}`
+      );
+    }
+
+    // Access checks
+    if (userRole === UserRole.NODAL_OFFICER) {
+      if (submission.stateUt !== userStateUt) {
+        throw new ForbiddenException(
+          "Access denied: submission not in your state"
+        );
+      }
+      if (submission.submittedBy !== userId) {
+        throw new ForbiddenException(
+          "Nodal Officers can update only their own submissions"
+        );
+      }
+    }
+
+    if (submission.stateUt !== userStateUt) {
+      throw new ForbiddenException(
+        "Access denied: submission not in your state"
+      );
+    }
+
+    // Restrict edits once MOSPI processing or final approval/rejection has progressed
+    const immutableStatuses = [
+      SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+      SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+      SubmissionStatus.APPROVED,
+      SubmissionStatus.REJECTED_FINAL,
+    ];
+    if (immutableStatuses.includes(submission.status)) {
+      throw new BadRequestException(
+        `Cannot modify submission in status ${submission.status}`
+      );
+    }
+
+    // Deep clone existing formData
+    const newFormData: any = submission.formData
+      ? JSON.parse(JSON.stringify(submission.formData))
+      : {};
+
+    // Helper function for deep merging
+    const deepMerge = (target: any, source: any): any => {
+      if (!source || typeof source !== 'object') return source;
+      if (!target || typeof target !== 'object') return source;
+      if (Array.isArray(source)) return source; // Arrays are replaced, not merged
+      
+      const result = { ...target };
+      for (const key in source) {
+        if (source.hasOwnProperty(key)) {
+          if (source[key] === undefined) continue;
+          if (source[key] === null) {
+            result[key] = null;
+          } else if (typeof source[key] === 'object' && !Array.isArray(source[key]) &&
+                     typeof result[key] === 'object' && !Array.isArray(result[key])) {
+            result[key] = deepMerge(result[key], source[key]);
+          } else {
+            result[key] = source[key];
+          }
+        }
+      }
+      return result;
+    };
+
+    // Helper to check if an object is empty (no keys or all values are empty)
+    const isEmptyObject = (obj: any): boolean => {
+      if (!obj || typeof obj !== 'object') return false;
+      if (Array.isArray(obj)) return obj.length === 0;
+      const keys = Object.keys(obj);
+      return keys.length === 0;
+    };
+
+    // Helper to filter out empty file objects
+    const filterEmptyFiles = (data: any): any => {
+      if (!data || typeof data !== 'object') return data;
+      
+      if (Array.isArray(data)) {
+        // Filter array items
+        return data
+          .map(filterEmptyFiles)
+          .filter(item => {
+            // Remove items with empty file objects
+            if (item && typeof item === 'object' && item.file && isEmptyObject(item.file)) {
+              return false;
+            }
+            return true;
+          });
+      }
+
+      const result: any = {};
+      for (const key in data) {
+        if (data.hasOwnProperty(key)) {
+          const value = data[key];
+          
+          // Skip empty file objects
+          if (key === 'file' && isEmptyObject(value)) {
+            continue;
+          }
+          
+          result[key] = filterEmptyFiles(value);
+        }
+      }
+      return result;
+    };
+
+    // Clean the incoming data - remove numeric keys that are duplicates
+    const cleanFormData = (data: any): any => {
+      if (!data || typeof data !== 'object') return data;
+      if (Array.isArray(data)) return data.map(cleanFormData);
+
+      const cleaned: any = {};
+      const keys = Object.keys(data);
+      
+      // Check if this object has both numeric keys and actual data keys
+      const hasNumericKeys = keys.some(k => /^\d+$/.test(k));
+      const hasDataKeys = keys.some(k => !/^\d+$/.test(k));
+
+      if (hasNumericKeys && hasDataKeys) {
+        // Both numeric and data keys exist - check which has the actual data
+        const numericKey = keys.find(k => /^\d+$/.test(k));
+        const dataKeys = keys.filter(k => !/^\d+$/.test(k));
+        
+        // Check if data keys have meaningful content or if numeric key has it
+        let useNumericKeyData = false;
+        if (numericKey && data[numericKey]) {
+          const numericData = data[numericKey];
+          // If data keys are missing or empty, use numeric key data
+          const dataKeysHaveContent = dataKeys.some(k => {
+            const val = data[k];
+            return val !== null && val !== undefined && (!isEmptyObject(val));
+          });
+          
+          if (!dataKeysHaveContent && numericData && typeof numericData === 'object') {
+            useNumericKeyData = true;
+          }
+        }
+        
+        if (useNumericKeyData) {
+          // Extract data from numeric key
+          const numericData = data[numericKey];
+          for (const innerKey in numericData) {
+            if (numericData.hasOwnProperty(innerKey)) {
+              cleaned[innerKey] = cleanFormData(numericData[innerKey]);
+            }
+          }
+        } else {
+          // Skip numeric keys, keep only data keys
+          for (const key of dataKeys) {
+            cleaned[key] = cleanFormData(data[key]);
+          }
+        }
+        return cleaned;
+      }
+
+      // Normal processing - recursively clean nested objects
+      for (const key of keys) {
+        cleaned[key] = cleanFormData(data[key]);
+      }
+      return cleaned;
+    };
+
+    // Clean the incoming form data - first filter empty files, then clean structure
+    let cleanedUpdate = filterEmptyFiles(formDataUpdate);
+    cleanedUpdate = cleanFormData(cleanedUpdate);
+    
+    this.logger.log(
+      `Cleaned form data update: ${JSON.stringify(cleanedUpdate, null, 2)}`
+    );
+
+    // Process each category in the update
+    const categoryKeys = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+    
+    for (const category of categoryKeys) {
+      if (cleanedUpdate[category]) {
+        this.logger.log(`Processing category: ${category}`);
+        
+        // Ensure category exists in newFormData
+        if (!newFormData[category]) {
+          newFormData[category] = {};
+        }
+
+        // Merge each section within the category
+        for (const section in cleanedUpdate[category]) {
+          if (cleanedUpdate[category].hasOwnProperty(section)) {
+            this.logger.log(`  Processing section: ${section}`);
+            
+            // Deep merge the section data
+            if (!newFormData[category][section]) {
+              newFormData[category][section] = {};
+            }
+            
+            newFormData[category][section] = deepMerge(
+              newFormData[category][section],
+              cleanedUpdate[category][section]
+            );
+            
+            this.logger.log(
+              `  Updated ${category}.${section}: ${JSON.stringify(newFormData[category][section])}`
+            );
+          }
+        }
+      }
+    }
+
+    // Persist the update
+    await this.submissionRepository.update(submission.id, {
+      formData: newFormData,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(
+      `Bulk updated formData for submissionId=${submissionId}`
+    );
+
+    // Return fresh submission
+    const refreshed = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!refreshed) {
+      throw new NotFoundException(
+        `Submission not found after update: ${submissionId}`
+      );
+    }
+
+    return refreshed;
+  }
+
   /**
    * Update only specific keys inside submission.formData[category][section]
    * fields: array where each item can be either
@@ -2515,6 +3182,7 @@ if (node.filePath && node.fileName) return node;
     this.logger.log(
       `Updating form section for submissionId=${submissionId} category=${category} section=${section} by user ${userId}`
     );
+    this.logger.log(`Fields to update: ${JSON.stringify(fields)}`);
 
     if (!submissionId || !category || !section || !Array.isArray(fields)) {
       throw new BadRequestException(
@@ -2601,35 +3269,112 @@ if (node.filePath && node.fileName) return node;
 
     // Apply each provided field update (only update explicit keys)
   // ...existing code...
-    // Apply each provided field update (only update explicit keys)
-    for (const item of fields) {
-      if (item && typeof item === "object") {
-        // Accept multi-key objects: { key1: value1, key2: value2, ... }
-        const keys = Object.keys(item);
-        if (keys.length >= 1) {
-          for (const key of keys) {
-            // If value is array and targetSection[key] is array, replace it
-            if (Array.isArray(item[key]) && Array.isArray(targetSection[key])) {
-              targetSection[key] = [...item[key]];
-            } else {
-              targetSection[key] = item[key];
-            }
-          }
-          continue;
+    // Helper function for deep merging objects
+    const deepMerge = (target: any, source: any): any => {
+      if (!source || typeof source !== 'object') return source;
+      if (!target || typeof target !== 'object') return source;
+      if (Array.isArray(source)) return source; // Arrays are replaced, not merged
+      
+      const result = { ...target };
+      for (const key in source) {
+        if (source[key] === undefined) continue; // Skip undefined values
+        if (source[key] === null) {
+          result[key] = null;
+        } else if (typeof source[key] === 'object' && !Array.isArray(source[key]) &&
+                   typeof result[key] === 'object' && !Array.isArray(result[key])) {
+          result[key] = deepMerge(result[key], source[key]);
+        } else {
+          result[key] = source[key];
         }
       }
+      return result;
+    };
 
-      // unsupported shape
-      throw new BadRequestException(
-        "Each field must be an object with one or more key-value pairs"
-      );
+    this.logger.log(`Before update - targetSection[${Object.keys(targetSection)[0]}]: ${JSON.stringify(targetSection)}`);
+
+    // Apply each provided field update (only update explicit keys)
+    for (const item of fields) {
+      this.logger.log(`Processing field item: ${JSON.stringify(item)}`);
+      
+      // Skip null, undefined, or empty items
+      if (!item || typeof item !== "object") {
+        this.logger.warn(`Skipping invalid item: ${JSON.stringify(item)}`);
+        continue;
+      }
+      
+      const keys = Object.keys(item);
+      if (keys.length === 0) {
+        this.logger.warn(`Skipping empty object`);
+        continue;
+      }
+      
+      // Process the valid item
+      for (const key of keys) {
+        this.logger.log(`Processing key: ${key}, isArray: ${Array.isArray(item[key])}`);
+        
+        // Deep merge for arrays to preserve existing data
+        if (Array.isArray(item[key]) && Array.isArray(targetSection[key])) {
+          this.logger.log(`Merging array for key ${key}. Existing length: ${targetSection[key].length}, New length: ${item[key].length}`);
+          
+          // Deep merge array items - merge objects at same index
+          const newArray = [...targetSection[key]];
+          item[key].forEach((newItem: any, index: number) => {
+            this.logger.log(`  Array index ${index}: newItem=${JSON.stringify(newItem)}, existing=${JSON.stringify(newArray[index])}`);
+            
+            if (index < newArray.length) {
+              // Merge with existing item at this index
+              if (typeof newItem === 'object' && newItem !== null && 
+                  typeof newArray[index] === 'object' && newArray[index] !== null) {
+                // Deep merge objects in array
+                const merged = deepMerge(newArray[index], newItem);
+                this.logger.log(`    Deep merged result: ${JSON.stringify(merged)}`);
+                newArray[index] = merged;
+              } else if (newItem !== undefined && newItem !== null) {
+                // Replace primitive or if new item is defined
+                newArray[index] = newItem;
+              }
+              // If newItem is null/undefined, keep existing value
+            } else {
+              // New index, add to array
+              newArray[index] = newItem;
+            }
+          });
+          targetSection[key] = newArray;
+          this.logger.log(`  Final array for ${key}: ${JSON.stringify(newArray)}`);
+        } else if (Array.isArray(item[key]) && !targetSection[key]) {
+          // New array field
+          this.logger.log(`Creating new array for key ${key}`);
+          targetSection[key] = item[key];
+        } else if (typeof item[key] === 'object' && item[key] !== null && 
+                   typeof targetSection[key] === 'object' && targetSection[key] !== null &&
+                   !Array.isArray(item[key])) {
+          // Deep merge for objects
+          this.logger.log(`Deep merging object for key ${key}`);
+          targetSection[key] = deepMerge(targetSection[key], item[key]);
+        } else {
+          // For primitives or null values, direct assignment
+          this.logger.log(`Direct assignment for key ${key}: ${JSON.stringify(item[key])}`);
+          targetSection[key] = item[key];
+        }
+      }
     }
 // ...existing code...
 // ...existing code...
 
+    this.logger.log(
+      `After merge - targetSection: ${JSON.stringify(targetSection)}`
+    );
+
     // Persist update using repository (by internal id)
+    // Also update section status
+    const updatedSectionStatus = this.updateSectionStatus(
+      submission.sectionStatus || [],
+      newFormData
+    );
+    
     await this.submissionRepository.update(submission.id, {
       formData: newFormData,
+      sectionStatus: updatedSectionStatus,
       updatedAt: new Date(),
     });
 
