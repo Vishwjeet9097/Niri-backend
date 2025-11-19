@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
-  Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, DataSource, In } from "typeorm";
@@ -17,8 +16,6 @@ import * as bcrypt from "bcryptjs";
 
 @Injectable()
 export class UserService {
-  private readonly logger = new Logger(UserService.name);
-
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
@@ -693,86 +690,5 @@ export class UserService {
     );
 
     return uniqueStateUtValues;
-  }
-
-  /**
-   * TESTING ONLY: Delete all users by role
-   * Deletes all users with the specified role along with their UserIndicatorScope records
-   *
-   * WARNING: This is a destructive operation for testing purposes only!
-   *
-   * @param role - The role of users to delete (NODAL_OFFICER, STATE_APPROVER, MOSPI_REVIEWER, MOSPI_APPROVER)
-   * @returns Summary of deleted records
-   */
-  async deleteUsersByRole(role: UserRole): Promise<{
-    success: boolean;
-    message: string;
-    deleted: {
-      users: number;
-      userIndicatorScopes: number;
-    };
-  }> {
-    this.logger.warn("=== DELETE USERS BY ROLE STARTED ===");
-    this.logger.warn(`WARNING: This will delete all users with role: ${role}`);
-
-    // Validate that the role is one of the allowed roles (not ADMIN)
-    const allowedRoles = [
-      UserRole.NODAL_OFFICER,
-      UserRole.STATE_APPROVER,
-      UserRole.MOSPI_REVIEWER,
-      UserRole.MOSPI_APPROVER,
-    ];
-
-    if (!allowedRoles.includes(role)) {
-      throw new BadRequestException(
-        `Cannot delete users with role: ${role}. Allowed roles: ${allowedRoles.join(", ")}`
-      );
-    }
-
-    return this.dataSource.transaction(async (manager) => {
-      // Step 1: Find all users with the specified role
-      const users = await manager.find(User, {
-        where: { role },
-        select: ["id", "email", "role"],
-      });
-
-      const userIds = users.map((u) => u.id);
-
-      this.logger.log(`Found ${users.length} users with role: ${role}`);
-
-      // Step 2: Delete UserIndicatorScope records for these users
-      let deletedScopes = 0;
-      if (userIds.length > 0) {
-        const userIndicatorScopes = await manager.find(UserIndicatorScope, {
-          where: { userId: In(userIds) },
-        });
-        deletedScopes = userIndicatorScopes.length;
-        if (userIndicatorScopes.length > 0) {
-          await manager.remove(UserIndicatorScope, userIndicatorScopes);
-          this.logger.log(
-            `Deleted ${userIndicatorScopes.length} UserIndicatorScope records`
-          );
-        }
-      }
-
-      // Step 3: Delete users
-      let deletedUsers = 0;
-      if (users.length > 0) {
-        await manager.remove(User, users);
-        deletedUsers = users.length;
-        this.logger.log(`Deleted ${users.length} users with role: ${role}`);
-      }
-
-      this.logger.warn("=== DELETE USERS BY ROLE COMPLETED ===");
-
-      return {
-        success: true,
-        message: `Successfully deleted all users with role: ${role}`,
-        deleted: {
-          users: deletedUsers,
-          userIndicatorScopes: deletedScopes,
-        },
-      };
-    });
   }
 }
