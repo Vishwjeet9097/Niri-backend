@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { UploadedFile, StoredFile, IStorageStrategy } from '../interfaces/storage.interface';
-import { promises as fsPromises, createReadStream } from 'fs';
+import { promises as fsPromises, createReadStream , statSync, existsSync} from 'fs';
 import { ensureDirSync } from 'fs-extra';
 import { join, basename } from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -84,6 +84,44 @@ export class LocalStorageStrategy implements IStorageStrategy {
     const utf = `${filePath}`;
     this.logger.log('LocalStorageStrategy.getSignedUrl returning', utf);
     return utf;
+  }
+  async getFileStream(filePath: string): Promise<{
+    stream: NodeJS.ReadableStream;
+    contentType: string;
+    contentLength?: number;
+    fileName?: string;
+  }> {
+    const fullPath = join(this.basePath, filePath);
+  
+    if (!existsSync(fullPath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+  
+    const stats = statSync(fullPath);
+    const fileName = basename(fullPath);
+  
+    // Simple content type detection (you may want to use a library like 'mime-types')
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    const contentTypeMap: Record<string, string> = {
+      pdf: 'application/pdf',
+      doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      txt: 'text/plain',
+      csv: 'text/csv',
+    };
+  
+    return {
+      stream: createReadStream(fullPath),
+      contentType: contentTypeMap[ext] || 'application/octet-stream',
+      contentLength: stats.size,
+      fileName: fileName,
+    };
   }
 
   async deleteFolder(folderPath: string): Promise<boolean> {

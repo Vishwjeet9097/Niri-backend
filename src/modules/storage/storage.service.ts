@@ -160,6 +160,20 @@ export class StorageService {
       throw new BadRequestException(`Multiple file upload failed: ${msg}`);
     }
   }
+  async getFileStream(filePath: string): Promise<{
+    stream: NodeJS.ReadableStream;
+    contentType: string;
+    contentLength?: number;
+    fileName?: string;
+  }> {
+    try {
+      return await this.storageStrategy.getFileStream(filePath);
+    } catch (error) {
+      const msg = error && (error as any).message ? (error as any).message : String(error);
+      this.logger.error(`Failed to get file stream: ${msg}`);
+      throw new BadRequestException(`Failed to get file stream: ${msg}`);
+    }
+  }
 
   async deleteFile(filePath: string): Promise<boolean> {
     try {

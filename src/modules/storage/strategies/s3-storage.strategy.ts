@@ -139,4 +139,42 @@ export class S3StorageStrategy implements IStorageStrategy {
       return false;
     }
   }
+
+  async getFileStream(filePath: string): Promise<{
+    stream: NodeJS.ReadableStream;
+    contentType: string;
+    contentLength?: number;
+    fileName?: string;
+  }> {
+    const key = filePath;
+  
+    try {
+      // First, get object metadata to retrieve content type and size
+      const headCmd = new HeadObjectCommand({ Bucket: this.bucket, Key: key });
+      const headResp = await this.s3.send(headCmd);
+  
+      // Then get the object stream
+      const cmd = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+      const response = await this.s3.send(cmd);
+  
+      if (!response.Body) {
+        throw new Error(`No body returned for file: ${filePath}`);
+      }
+  
+      // Extract filename from key
+      const fileName = key.split('/').pop() || key;
+  
+      return {
+        stream: response.Body as NodeJS.ReadableStream,
+        contentType: response.ContentType || headResp.ContentType || 'application/octet-stream',
+        contentLength: response.ContentLength || headResp.ContentLength,
+        fileName: fileName,
+      };
+    } catch (err) {
+      this.logger.error(`Failed to get file stream for ${filePath}: ${(err as any).message || err}`);
+      throw err;
+    }
+  }
+
+  
 }
