@@ -3,14 +3,12 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
-  BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, DataSource, In } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
 import { Indicator } from "../../entities/indicator.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
-import { Submission } from "../../entities/submission.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
 
@@ -23,8 +21,6 @@ export class UserService {
     private indicatorRepository: Repository<Indicator>,
     @InjectRepository(UserIndicatorScope)
     private userIndicatorScopeRepository: Repository<UserIndicatorScope>,
-    @InjectRepository(Submission)
-    private submissionRepository: Repository<Submission>,
     private dataSource: DataSource
   ) {}
 
@@ -196,26 +192,14 @@ export class UserService {
       );
     }
 
-    // Check if the user has any submissions
-    // If they do, prevent deletion
-    const submissionCount = await this.submissionRepository.count({
-      where: { submittedBy: id },
-    });
-
-    if (submissionCount > 0) {
-      throw new BadRequestException(
-        `Cannot delete nodal officer. This user has ${submissionCount} submission(s) associated with them. Please remove or reassign the submissions before deleting.`
-      );
-    }
-
     // Use transaction to ensure both operations happen atomically
     await this.dataSource.transaction(async (manager) => {
-      // Delete all indicator scope assignments for this user first
+      // Deactivate the user
+      await manager.update(User, id, { isActive: false });
+
+      // Delete all indicator scope assignments for this user
       // This ensures indicators become available again for the state approver
       await manager.delete(UserIndicatorScope, { userId: id });
-
-      // Hard delete the user since they have no submissions
-      await manager.delete(User, id);
     });
   }
 

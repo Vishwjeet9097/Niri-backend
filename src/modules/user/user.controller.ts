@@ -271,7 +271,7 @@ export class UserController {
   )
   async deactivate(@Param("id") id: string, @Request() req) {
     await this.userService.deactivate(id, req.user.role, req.user.stateUt);
-    return { message: "User deleted successfully" };
+    return { message: "User deactivated successfully" };
   }
 
   @Delete("bulk/delete")
