@@ -684,7 +684,11 @@ export class SubmissionController {
 
   @Post("indicator-submission-status")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_APPROVER, UserRole.MOSPI_REVIEWER)
+  @Roles(
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.MOSPI_REVIEWER
+  )
   @HttpCode(HttpStatus.OK)
   async indicatorSubmissionAccepted(
     @Body()
@@ -707,13 +711,11 @@ export class SubmissionController {
 
     let fields: any = [];
     // Create fields array with status
-    if(req.user.role === UserRole.STATE_APPROVER ){
+    if (req.user.role === UserRole.STATE_APPROVER) {
       fields = [{ status: status ? "ACCEPTED" : "REVERTED" }];
-    }
-    else{
+    } else {
       fields = [{ mospi_status: mospi_status }];
     }
-
 
     // Reuse existing service method
     return this.submissionService.updateFormSectionFields(
@@ -728,28 +730,42 @@ export class SubmissionController {
   }
 
   // --- cumulative preview for a state ---
-@Get("state/:stateUt/cumulative-preview")
-@UseGuards(RolesGuard)
-@Roles(
-  UserRole.NODAL_OFFICER,
-  UserRole.STATE_APPROVER,
-  UserRole.MOSPI_REVIEWER,
-  UserRole.MOSPI_APPROVER,
-  UserRole.ADMIN
-)
-async getCumulativePreviewForState(
-  @Param("stateUt") stateUt: string,
-  @Request() req,
-  @Query("year") year?: string,
-  @Query("includeAssignments") includeAssignments?: string
-) {
-  return this.submissionService.buildCumulativePreview({
-    stateUt,
-    year,
-    // includeAssignments: includeAssignments === "true",
-    userRole: req.user.role,
-    userStateUt: req.user.stateUt,
-  });
-}
+  @Get("state/:stateUt/cumulative-preview")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
+  )
+  async getCumulativePreviewForState(
+    @Param("stateUt") stateUt: string,
+    @Request() req,
+    @Query("year") year?: string,
+    @Query("includeAssignments") includeAssignments?: string
+  ) {
+    return this.submissionService.buildCumulativePreview({
+      stateUt,
+      year,
+      // includeAssignments: includeAssignments === "true",
+      userRole: req.user.role,
+      userStateUt: req.user.stateUt,
+    });
+  }
 
+  /**
+   * TESTING ONLY: Cleanup endpoint to delete test data
+   * Deletes submissions and indicator assignments for testing purposes
+   * WARNING: This is a destructive operation!
+   */
+  @Delete("test/cleanup")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN,
+    UserRole.MOSPI_APPROVER,
+  )
+  @HttpCode(HttpStatus.OK)
+  async cleanupTestData(@Request() req) {
+    return this.submissionService.cleanupTestData();
+  }
 }
