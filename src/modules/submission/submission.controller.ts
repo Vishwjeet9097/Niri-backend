@@ -289,46 +289,7 @@ export class SubmissionController {
     return submission;
   }
 
-  @Get(":id/section-status")
-  @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.NODAL_OFFICER,
-    UserRole.STATE_APPROVER,
-    UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
-  )
-  async getSectionStatus(@Param("id") id: string, @Request() req) {
-    return this.submissionService.getSectionStatus(
-      id,
-      req.user.role,
-      req.user.stateUt
-    );
-  }
-
-  @Get(":id/check-completion")
-  @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.NODAL_OFFICER,
-    UserRole.STATE_APPROVER,
-    UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
-  )
-  async checkAllSectionsCompleted(@Param("id") id: string, @Request() req) {
-    const result = await this.submissionService.checkAllSectionsCompleted(
-      id,
-      req.user.role,
-      req.user.stateUt
-    );
-
-    return {
-      status: true,
-      data: result,
-      message: result.allCompleted 
-        ? "All sections are completed" 
-        : `${result.incompleteSections.length} section(s) are incomplete`,
-      timestamp: new Date().toISOString(),
-    };
-  }
+  // Removed legacy section-status and check-completion endpoints (sectionStatus deprecated)
 
   @Get("user/:userId")
   @UseGuards(RolesGuard)
