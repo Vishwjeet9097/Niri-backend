@@ -252,6 +252,37 @@ describe("SubmissionService", () => {
     });
   });
 
+  describe("buildNormalizedFormData", () => {
+    it("should normalize section2_4 inside infraDevelopment to indicator code 2.4", () => {
+      const raw = {
+        infraDevelopment: {
+          section2_4: {
+            comment: "aaaaaaaaaa",
+            hasInvestmentReady: "no",
+            investmentReadyArray: [],
+          },
+          section2_3: { hasInfraDevelopmentPlan: "yes" },
+        },
+      };
+      // Access private method via casting
+      const normalized = (service as any).buildNormalizedFormData(raw);
+      expect(normalized.byIndicatorCode["2.4"]).toBeDefined();
+      expect(normalized.byIndicatorCode["2.4"].comment).toBe("aaaaaaaaaa");
+      expect(normalized.byIndicatorCode["2.4"].hasInvestmentReady).toBe("no");
+    });
+
+    it("should handle multi-level sections like section3_2_1 -> 3.2.1", () => {
+      const raw = {
+        infraEnablers: {
+          section3_2_1: { example: true },
+        },
+      };
+      const normalized = (service as any).buildNormalizedFormData(raw);
+      expect(normalized.byIndicatorCode["3.2.1"]).toBeDefined();
+      expect(normalized.byIndicatorCode["3.2.1"].example).toBe(true);
+    });
+  });
+
   describe("stateReject", () => {
     const rejectDto: StateRejectDto = {
       status: SubmissionStatus.REJECTED,

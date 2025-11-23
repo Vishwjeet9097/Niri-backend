@@ -96,6 +96,19 @@ export class Submission {
   // attachedFiles: SubmissionFile[];
 
   @Column({
+    name: "section_status",
+    type: "jsonb",
+    nullable: true,
+    // Properly escaped JSON default
+    default: () => "'{\"totalIndicators\":0,\"completedIndicators\":0,\"completedList\":[]}'::jsonb",
+  })
+  sectionStatus: {
+    totalIndicators: number;
+    completedIndicators: number;
+    completedList: string[];
+  };
+
+  @Column({
     type: "enum",
     enum: SubmissionStatus,
     default: SubmissionStatus.SUBMITTED_TO_STATE,

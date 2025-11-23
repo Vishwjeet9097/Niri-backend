@@ -107,6 +107,13 @@ export class SubmissionController {
     parsedSubmission.formData = parsedSubmission.formData || {};
     parsedSubmission.attachedFiles = parsedSubmission.attachedFiles || [];
 
+    // Auto-generate submissionId if not provided
+    if (!parsedSubmission.submissionId) {
+      const year = new Date().getFullYear();
+      const randomNum = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      parsedSubmission.submissionId = `SUB-${year}-${randomNum}`;
+    }
+
     // Map files to nested fields
     if (files?.length) {
       for (const file of files) {
@@ -286,8 +293,73 @@ export class SubmissionController {
       submission["commentsBySection"] = groupedComments;
     }
 
+    // Add section_status information
+    const sectionStatus = submission.sectionStatus || {
+      totalIndicators: 0,
+      completedIndicators: 0,
+      completedList: [],
+    };
+    const allCompleted = sectionStatus.totalIndicators > 0 && 
+                         sectionStatus.completedIndicators >= sectionStatus.totalIndicators;
+
+    submission["indicatorProgress"] = {
+      total: sectionStatus.totalIndicators,
+      completed: sectionStatus.completedIndicators,
+      allCompleted,
+      completedList: sectionStatus.completedList,
+    };
+
+    if (allCompleted) {
+      submission["shouldRedirect"] = true;
+      submission["redirectUrl"] = `/data-submission/review/${id}`;
+    }
+
     return submission;
   }
+
+  @Get(":id/status")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async getSubmissionStatus(@Param("id") id: string, @Request() req) {
+    const submission = await this.submissionService.findOne(
+      id,
+      req.user.role,
+      req.user.stateUt
+    );
+
+    const sectionStatus = submission.sectionStatus || {
+      totalIndicators: 0,
+      completedIndicators: 0,
+      completedList: [],
+    };
+    const allCompleted = sectionStatus.totalIndicators > 0 && 
+                         sectionStatus.completedIndicators >= sectionStatus.totalIndicators;
+
+    return {
+      status: true,
+      data: {
+        submissionId: submission.id,
+        sectionStatus,
+        indicatorProgress: {
+          total: sectionStatus.totalIndicators,
+          completed: sectionStatus.completedIndicators,
+          allCompleted,
+          completedList: sectionStatus.completedList,
+        },
+        shouldRedirect: allCompleted,
+        redirectUrl: allCompleted ? `/data-submission/review/${id}` : null,
+      },
+      message: "Submission status retrieved successfully",
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+
 
   @Get("user/:userId")
   @UseGuards(RolesGuard)
@@ -315,11 +387,185 @@ export class SubmissionController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.NODAL_OFFICER)
   @UseGuards(IndicatorAccessMiddleware)
+  @UseInterceptors(AnyFilesInterceptor())
   async update(
     @Param("id") id: string,
-    @Body() updateSubmissionDto: UpdateSubmissionDto,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body("submission") submission: string,
     @Request() req
   ) {
+    // Handle both multipart/form-data and JSON body
+    let updateSubmissionDto: UpdateSubmissionDto;
+    
+    if (submission) {
+      // Multipart form-data case
+      try {
+        updateSubmissionDto = JSON.parse(submission);
+      } catch {
+        throw new BadRequestException("Invalid submission JSON format.");
+      }
+    } else if (req.body && typeof req.body === "object") {
+      // Regular JSON body case
+      updateSubmissionDto = req.body as UpdateSubmissionDto;
+    } else {
+      throw new BadRequestException("Missing submission data.");
+    }
+
+    updateSubmissionDto.formData = updateSubmissionDto.formData || {};
+
+    // Handle file uploads if present
+    if (files?.length) {
+      for (const file of files) {
+        const fieldPath = file.fieldname
+          .replace(/\[(\d+)\]/g, ".$1")
+          .split(".");
+
+        let current = updateSubmissionDto.formData;
+        for (let i = 0; i < fieldPath.length - 1; i++) {
+          const key = fieldPath[i];
+          if (typeof current[key] === "string") {
+            current[key] = { existingFilePath: current[key] };
+          }
+          if (!current[key]) {
+            const nextKey = fieldPath[i + 1];
+            current[key] = /^\d+$/.test(nextKey) ? [] : {};
+          }
+          current = current[key];
+        }
+
+        const lastKey = fieldPath[fieldPath.length - 1];
+
+        const storedFile = await this.submissionService.uploadFile(file, {
+          submissionId: id,
+          path: fieldPath.slice(1).join("/"),
+        });
+
+        const uploadedAtStr =
+          storedFile.uploadedAt instanceof Date
+            ? storedFile.uploadedAt.toISOString()
+            : String(storedFile.uploadedAt || new Date().toISOString());
+
+        const fileMeta = {
+          id: (storedFile as any).id ?? null,
+          fileName: storedFile.fileName || file.originalname || "",
+          originalName: storedFile.originalName || file.originalname || "",
+          filePath: storedFile.filePath || "",
+          fileUrl: storedFile.fileUrl ?? "",
+          fileSize: storedFile.fileSize ?? file.size ?? 0,
+          mimeType: storedFile.mimeType || file.mimetype || "",
+          uploadedAt: uploadedAtStr,
+        };
+
+        current[lastKey] = fileMeta;
+      }
+    }
+
+    return this.submissionService.update(
+      id,
+      updateSubmissionDto,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
+  }
+
+  @Patch(":id")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.NODAL_OFFICER)
+  @UseGuards(IndicatorAccessMiddleware)
+  @UseInterceptors(AnyFilesInterceptor())
+  async patch(
+    @Param("id") id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body("submission") submission: string,
+    @Request() req
+  ) {
+    // Handle both multipart/form-data and JSON body
+
+    let updateSubmissionDto: UpdateSubmissionDto;
+
+    if (submission) {
+      // Multipart form-data case
+      try {
+        updateSubmissionDto = JSON.parse(submission);
+      } catch {
+        throw new BadRequestException("Invalid submission JSON format.");
+      }
+    } else if (req.body && typeof req.body === "object") {
+      // Regular JSON body case
+      // Accept both wrapped (formData) and unwrapped payloads
+      if (req.body.formData) {
+        updateSubmissionDto = req.body as UpdateSubmissionDto;
+      } else {
+        updateSubmissionDto = { formData: req.body } as UpdateSubmissionDto;
+      }
+    } else {
+      throw new BadRequestException("Missing submission data.");
+    }
+
+    // Always ensure formData is initialized for file upload logic
+    updateSubmissionDto.formData = updateSubmissionDto.formData || {};
+
+    // Support section_status (snake_case) as alias for sectionStatus (camelCase)
+    if ((updateSubmissionDto as any).section_status) {
+      updateSubmissionDto.sectionStatus = (updateSubmissionDto as any).section_status;
+      delete (updateSubmissionDto as any).section_status;
+    }
+
+    // Generalized file upload handling for any section, but only update if path exists
+    if (files?.length) {
+      for (const file of files) {
+        const fieldPath = file.fieldname
+          .replace(/\[(\d+)\]/g, ".$1")
+          .split(".");
+
+        // Check if the full path exists in the original formData
+        let exists = true;
+        let current = updateSubmissionDto.formData;
+        for (let i = 0; i < fieldPath.length - 1; i++) {
+          const key = fieldPath[i];
+          if (!current[key] || typeof current[key] !== "object") {
+            exists = false;
+            break;
+          }
+          current = current[key];
+        }
+
+        if (!exists) {
+          continue; // Skip updating if path does not exist
+        }
+
+        const lastKey = fieldPath[fieldPath.length - 1];
+        // Only update if the lastKey exists
+        if (!(lastKey in current)) {
+          continue;
+        }
+
+        const storedFile = await this.submissionService.uploadFile(file, {
+          submissionId: id,
+          path: fieldPath.slice(1).join("/"),
+        });
+
+        const uploadedAtStr =
+          storedFile.uploadedAt instanceof Date
+            ? storedFile.uploadedAt.toISOString()
+            : String(storedFile.uploadedAt || new Date().toISOString());
+
+        const fileMeta = {
+          id: (storedFile as any).id ?? null,
+          fileName: storedFile.fileName || file.originalname || "",
+          originalName: storedFile.originalName || file.originalname || "",
+          filePath: storedFile.filePath || "",
+          fileUrl: storedFile.fileUrl ?? "",
+          fileSize: storedFile.fileSize ?? file.size ?? 0,
+          mimeType: storedFile.mimeType || file.mimetype || "",
+          uploadedAt: uploadedAtStr,
+        };
+
+        current[lastKey] = fileMeta;
+      }
+    }
+
     return this.submissionService.update(
       id,
       updateSubmissionDto,

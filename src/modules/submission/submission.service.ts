@@ -8,7 +8,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, DataSource, In } from "typeorm";
+import { Repository, DataSource, In, Not } from "typeorm";
 import {
   Submission,
   SubmissionStatus,
@@ -243,6 +243,50 @@ export class SubmissionService {
               ? "general"
               : "approval"),
     };
+  }
+
+  // Helper function to check if a section has meaningful data
+  private hasSectionData(sectionData: any): boolean {
+    if (!sectionData || typeof sectionData !== 'object') {
+      return false;
+    }
+
+    // Check if section has any non-empty, non-null values
+    const hasData = Object.entries(sectionData).some(([key, value]) => {
+      // Skip certain metadata fields that don't indicate actual data
+      if (['year', 'percentage', 'marksObtained'].includes(key)) {
+        return false;
+      }
+
+      // Check for meaningful values
+      if (value === null || value === undefined || value === '') {
+        return false;
+      }
+
+      // For arrays, check if they have items
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+
+      // For numbers, check if they're not 0 (or consider 0 as valid data)
+      if (typeof value === 'number') {
+        return value !== 0;
+      }
+
+      // For strings, check if not empty after trim
+      if (typeof value === 'string') {
+        return value.trim() !== '';
+      }
+
+      // For objects, recursively check
+      if (typeof value === 'object') {
+        return this.hasSectionData(value);
+      }
+
+      return true;
+    });
+
+    return hasData;
   }
 
   /**
@@ -605,6 +649,21 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
+      // Step 4.5: Initialize section_status based on user's assigned indicators
+      const userIndicatorScopes = await this.userIndicatorScopeRepository.find({
+        where: { userId },
+        relations: ['indicator'],
+      });
+
+      const sectionStatus = {
+        totalIndicators: userIndicatorScopes.filter(scope => scope.indicator?.isActive).length,
+        completedIndicators: 0,
+        completedList: [] as string[],
+      };
+
+      this.logger.log(`Initialized section_status: ${sectionStatus.totalIndicators} indicators assigned to user ${userId}`);
+
+
       const submission = this.submissionRepository.create({
         submissionId: createSubmissionDto.submissionId,
         formData: processedFormData,
@@ -613,6 +672,7 @@ if (node.filePath && node.fileName) return node;
         status: status,
         currentOwnerRole: currentOwnerRole,
         attachedFiles: newAttachedFiles,
+        sectionStatus: sectionStatus,
       });
 
       // Step 5: Save submission
@@ -892,6 +952,15 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
+      // Step 5: Provide normalized (flattened) view so client can populate all sections
+      try {
+        (submission as any).normalizedFormData = this.buildNormalizedFormData(
+          submission.formData || {}
+        );
+      } catch (e) {
+        this.logger.warn(`Failed to build normalizedFormData: ${e.message}`);
+      }
+
       this.logger.log(`Access granted for user role: ${userRole}`);
       this.logger.log(`=== FIND ONE SUBMISSION SUCCESS ===`);
 
@@ -903,12 +972,68 @@ if (node.filePath && node.fileName) return node;
       throw error;
     }
   }
+
+  // Build a flattened indicator-code keyed object from nested category.section structure
+  private buildNormalizedFormData(raw: Record<string, any>): {
+    byIndicatorCode: Record<string, any>;
+    original: Record<string, any>;
+  } {
+    const byIndicatorCode: Record<string, any> = {};
+    if (!raw || typeof raw !== 'object') {
+      return { byIndicatorCode, original: raw || {} };
+    }
+
+    const sectionRegex = /^section(\d+(_\d+)*)$/; // matches section1_1, section2_4, section2_10, section3_2_1 etc.
+
+    for (const [categoryKey, categoryVal] of Object.entries(raw)) {
+      if (!categoryVal || typeof categoryVal !== 'object' || Array.isArray(categoryVal)) {
+        continue;
+      }
+      for (const [sectionKey, sectionVal] of Object.entries(categoryVal)) {
+        const m = sectionRegex.exec(sectionKey);
+        if (m) {
+          const code = m[1].replace(/_/g, '.'); // section2_4 -> 2.4, section3_2_1 -> 3.2.1
+          // If already present (e.g. direct code storage), merge shallowly preferring existing detailed object
+          if (byIndicatorCode[code]) {
+            const existing = byIndicatorCode[code];
+            if (
+              existing && typeof existing === 'object' &&
+              sectionVal && typeof sectionVal === 'object' &&
+              !Array.isArray(existing) && !Array.isArray(sectionVal)
+            ) {
+              byIndicatorCode[code] = { ...sectionVal, ...existing };
+            } else {
+              // keep existing
+            }
+          } else {
+            byIndicatorCode[code] = sectionVal;
+          }
+        }
+      }
+    }
+
+    // Also include any directly stored indicator code objects (e.g., '1.1')
+    for (const [key, val] of Object.entries(raw)) {
+      if (/^\d+(\.\d+)*$/.test(key) && byIndicatorCode[key] === undefined) {
+        byIndicatorCode[key] = val;
+      }
+    }
+
+    return { byIndicatorCode, original: raw };
+  }
   async findByUser(userId: string, role: UserRole, stateUt: string) {
-    return this.submissionRepository.findOne({
-      where: { user: { id: userId } },
+    // Return the most recent non-DRAFT submission for the given user.
+    // findOne does not reliably apply order; use find with take:1.
+    const submissions = await this.submissionRepository.find({
+      where: {
+        user: { id: userId },
+        status: Not(SubmissionStatus.DRAFT),
+      },
       relations: ["user"],
       order: { createdAt: "DESC" },
+      take: 1,
     });
+    return submissions[0] || null;
   }
 
   async update(
@@ -954,11 +1079,63 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
-      // Step 4: Update submission
+      // Step 4: Merge and update submission form data (preserve existing sections)
       this.logger.log(
         `Updating submission with data: ${JSON.stringify(updateSubmissionDto)}`
       );
-      await this.submissionRepository.update(id, updateSubmissionDto);
+
+      // Deep merge helper to preserve prior nested section data
+      const deepMerge = (base: any, incoming: any): any => {
+        if (incoming === undefined) return base;
+        if (base === undefined) return incoming;
+        // Primitive or array replacement
+        if (
+          typeof base !== "object" ||
+          base === null ||
+          Array.isArray(base) ||
+          typeof incoming !== "object" ||
+          incoming === null ||
+          Array.isArray(incoming)
+        ) {
+          return incoming; // replace primitive/array directly
+        }
+        const merged: Record<string, any> = { ...base };
+        for (const k of Object.keys(incoming)) {
+          merged[k] = deepMerge(base[k], incoming[k]);
+        }
+        return merged;
+      };
+
+
+      const updateData: Partial<Submission> = {};
+      if (updateSubmissionDto.formData !== undefined) {
+        const existingFormData = submission.formData || {};
+        const incomingFormData = updateSubmissionDto.formData || {};
+        // If section1_2 is present, force full replacement for that section
+        if (
+          incomingFormData.infraFinancing &&
+          incomingFormData.infraFinancing.section1_2
+        ) {
+          updateData.formData = {
+            ...existingFormData,
+            infraFinancing: {
+              ...existingFormData.infraFinancing,
+              ...incomingFormData.infraFinancing,
+              section1_2: incomingFormData.infraFinancing.section1_2,
+            },
+          };
+        } else {
+          updateData.formData = deepMerge(existingFormData, incomingFormData);
+        }
+      }
+      // Allow direct update of sectionStatus if present in payload (support both camelCase and snake_case)
+      if (updateSubmissionDto.sectionStatus !== undefined) {
+        updateData.sectionStatus = updateSubmissionDto.sectionStatus;
+      } else if ((updateSubmissionDto as any).section_status !== undefined) {
+        updateData.sectionStatus = (updateSubmissionDto as any).section_status;
+      }
+
+      await this.submissionRepository.update(id, updateData);
 
       // Step 5: Return updated submission
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
@@ -2600,8 +2777,6 @@ if (node.filePath && node.fileName) return node;
     const targetSection = newFormData[category][section];
 
     // Apply each provided field update (only update explicit keys)
-  // ...existing code...
-    // Apply each provided field update (only update explicit keys)
     for (const item of fields) {
       if (item && typeof item === "object") {
         // Accept multi-key objects: { key1: value1, key2: value2, ... }
@@ -2618,7 +2793,6 @@ if (node.filePath && node.fileName) return node;
           continue;
         }
       }
-
       // unsupported shape
       throw new BadRequestException(
         "Each field must be an object with one or more key-value pairs"
@@ -2627,9 +2801,106 @@ if (node.filePath && node.fileName) return node;
 // ...existing code...
 // ...existing code...
 
-    // Persist update using repository (by internal id)
+    // Accept multiple category formats: '1.1', 'section1_1', indicator UUID (will be normalized)
+    const rawCategory = category?.trim();
+    let sectionKey: string;
+    if (/^section\d+_\d+$/.test(rawCategory)) {
+      sectionKey = rawCategory; // already normalized
+    } else if (/^\d+(\.\d+)*$/.test(rawCategory)) {
+      sectionKey = `section${rawCategory.replace(/\./g, '_')}`; // convert dotted code
+    } else {
+      // Fallback: sanitize arbitrary string
+      sectionKey = `section_${rawCategory.replace(/[^a-zA-Z0-9]+/g, '_')}`;
+    }
+    this.logger.log(`🔎 Normalizing category='${rawCategory}' -> sectionKey='${sectionKey}'`);
+
+    // Normalize existing sectionStatus (handle legacy object-of-sections shape)
+    let sectionStatusRaw: any = submission.sectionStatus;
+    let sectionStatus: {
+      totalIndicators: number;
+      completedIndicators: number;
+      completedList: string[];
+    };
+
+    if (
+      !sectionStatusRaw ||
+      typeof sectionStatusRaw !== 'object' ||
+      Array.isArray(sectionStatusRaw) ||
+      sectionStatusRaw.totalIndicators === undefined ||
+      sectionStatusRaw.completedIndicators === undefined ||
+      !Array.isArray(sectionStatusRaw.completedList)
+    ) {
+      // Legacy structure: derive completedList from keys with isCompleted true
+      const legacyKeys: string[] = [];
+      if (sectionStatusRaw && typeof sectionStatusRaw === 'object') {
+        for (const [k, v] of Object.entries(sectionStatusRaw)) {
+          if (/^section\d+_\d+$/.test(k) && v && (v as any).isCompleted) {
+            legacyKeys.push(k);
+          }
+        }
+      }
+      // Compute totalIndicators from user assignments if possible (fallback to legacy key count)
+      let totalIndicators = 0;
+      try {
+        const userIndicatorScopes = await this.userIndicatorScopeRepository.find({
+          where: { userId: submission.submittedBy },
+          relations: ['indicator'],
+        });
+        totalIndicators = userIndicatorScopes.filter(s => s.indicator?.isActive).length || legacyKeys.length;
+      } catch {
+        totalIndicators = legacyKeys.length;
+      }
+      sectionStatus = {
+        totalIndicators,
+        completedIndicators: legacyKeys.length,
+        completedList: legacyKeys,
+      };
+      this.logger.log(`🔧 Normalized legacy section_status. total=${sectionStatus.totalIndicators}, completed=${sectionStatus.completedIndicators}`);
+    } else {
+      sectionStatus = sectionStatusRaw as typeof sectionStatus;
+    }
+
+    // Mark current indicator completed if not yet
+    this.logger.log(`Before update sectionStatus: ${JSON.stringify(sectionStatus)}`);
+
+    if (!sectionStatus.completedList.includes(sectionKey)) {
+      sectionStatus.completedList.push(sectionKey);
+      this.logger.log(`✅ Marked ${sectionKey} as completed (category=${category})`);
+    } else {
+      this.logger.log(`ℹ️ ${sectionKey} already completed; preserving state.`);
+    }
+
+    // Recalculate completedIndicators for robustness
+    sectionStatus.completedIndicators = sectionStatus.completedList.length;
+
+    const allIndicatorsCompleted =
+      sectionStatus.totalIndicators > 0 &&
+      sectionStatus.completedIndicators >= sectionStatus.totalIndicators;
+
+    // If totalIndicators is zero (e.g., assignment added after creation), attempt recalculation
+    if (sectionStatus.totalIndicators === 0) {
+      try {
+        const scopeCount: Array<{ count: string }> = await this.userIndicatorScopeRepository.query(
+          `SELECT COUNT(*)::text AS count FROM user_indicator_scope uis JOIN indicators i ON i.id = uis.indicator_id WHERE uis.user_id = $1 AND i.is_active = true`,
+          [submission.submittedBy]
+        );
+        const computedTotal = parseInt(scopeCount?.[0]?.count || '0', 10);
+        if (computedTotal > 0) {
+          sectionStatus.totalIndicators = computedTotal;
+          this.logger.log(`🔄 Recomputed totalIndicators = ${computedTotal}`);
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to recompute totalIndicators: ${e.message}`);
+      }
+    }
+
+    this.logger.log(`📊 Progress: ${sectionStatus.completedIndicators}/${sectionStatus.totalIndicators} (allCompleted=${allIndicatorsCompleted})`);
+    this.logger.log(`After update sectionStatus: ${JSON.stringify(sectionStatus)}`);
+
+    // Persist update (only mutate sectionStatus + formData)
     await this.submissionRepository.update(submission.id, {
       formData: newFormData,
+      sectionStatus,
       updatedAt: new Date(),
     });
 
@@ -2648,6 +2919,22 @@ if (node.filePath && node.fileName) return node;
       throw new NotFoundException(
         `Submission not found after update: ${submissionId}`
       );
+    }
+
+    // Check if all indicators are completed and add redirect info
+    const refreshedSectionStatus = refreshed.sectionStatus || {
+      totalIndicators: 0,
+      completedIndicators: 0,
+      completedList: [],
+    };
+    
+    const allCompleted = refreshedSectionStatus.totalIndicators > 0 && 
+                         refreshedSectionStatus.completedIndicators >= refreshedSectionStatus.totalIndicators;
+
+    if (allCompleted) {
+      this.logger.log(`All indicators completed for submission ${submissionId}. Adding redirect URL.`);
+      (refreshed as any).shouldRedirect = true;
+      (refreshed as any).redirectUrl = `/data-submission/review/${submissionId}`;
     }
 
     return refreshed;

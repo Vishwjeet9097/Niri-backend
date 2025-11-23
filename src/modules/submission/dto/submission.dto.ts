@@ -15,8 +15,9 @@ import { UserRole } from "../../../entities/user.entity";
 
 
 export class CreateSubmissionDto {
+  @IsOptional()
   @IsString()
-  submissionId: string;
+  submissionId?: string;
 
   @IsObject()
   formData: Record<string, any>;
@@ -42,6 +43,14 @@ export class UpdateSubmissionDto {
   @IsOptional()
   @IsObject()
   formData?: Record<string, any>;
+
+  @IsOptional()
+  @IsObject()
+  sectionStatus?: {
+    totalIndicators: number;
+    completedIndicators: number;
+    completedList: string[];
+  };
 }
 
 export class AddCommentDto {
