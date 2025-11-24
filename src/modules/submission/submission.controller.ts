@@ -293,27 +293,7 @@ export class SubmissionController {
       submission["commentsBySection"] = groupedComments;
     }
 
-    // Add section_status information
-    const sectionStatus = submission.sectionStatus || {
-      totalIndicators: 0,
-      completedIndicators: 0,
-      completedList: [],
-    };
-    const allCompleted = sectionStatus.totalIndicators > 0 && 
-                         sectionStatus.completedIndicators >= sectionStatus.totalIndicators;
-
-    submission["indicatorProgress"] = {
-      total: sectionStatus.totalIndicators,
-      completed: sectionStatus.completedIndicators,
-      allCompleted,
-      completedList: sectionStatus.completedList,
-    };
-
-    if (allCompleted) {
-      submission["shouldRedirect"] = true;
-      submission["redirectUrl"] = `/data-submission/review/${id}`;
-    }
-
+    // sectionStatus removed; just return submission
     return submission;
   }
 
@@ -332,27 +312,11 @@ export class SubmissionController {
       req.user.stateUt
     );
 
-    const sectionStatus = submission.sectionStatus || {
-      totalIndicators: 0,
-      completedIndicators: 0,
-      completedList: [],
-    };
-    const allCompleted = sectionStatus.totalIndicators > 0 && 
-                         sectionStatus.completedIndicators >= sectionStatus.totalIndicators;
-
+    // sectionStatus removed; just return minimal status
     return {
       status: true,
       data: {
         submissionId: submission.id,
-        sectionStatus,
-        indicatorProgress: {
-          total: sectionStatus.totalIndicators,
-          completed: sectionStatus.completedIndicators,
-          allCompleted,
-          completedList: sectionStatus.completedList,
-        },
-        shouldRedirect: allCompleted,
-        redirectUrl: allCompleted ? `/data-submission/review/${id}` : null,
       },
       message: "Submission status retrieved successfully",
       timestamp: new Date().toISOString(),

@@ -650,20 +650,7 @@ if (node.filePath && node.fileName) return node;
       }
 
       // Step 4.5: Initialize section_status based on user's assigned indicators
-      const userIndicatorScopes = await this.userIndicatorScopeRepository.find({
-        where: { userId },
-        relations: ['indicator'],
-      });
-
-      const sectionStatus = {
-        totalIndicators: userIndicatorScopes.filter(scope => scope.indicator?.isActive).length,
-        completedIndicators: 0,
-        completedList: [] as string[],
-      };
-
-      this.logger.log(`Initialized section_status: ${sectionStatus.totalIndicators} indicators assigned to user ${userId}`);
-
-
+          // sectionStatus removed: no progress tracking or redirect info
       const submission = this.submissionRepository.create({
         submissionId: createSubmissionDto.submissionId,
         formData: processedFormData,
@@ -672,7 +659,6 @@ if (node.filePath && node.fileName) return node;
         status: status,
         currentOwnerRole: currentOwnerRole,
         attachedFiles: newAttachedFiles,
-        sectionStatus: sectionStatus,
       });
 
       // Step 5: Save submission
@@ -1128,12 +1114,7 @@ if (node.filePath && node.fileName) return node;
           updateData.formData = deepMerge(existingFormData, incomingFormData);
         }
       }
-      // Allow direct update of sectionStatus if present in payload (support both camelCase and snake_case)
-      if (updateSubmissionDto.sectionStatus !== undefined) {
-        updateData.sectionStatus = updateSubmissionDto.sectionStatus;
-      } else if ((updateSubmissionDto as any).section_status !== undefined) {
-        updateData.sectionStatus = (updateSubmissionDto as any).section_status;
-      }
+      // sectionStatus removed: no update needed
 
       await this.submissionRepository.update(id, updateData);
 
@@ -2814,93 +2795,9 @@ if (node.filePath && node.fileName) return node;
     }
     this.logger.log(`🔎 Normalizing category='${rawCategory}' -> sectionKey='${sectionKey}'`);
 
-    // Normalize existing sectionStatus (handle legacy object-of-sections shape)
-    let sectionStatusRaw: any = submission.sectionStatus;
-    let sectionStatus: {
-      totalIndicators: number;
-      completedIndicators: number;
-      completedList: string[];
-    };
-
-    if (
-      !sectionStatusRaw ||
-      typeof sectionStatusRaw !== 'object' ||
-      Array.isArray(sectionStatusRaw) ||
-      sectionStatusRaw.totalIndicators === undefined ||
-      sectionStatusRaw.completedIndicators === undefined ||
-      !Array.isArray(sectionStatusRaw.completedList)
-    ) {
-      // Legacy structure: derive completedList from keys with isCompleted true
-      const legacyKeys: string[] = [];
-      if (sectionStatusRaw && typeof sectionStatusRaw === 'object') {
-        for (const [k, v] of Object.entries(sectionStatusRaw)) {
-          if (/^section\d+_\d+$/.test(k) && v && (v as any).isCompleted) {
-            legacyKeys.push(k);
-          }
-        }
-      }
-      // Compute totalIndicators from user assignments if possible (fallback to legacy key count)
-      let totalIndicators = 0;
-      try {
-        const userIndicatorScopes = await this.userIndicatorScopeRepository.find({
-          where: { userId: submission.submittedBy },
-          relations: ['indicator'],
-        });
-        totalIndicators = userIndicatorScopes.filter(s => s.indicator?.isActive).length || legacyKeys.length;
-      } catch {
-        totalIndicators = legacyKeys.length;
-      }
-      sectionStatus = {
-        totalIndicators,
-        completedIndicators: legacyKeys.length,
-        completedList: legacyKeys,
-      };
-      this.logger.log(`🔧 Normalized legacy section_status. total=${sectionStatus.totalIndicators}, completed=${sectionStatus.completedIndicators}`);
-    } else {
-      sectionStatus = sectionStatusRaw as typeof sectionStatus;
-    }
-
-    // Mark current indicator completed if not yet
-    this.logger.log(`Before update sectionStatus: ${JSON.stringify(sectionStatus)}`);
-
-    if (!sectionStatus.completedList.includes(sectionKey)) {
-      sectionStatus.completedList.push(sectionKey);
-      this.logger.log(`✅ Marked ${sectionKey} as completed (category=${category})`);
-    } else {
-      this.logger.log(`ℹ️ ${sectionKey} already completed; preserving state.`);
-    }
-
-    // Recalculate completedIndicators for robustness
-    sectionStatus.completedIndicators = sectionStatus.completedList.length;
-
-    const allIndicatorsCompleted =
-      sectionStatus.totalIndicators > 0 &&
-      sectionStatus.completedIndicators >= sectionStatus.totalIndicators;
-
-    // If totalIndicators is zero (e.g., assignment added after creation), attempt recalculation
-    if (sectionStatus.totalIndicators === 0) {
-      try {
-        const scopeCount: Array<{ count: string }> = await this.userIndicatorScopeRepository.query(
-          `SELECT COUNT(*)::text AS count FROM user_indicator_scope uis JOIN indicators i ON i.id = uis.indicator_id WHERE uis.user_id = $1 AND i.is_active = true`,
-          [submission.submittedBy]
-        );
-        const computedTotal = parseInt(scopeCount?.[0]?.count || '0', 10);
-        if (computedTotal > 0) {
-          sectionStatus.totalIndicators = computedTotal;
-          this.logger.log(`🔄 Recomputed totalIndicators = ${computedTotal}`);
-        }
-      } catch (e) {
-        this.logger.warn(`Failed to recompute totalIndicators: ${e.message}`);
-      }
-    }
-
-    this.logger.log(`📊 Progress: ${sectionStatus.completedIndicators}/${sectionStatus.totalIndicators} (allCompleted=${allIndicatorsCompleted})`);
-    this.logger.log(`After update sectionStatus: ${JSON.stringify(sectionStatus)}`);
-
-    // Persist update (only mutate sectionStatus + formData)
+    // sectionStatus removed: no normalization, progress tracking, or persistence
     await this.submissionRepository.update(submission.id, {
       formData: newFormData,
-      sectionStatus,
       updatedAt: new Date(),
     });
 
@@ -2920,22 +2817,8 @@ if (node.filePath && node.fileName) return node;
         `Submission not found after update: ${submissionId}`
       );
     }
-
-    // Check if all indicators are completed and add redirect info
-    const refreshedSectionStatus = refreshed.sectionStatus || {
-      totalIndicators: 0,
-      completedIndicators: 0,
-      completedList: [],
-    };
     
-    const allCompleted = refreshedSectionStatus.totalIndicators > 0 && 
-                         refreshedSectionStatus.completedIndicators >= refreshedSectionStatus.totalIndicators;
-
-    if (allCompleted) {
-      this.logger.log(`All indicators completed for submission ${submissionId}. Adding redirect URL.`);
-      (refreshed as any).shouldRedirect = true;
-      (refreshed as any).redirectUrl = `/data-submission/review/${submissionId}`;
-    }
+    // sectionStatus removed: no progress tracking or redirect info
 
     return refreshed;
   }
