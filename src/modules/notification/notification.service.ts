@@ -43,4 +43,23 @@ export class NotificationService {
   async statusChangeNotificationId(id: string): Promise<void> {
     await this.notificationRepository.update({ id }, { status: 0 });
   }
+  
+  async getActiveNotificationsWithUserNames(): Promise<any[]> {
+    const notifications = await this.notificationRepository
+      .createQueryBuilder('notification')
+      .leftJoin('users', 'sender', 'sender.id::text = notification.senderId')
+      .leftJoin('users', 'receiver', 'receiver.id::text = notification.receiverId')
+      .where('notification.status = :status', { status: 1 })
+      .select([
+        'notification.id AS id',
+        'notification.title AS title',
+        'notification.message AS message',
+        'notification.status AS status',
+        'notification.createdAt AS createdAt',       
+        `CONCAT(sender.firstName, ' ', sender.lastName) AS senderFullName`,
+        `CONCAT(receiver.firstName, ' ', receiver.lastName) AS receiverFullName`,
+      ])
+      .getRawMany();
+    return notifications;
+  }
 }
