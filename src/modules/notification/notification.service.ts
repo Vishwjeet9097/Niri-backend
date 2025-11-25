@@ -44,20 +44,24 @@ export class NotificationService {
     await this.notificationRepository.update({ id }, { status: 0 });
   }
   
-  async getActiveNotificationsWithUserNames(): Promise<any[]> {
-    const notifications = await this.notificationRepository
+  async getActiveNotificationsWithUserNames(receiverId?: string): Promise<any[]> {
+    const qb = this.notificationRepository
       .createQueryBuilder('notification')
       .leftJoin('users', 'sender', 'sender.id::text = notification.senderId')
       .leftJoin('users', 'receiver', 'receiver.id::text = notification.receiverId')
-      .where('notification.status = :status', { status: 1 })
+      .where('notification.status = :status', { status: 1 });
+    if (receiverId) {
+      qb.andWhere('notification.receiverId = :receiverId', { receiverId });
+    }
+    const notifications = await qb
       .select([
         'notification.id AS id',
         'notification.title AS title',
         'notification.message AS message',
         'notification.status AS status',
-        'notification.createdAt AS createdAt',       
-        `CONCAT(sender.firstName, ' ', sender.lastName) AS senderFullName`,
-        `CONCAT(receiver.firstName, ' ', receiver.lastName) AS receiverFullName`,
+        'notification.createdAt AS "createdAt"',
+        `CONCAT(sender.firstName, ' ', sender.lastName) AS "senderFullName"`,
+        `CONCAT(receiver.firstName, ' ', receiver.lastName) AS "receiverFullName"`,
       ])
       .getRawMany();
     return notifications;
