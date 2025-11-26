@@ -2643,7 +2643,8 @@ if (node.filePath && node.fileName) return node;
     fields: any[],
     userId: string,
     userRole: UserRole,
-    userStateUt: string
+    userStateUt: string,
+    sourceSubmissionId?: string,
   ): Promise<Submission> {
     this.logger.log(
       `Updating form section for submissionId=${submissionId} category=${category} section=${section} by user ${userId}`
@@ -2757,8 +2758,99 @@ if (node.filePath && node.fileName) return node;
         "Each field must be an object with one or more key-value pairs"
       );
     }
-// ...existing code...
-// ...existing code...
+    
+
+    // Check if mospi_status was "Reverted" before update and if status is being set to "ACCEPTED"
+    // If so, update mospi_status to "RESUBMITTED"
+    const hadRevertedMospiStatus = targetSection.mospi_status === "REVERTED" || targetSection.mospi_status === "Reverted";
+    const isBeingAccepted = targetSection.status === "ACCEPTED";
+    
+    if (hadRevertedMospiStatus && isBeingAccepted) {
+      this.logger.log(`Detected ACCEPTED status with previous REVERTED mospi_status, updating mospi_status to RESUBMITTED`);
+      targetSection.mospi_status = "RESUBMITTED";
+    }
+
+      // If sourceSubmissionId is provided, update status to REVERTED in the source submission
+    if (sourceSubmissionId) {
+      this.logger.log(`Updating status to REVERTED in source submission: ${sourceSubmissionId}`);
+      
+      const sourceSubmission = await this.submissionRepository.findOne({
+        where: { submissionId: sourceSubmissionId },
+      });
+
+      if (sourceSubmission) {
+        const sourceFormData = sourceSubmission.formData
+          ? JSON.parse(JSON.stringify(sourceSubmission.formData))
+          : {};
+
+        // Update status in the same category/section of source submission
+        if (sourceFormData[category]?.[section]) {
+          
+          if (targetSection.status === "ACCEPTED") {
+            sourceFormData[category][section].status = "ACCEPTED";
+            this.logger.log(`Setting source submission status to ACCEPTED`);
+          } else {
+            // Otherwise, set to REVERTED
+            sourceFormData[category][section].status = "REVERTED";
+            this.logger.log(`Setting source submission status to REVERTED`);
+          }
+          
+          sourceFormData[category][section].consolidatedSubmissionId = submission.id;
+
+          await this.submissionRepository.update(sourceSubmission.id, {
+            formData: sourceFormData,
+            updatedAt: new Date(),
+          });
+
+          this.logger.log(
+            `Updated status to REVERTED in source submission ${sourceSubmissionId} for category=${category} section=${section}`
+          );
+        } else {
+          this.logger.warn(
+            `Source submission ${sourceSubmissionId} does not have category=${category} section=${section}`
+          );
+        }
+      } else {
+        this.logger.warn(`Source submission not found: ${sourceSubmissionId}`);
+      }
+    }
+
+
+     // Check if current section has consolidatedSubmissionId and update that submission's status to RESUBMITTED
+    if (targetSection.consolidatedSubmissionId) {
+      this.logger.log(`Found consolidatedSubmissionId: ${targetSection.consolidatedSubmissionId}`);
+      
+      const consolidatedSubmission = await this.submissionRepository.findOne({
+        where: { id: targetSection.consolidatedSubmissionId },
+      });
+
+      if (consolidatedSubmission) {
+        const consolidatedFormData = consolidatedSubmission.formData
+          ? JSON.parse(JSON.stringify(consolidatedSubmission.formData))
+          : {};
+
+        // Update status in the same category/section of consolidated submission
+        if (consolidatedFormData[category]?.[section]) {
+          consolidatedFormData[category][section].status = "RESUBMITTED";
+          
+          await this.submissionRepository.update(consolidatedSubmission.id, {
+            formData: consolidatedFormData,
+            updatedAt: new Date(),
+          });
+
+          this.logger.log(
+            `Updated status to RESUBMITTED in consolidated submission ${targetSection.consolidatedSubmissionId} for category=${category} section=${section}`
+          );
+        } else {
+          this.logger.warn(
+            `Consolidated submission ${targetSection.consolidatedSubmissionId} does not have category=${category} section=${section}`
+          );
+        }
+      } else {
+        this.logger.warn(`Consolidated submission not found: ${targetSection.consolidatedSubmissionId}`);
+      }
+    }
+
 
     // Persist update using repository (by internal id)
     await this.submissionRepository.update(submission.id, {
@@ -3124,6 +3216,62 @@ async buildCumulativePreview(params: {
 
 
 
+  /**
+   * MoSPI Approver sends submission back to State
+   */
+  async mospiApproverSendBack(
+    submissionId: string,
+    // comment: string | undefined,
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    this.logger.log(
+      `MoSPI Approver ${userId} sending back submission ${submissionId} to state`
+    );
+
+    // Find submission by internal id
+    const submission = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!submission) {
+      throw new NotFoundException(`Submission not found for id: ${submissionId}`);
+    }
+
+    // Only MoSPI Approver can use this endpoint (guard already enforces this)
+    if (userRole !== UserRole.MOSPI_APPROVER) {
+      throw new ForbiddenException("Only MoSPI Approver can send back to state");
+    }
+
+    // Validate current status (must be with MOSPI Approver)
+    if (submission.status !== SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER) {
+      throw new BadRequestException(
+        `Cannot send back submission in status ${submission.status}. Must be SUBMITTED_TO_MOSPI_APPROVER`
+      );
+    }
+
+   
+
+    // Update submission: change status and owner role back to state
+    await this.submissionRepository.update(submissionId, {
+      status: SubmissionStatus.RETURNED_FROM_MOSPI,
+      currentOwnerRole: UserRole.STATE_APPROVER,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(
+      `Submission ${submissionId} sent back to state by MoSPI Approver successfully`
+    );
+
+    // Return updated submission
+    return await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+  }
+// ...existing code...
 
 
 }
