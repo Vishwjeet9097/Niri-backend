@@ -272,12 +272,27 @@ export class ScoringService {
     });
     categoryScore += capexUtilizationScore;
 
-    // 1.3 % of Credit Rated ULBs (50 marks)
+    // 1.3 % of Credit Rated ULBs (50 marks) - FIXED: Use totalULBs from form data
     const section1_3Raw = formData.infraFinancing?.section1_3;
-    const section1_3 = this.normalizeToArray(section1_3Raw);
-    const creditRatedULBs = section1_3.length;
-    const totalULBs = 10; // Assuming total ULBs as 10 for realistic calculation
-    const creditRatedRatio = (creditRatedULBs / totalULBs) * 100;
+    // Handle both array format and object with ulbList format
+    let section1_3Array: any[] = [];
+    let totalULBs = 0;
+    
+    if (Array.isArray(section1_3Raw)) {
+      section1_3Array = section1_3Raw;
+    } else if (section1_3Raw && typeof section1_3Raw === 'object') {
+      // Check for ulbList array
+      if (Array.isArray(section1_3Raw.ulbList)) {
+        section1_3Array = section1_3Raw.ulbList;
+      } else {
+        section1_3Array = this.normalizeToArray(section1_3Raw);
+      }
+      // Get totalULBs from form data
+      totalULBs = parseFloat(section1_3Raw.totalULBs) || 0;
+    }
+    
+    const creditRatedULBs = section1_3Array.length;
+    const creditRatedRatio = totalULBs > 0 ? (creditRatedULBs / totalULBs) * 100 : 0;
     const creditRatedScore = Math.min(creditRatedRatio / 2, 50); // 1 mark for every 2%
     
     calculations.push({
@@ -289,12 +304,27 @@ export class ScoringService {
     });
     categoryScore += creditRatedScore;
 
-    // 1.4 % of ULBs Issuing Bonds (50 marks)
+    // 1.4 % of ULBs Issuing Bonds (50 marks) - FIXED: Use totalULBs from form data
     const section1_4Raw = formData.infraFinancing?.section1_4;
-    const section1_4 = this.normalizeToArray(section1_4Raw);
-    const ulbsIssuingBonds = section1_4.length;
-    const totalULBsEntered = 10; // Assuming total ULBs as 10 for realistic calculation
-    const ulbsBondsRatio = (ulbsIssuingBonds / totalULBsEntered) * 100;
+    // Handle both array format and object with bondList format
+    let section1_4Array: any[] = [];
+    let totalULBsEntered = 0;
+    
+    if (Array.isArray(section1_4Raw)) {
+      section1_4Array = section1_4Raw;
+    } else if (section1_4Raw && typeof section1_4Raw === 'object') {
+      // Check for bondList array
+      if (Array.isArray(section1_4Raw.bondList)) {
+        section1_4Array = section1_4Raw.bondList;
+      } else {
+        section1_4Array = this.normalizeToArray(section1_4Raw);
+      }
+      // Get totalULBs from form data
+      totalULBsEntered = parseFloat(section1_4Raw.totalULBs) || 0;
+    }
+    
+    const ulbsIssuingBonds = section1_4Array.length;
+    const ulbsBondsRatio = totalULBsEntered > 0 ? (ulbsIssuingBonds / totalULBsEntered) * 100 : 0;
     const ulbsBondsScore = Math.min(ulbsBondsRatio * 2, 50); // 2 marks for every 1%
     
     calculations.push({
@@ -306,15 +336,32 @@ export class ScoringService {
     });
     categoryScore += ulbsBondsScore;
 
-    // 1.5 Functional Financial Intermediary (50 marks)
-    const section1_5Raw = formData.infraFinancing?.section1_5;
-    const section1_5 = this.normalizeToArray(section1_5Raw);
-    const validEntries = section1_5.length;
-    const financialIntermediaryScore = Math.min(validEntries * 10, 50); // 10 marks per entry
+    // 1.5 Functional Financial Intermediary (50 marks) - FIXED: Binary scoring
+    const section1_5 = formData.infraFinancing?.section1_5 || {};
+    const hasIntermediary = section1_5.hasIntermediary === 'yes' || section1_5.hasIntermediary === 'Yes';
+    
+    // Get ffiArray
+    let ffiArray: any[] = [];
+    if (Array.isArray(section1_5.ffiArray)) {
+      ffiArray = section1_5.ffiArray;
+    } else {
+      ffiArray = this.normalizeToArray(section1_5);
+    }
+    
+    // Check if has valid entry with required details (organization, type, funding, website)
+    const hasValidFFI = hasIntermediary && ffiArray.length > 0 && ffiArray.some(entry => 
+      entry && 
+      entry.organisationName && entry.organisationName.trim() !== '' &&
+      entry.organisationType && entry.organisationType.trim() !== '' &&
+      entry.totalFunding && entry.totalFunding.trim() !== '' &&
+      entry.website && entry.website.trim() !== ''
+    );
+    
+    const financialIntermediaryScore = hasValidFFI ? 50 : 0; // Binary: 50 if Yes + valid details, else 0
     
     calculations.push({
       indicator: '1.5 Functional Financial Intermediary',
-      value: validEntries,
+      value: hasValidFFI ? 1 : 0,
       weight: 0.05,
       score: financialIntermediaryScore,
       maxScore: 50,
@@ -337,6 +384,18 @@ export class ScoringService {
       if (section.data && Array.isArray(section.data)) return section.data;
       if (section.items && Array.isArray(section.items)) return section.items;
       if (section.array && Array.isArray(section.array)) return section.array;
+      if (section.ulbList && Array.isArray(section.ulbList)) return section.ulbList;
+      if (section.bondList && Array.isArray(section.bondList)) return section.bondList;
+      if (section.ffiArray && Array.isArray(section.ffiArray)) return section.ffiArray;
+      if (section.infraActArray && Array.isArray(section.infraActArray)) return section.infraActArray;
+      if (section.specializedEntityArray && Array.isArray(section.specializedEntityArray)) return section.specializedEntityArray;
+      if (section.infraDevelopmentArray && Array.isArray(section.infraDevelopmentArray)) return section.infraDevelopmentArray;
+      if (section.investmentReadyArray && Array.isArray(section.investmentReadyArray)) return section.investmentReadyArray;
+      if (section.assetMonetizationArray && Array.isArray(section.assetMonetizationArray)) return section.assetMonetizationArray;
+      if (section.VGFArray && Array.isArray(section.VGFArray)) return section.VGFArray;
+      if (section.projects && Array.isArray(section.projects)) return section.projects;
+      if (section.practices && Array.isArray(section.practices)) return section.practices;
+      if (section.capacityArray && Array.isArray(section.capacityArray)) return section.capacityArray;
       // If object has numeric keys or is an object with values, convert to array
       const values = Object.values(section);
       if (values.length > 0 && values.every(v => typeof v === 'object')) {
@@ -352,11 +411,43 @@ export class ScoringService {
   private calculateInfraDevelopmentScore(formData: Record<string, any>, calculations: ScoreCalculation[]): number {
     let categoryScore = 0;
 
-    // 2.1 Availability of Infrastructure Act/Policy (50 marks)
+    // 2.1 Availability of Infrastructure Act/Policy (50 marks) - FIXED: Overarching logic
     const section2_1Raw = formData.infraDevelopment?.section2_1;
-    const section2_1 = this.normalizeToArray(section2_1Raw);
-    const sectorsWithDoc2_1 = section2_1.filter(item => item && item.files && (Array.isArray(item.files) ? item.files.length > 0 : item.files)).length;
-    const infraActScore = Math.min(sectorsWithDoc2_1 * 10, 50); // 10 marks per sector with document
+    let section2_1: any[] = [];
+    
+    if (Array.isArray(section2_1Raw)) {
+      section2_1 = section2_1Raw;
+    } else if (section2_1Raw && typeof section2_1Raw === 'object') {
+      if (Array.isArray(section2_1Raw.infraActArray)) {
+        section2_1 = section2_1Raw.infraActArray;
+      } else {
+        section2_1 = this.normalizeToArray(section2_1Raw);
+      }
+    }
+    
+    // Check if there's an overarching policy (sector === "Overarching" or similar)
+    const hasOverarching = section2_1.some(item => 
+      item && item.sector && (
+        item.sector.toLowerCase() === 'overarching' || 
+        item.sector.toLowerCase().includes('overarching')
+      )
+    );
+    
+    const sectorsWithDoc2_1 = section2_1.filter(item => {
+      if (!item) return false;
+      const hasFiles = item.files && (
+        Array.isArray(item.files) ? item.files.length > 0 : 
+        (item.files.id || item.files.fileName || item.files.filePath)
+      );
+      return hasFiles;
+    }).length;
+    
+    let infraActScore = 0;
+    if (hasOverarching && sectorsWithDoc2_1 > 0) {
+      infraActScore = 50; // Full marks if overarching + doc
+    } else {
+      infraActScore = Math.min(sectorsWithDoc2_1 * 10, 50); // 10 marks per sector with doc, max 50
+    }
     
     calculations.push({
       indicator: '2.1 Availability of Infrastructure Act/Policy',
@@ -367,26 +458,77 @@ export class ScoringService {
     });
     categoryScore += infraActScore;
 
-    // 2.2 Availability of Specialized Entity (50 marks)
+    // 2.2 Availability of Specialized Entity (50 marks) - FIXED: Binary scoring
     const section2_2Raw = formData.infraDevelopment?.section2_2;
-    const section2_2 = this.normalizeToArray(section2_2Raw);
-    const sectorsWithDoc2_2 = section2_2.filter(item => item && item.files && (Array.isArray(item.files) ? item.files.length > 0 : item.files)).length;
-    const specializedEntityScore = Math.min(sectorsWithDoc2_2 * 10, 50); // 10 marks per sector with document
+    let section2_2: any[] = [];
+    
+    if (Array.isArray(section2_2Raw)) {
+      section2_2 = section2_2Raw;
+    } else if (section2_2Raw && typeof section2_2Raw === 'object') {
+      if (Array.isArray(section2_2Raw.specializedEntityArray)) {
+        section2_2 = section2_2Raw.specializedEntityArray;
+      } else {
+        section2_2 = this.normalizeToArray(section2_2Raw);
+      }
+    }
+    
+    // Check if available (has entries) and has file upload
+    const hasSpecializedEntity = section2_2.length > 0 && section2_2.some(item => {
+      if (!item) return false;
+      const hasFiles = item.files && (
+        Array.isArray(item.files) ? item.files.length > 0 : 
+        (item.files.id || item.files.fileName || item.files.filePath)
+      );
+      return hasFiles;
+    });
+    
+    const specializedEntityScore = hasSpecializedEntity ? 50 : 0; // Binary: 50 if Yes + file, else 0
     
     calculations.push({
       indicator: '2.2 Availability of Specialized Entity',
-      value: sectorsWithDoc2_2,
+      value: hasSpecializedEntity ? 1 : 0,
       weight: 0.05,
       score: specializedEntityScore,
       maxScore: 50,
     });
     categoryScore += specializedEntityScore;
 
-    // 2.3 Sector Infra Development Plan (50 marks)
+    // 2.3 Sector Infra Development Plan (50 marks) - FIXED: Overarching logic
     const section2_3Raw = formData.infraDevelopment?.section2_3;
-    const section2_3 = this.normalizeToArray(section2_3Raw);
-    const sectorsWithDoc2_3 = section2_3.filter(item => item && item.files && (Array.isArray(item.files) ? item.files.length > 0 : item.files)).length;
-    const sectorPlanScore = Math.min(sectorsWithDoc2_3 * 10, 50); // 10 marks per sector with document
+    let section2_3: any[] = [];
+    
+    if (Array.isArray(section2_3Raw)) {
+      section2_3 = section2_3Raw;
+    } else if (section2_3Raw && typeof section2_3Raw === 'object') {
+      if (Array.isArray(section2_3Raw.infraDevelopmentArray)) {
+        section2_3 = section2_3Raw.infraDevelopmentArray;
+      } else {
+        section2_3 = this.normalizeToArray(section2_3Raw);
+      }
+    }
+    
+    const hasOverarching2_3 = section2_3.some(item => 
+      item && item.sector && (
+        item.sector.toLowerCase() === 'overarching' || 
+        item.sector.toLowerCase().includes('overarching')
+      )
+    );
+    
+    const sectorsWithDoc2_3 = section2_3.filter(item => {
+      if (!item) return false;
+      const hasFiles = item.files && (
+        Array.isArray(item.files) ? item.files.length > 0 : 
+        (item.files.id || item.files.fileName || item.files.filePath)
+      );
+      return hasFiles;
+    }).length;
+    
+    let sectorPlanScore = 0;
+    if (hasOverarching2_3 && sectorsWithDoc2_3 > 0) {
+      sectorPlanScore = 50; // Full marks if overarching + doc
+    } else {
+      sectorPlanScore = Math.min(sectorsWithDoc2_3 * 10, 50); // 10 marks per sector with doc, max 50
+    }
     
     calculations.push({
       indicator: '2.3 Sector Infra Development Plan',
@@ -397,11 +539,40 @@ export class ScoringService {
     });
     categoryScore += sectorPlanScore;
 
-    // 2.4 Investment Ready Project Pipeline (50 marks)
+    // 2.4 Investment Ready Project Pipeline (50 marks) - FIXED: Accept websiteLink OR dprFile
     const section2_4Raw = formData.infraDevelopment?.section2_4;
-    const section2_4 = this.normalizeToArray(section2_4Raw);
-    const validProjectsWithDocs = section2_4.filter(item => item && item.dprFile).length;
-    const projectPipelineScore = Math.min(validProjectsWithDocs * 10, 50); // 10 marks per project with DPR
+    let section2_4: any[] = [];
+    let section2_4WebsiteLink: string | undefined;
+    
+    if (Array.isArray(section2_4Raw)) {
+      section2_4 = section2_4Raw;
+    } else if (section2_4Raw && typeof section2_4Raw === 'object') {
+      if (Array.isArray(section2_4Raw.investmentReadyArray)) {
+        section2_4 = section2_4Raw.investmentReadyArray;
+      } else {
+        section2_4 = this.normalizeToArray(section2_4Raw);
+      }
+      // Get websiteLink from section level
+      section2_4WebsiteLink = section2_4Raw.websiteLink;
+    }
+    
+    // Count valid projects: either have dprFile OR section has websiteLink
+    // If section has websiteLink, all projects in the array are valid
+    // Otherwise, only projects with dprFile are valid
+    const hasSectionWebsiteLink = section2_4WebsiteLink && section2_4WebsiteLink.trim() !== '';
+    
+    const validProjectsWithDocs = hasSectionWebsiteLink 
+      ? section2_4.length // If websiteLink exists, count all projects
+      : section2_4.filter(item => {
+          if (!item) return false;
+          const hasDprFile = item.dprFile && (
+            Array.isArray(item.dprFile) ? item.dprFile.length > 0 :
+            (item.dprFile.id || item.dprFile.fileName || item.dprFile.filePath)
+          );
+          return hasDprFile;
+        }).length;
+    
+    const projectPipelineScore = Math.min(validProjectsWithDocs * 10, 50); // 10 marks per project with DPR or websiteLink
     
     calculations.push({
       indicator: '2.4 Investment Ready Project Pipeline',
@@ -414,8 +585,22 @@ export class ScoringService {
 
     // 2.5 Asset Monetization Pipeline (50 marks)
     const section2_5Raw = formData.infraDevelopment?.section2_5;
-    const section2_5 = this.normalizeToArray(section2_5Raw);
-    const validAssetsProjects = section2_5.filter(item => item && item.projectName && item.estimatedMonetization).length;
+    let section2_5: any[] = [];
+    
+    if (Array.isArray(section2_5Raw)) {
+      section2_5 = section2_5Raw;
+    } else if (section2_5Raw && typeof section2_5Raw === 'object') {
+      if (Array.isArray(section2_5Raw.assetMonetizationArray)) {
+        section2_5 = section2_5Raw.assetMonetizationArray;
+      } else {
+        section2_5 = this.normalizeToArray(section2_5Raw);
+      }
+    }
+    
+    const validAssetsProjects = section2_5.filter(item => 
+      item && item.projectName && item.estimatedMonetization
+    ).length;
+    
     const assetMonetizationScore = Math.min(validAssetsProjects * 10, 50); // 10 marks per valid asset/project
     
     calculations.push({
@@ -437,7 +622,7 @@ export class ScoringService {
     // 3.1 Availability of PPP Act/Policy (50 marks)
     const section3_1 = formData.pppDevelopment?.section3_1 || {};
     const hasPPPAct = (section3_1.available === 'yes' || section3_1.available === 'Yes') && 
-                      section3_1.file && section3_1.file.id;
+                      section3_1.file && (section3_1.file.id || section3_1.file.fileName || section3_1.file.filePath);
     const pppActScore = hasPPPAct ? 50 : 0; // Binary: Yes + Doc uploaded = 50, else 0
     
     calculations.push({
@@ -452,7 +637,7 @@ export class ScoringService {
     // 3.2 Functional PPP Cell/Unit (50 marks)
     const section3_2 = formData.pppDevelopment?.section3_2 || {};
     const hasPPPCell = (section3_2.available === 'yes' || section3_2.available === 'Yes') && 
-                       section3_2.file && section3_2.file.id;
+                       section3_2.file && (section3_2.file.id || section3_2.file.fileName || section3_2.file.filePath);
     const pppCellScore = hasPPPCell ? 50 : 0; // Binary: Yes + Doc uploaded = 50, else 0
     
     calculations.push({
@@ -466,8 +651,27 @@ export class ScoringService {
 
     // 3.3 Proposals under VGF/IIPDF (50 marks)
     const section3_3Raw = formData.pppDevelopment?.section3_3;
-    const section3_3 = this.normalizeToArray(section3_3Raw);
-    const vgfProposals = section3_3.filter(item => item && item.file && item.file.id).length;
+    let section3_3: any[] = [];
+    
+    if (Array.isArray(section3_3Raw)) {
+      section3_3 = section3_3Raw;
+    } else if (section3_3Raw && typeof section3_3Raw === 'object') {
+      if (Array.isArray(section3_3Raw.VGFArray)) {
+        section3_3 = section3_3Raw.VGFArray;
+      } else {
+        section3_3 = this.normalizeToArray(section3_3Raw);
+      }
+    }
+    
+    const vgfProposals = section3_3.filter(item => {
+      if (!item) return false;
+      const hasFile = item.file && (
+        Array.isArray(item.file) ? item.file.length > 0 :
+        (item.file.id || item.file.fileName || item.file.filePath)
+      );
+      return hasFile;
+    }).length;
+    
     const vgfScore = Math.min(vgfProposals * 5, 50); // 5 marks per project with document
     
     calculations.push({
@@ -479,16 +683,20 @@ export class ScoringService {
     });
     categoryScore += vgfScore;
 
-    // 3.4 Proportion of TPC of PPP Projects (100 marks)
+    // 3.4 Proportion of TPC of PPP Projects (100 marks) - FIXED: Calculate % first, then marks
     const section3_4 = formData.pppDevelopment?.section3_4 || {};
     const totalCostBankablePPP = parseFloat(section3_4.tpcOfPPPProjects) || 0;
     const totalCostAllInfra = parseFloat(section3_4.totalTPC) || 0;
-    const proportionRatio = totalCostAllInfra > 0 ? (totalCostBankablePPP / totalCostAllInfra) * 100 : 0;
-    const tpcScore = Math.min(proportionRatio * 2, 100); // 2 marks for every 1%
+    
+    // First calculate percentage: % = (A1 / A2) × 100
+    const proportionPercentage = totalCostAllInfra > 0 ? (totalCostBankablePPP / totalCostAllInfra) * 100 : 0;
+    
+    // Then calculate marks: Marks = % × 2, max 100
+    const tpcScore = Math.min(proportionPercentage * 2, 100);
     
     calculations.push({
       indicator: '3.4 Proportion of TPC of PPP Projects',
-      value: proportionRatio,
+      value: proportionPercentage,
       weight: 0.1,
       score: tpcScore,
       maxScore: 100,
@@ -502,11 +710,14 @@ export class ScoringService {
   private calculateInfraEnablersScore(formData: Record<string, any>, calculations: ScoreCalculation[]): number {
     let categoryScore = 0;
 
-    // 4.1 All Eligible Infra Projects on NIP Portal (50 marks)
+    // 4.1 All Eligible Infra Projects on NIP Portal (50 marks) - FIXED: Accept file or link
     const section4_1 = formData.infraEnablers?.section4_1 || {};
     const allEligible = (section4_1.allEligible === 'yes' || section4_1.allEligible === 'Yes') && 
-                        section4_1.websiteLink && section4_1.websiteLink.trim() !== '';
-    const nipScore = allEligible ? 50 : 0; // Binary: Yes + Valid Doc = 50, else 0
+                        (
+                          (section4_1.websiteLink && section4_1.websiteLink.trim() !== '') ||
+                          (section4_1.file && (section4_1.file.id || section4_1.file.fileName || section4_1.file.filePath))
+                        );
+    const nipScore = allEligible ? 50 : 0; // Binary: Yes + File or Link = 50, else 0
     
     calculations.push({
       indicator: '4.1 All Eligible Infra Projects on NIP Portal',
@@ -520,7 +731,7 @@ export class ScoringService {
     // 4.2 Availability & Use of State/UT PMG (30 marks)
     const section4_2 = formData.infraEnablers?.section4_2 || {};
     const hasPMG = (section4_2.available === 'yes' || section4_2.available === 'Yes') && 
-                   section4_2.file && section4_2.file.id;
+                   section4_2.file && (section4_2.file.id || section4_2.file.fileName || section4_2.file.filePath);
     const pmgScore = hasPMG ? 30 : 0; // Binary: Yes + Upload = 30, else 0
     
     calculations.push({
@@ -532,14 +743,31 @@ export class ScoringService {
     });
     categoryScore += pmgScore;
 
-    // 4.3 Adoption of PM GatiShakti (20 marks)
+    // 4.3 Adoption of PM GatiShakti (20 marks) - FIXED: Count projects array with docs
     const section4_3 = formData.infraEnablers?.section4_3 || {};
-    const numberOfProjects = parseFloat(section4_3.numberOfProjects) || 0;
-    const gatiShaktiScore = Math.min(numberOfProjects * 5, 20); // 5 marks per project
+    let projectsArray: any[] = [];
+    
+    if (Array.isArray(section4_3.projects)) {
+      projectsArray = section4_3.projects;
+    } else {
+      projectsArray = this.normalizeToArray(section4_3);
+    }
+    
+    // Count projects with documents uploaded
+    const projectsWithDocs = projectsArray.filter(item => {
+      if (!item) return false;
+      const hasFile = item.file && (
+        Array.isArray(item.file) ? item.file.length > 0 :
+        (item.file.id || item.file.fileName || item.file.filePath)
+      );
+      return hasFile;
+    }).length;
+    
+    const gatiShaktiScore = Math.min(projectsWithDocs * 5, 20); // 5 marks per project with docs, max 20
     
     calculations.push({
       indicator: '4.3 Adoption of PM GatiShakti',
-      value: numberOfProjects,
+      value: projectsWithDocs,
       weight: 0.02,
       score: gatiShaktiScore,
       maxScore: 20,
@@ -549,7 +777,7 @@ export class ScoringService {
     // 4.4 Adoption of ADR (50 marks)
     const section4_4 = formData.infraEnablers?.section4_4 || {};
     const adoptedADR = (section4_4.adopted === 'yes' || section4_4.adopted === 'Yes') && 
-                       section4_4.file && section4_4.file.id;
+                       section4_4.file && (section4_4.file.id || section4_4.file.fileName || section4_4.file.filePath);
     const adrScore = adoptedADR ? 50 : 0; // Binary: Yes + Doc uploaded = 50, else 0
     
     calculations.push({
@@ -561,14 +789,31 @@ export class ScoringService {
     });
     categoryScore += adrScore;
 
-    // 4.5 Innovative Practices (50 marks)
+    // 4.5 Innovative Practices (50 marks) - FIXED: Count practices array with evidence
     const section4_5 = formData.infraEnablers?.section4_5 || {};
-    const practicesWithEvidence = section4_5.implemented === 'yes' || section4_5.implemented === 'Yes' ? 1 : 0;
-    const innovativeScore = Math.min(practicesWithEvidence * 10, 50); // 10 marks per practice
+    let practicesArray: any[] = [];
+    
+    if (Array.isArray(section4_5.practices)) {
+      practicesArray = section4_5.practices;
+    } else {
+      practicesArray = this.normalizeToArray(section4_5);
+    }
+    
+    // Count validated practices (with evidence/file)
+    const validatedPractices = practicesArray.filter(practice => {
+      if (!practice) return false;
+      const hasFile = practice.file && (
+        Array.isArray(practice.file) ? practice.file.length > 0 :
+        (practice.file.id || practice.file.fileName || practice.file.filePath)
+      );
+      return hasFile;
+    }).length;
+    
+    const innovativeScore = Math.min(validatedPractices * 10, 50); // 10 marks per validated practice, max 50
     
     calculations.push({
       indicator: '4.5 Innovative Practices',
-      value: practicesWithEvidence,
+      value: validatedPractices,
       weight: 0.05,
       score: innovativeScore,
       maxScore: 50,
@@ -577,9 +822,20 @@ export class ScoringService {
 
     // 4.6 Capacity Building - Officer Participation (50 marks)
     const section4_6Raw = formData.infraEnablers?.section4_6;
-    const section4_6 = this.normalizeToArray(section4_6Raw);
+    let section4_6: any[] = [];
+    
+    if (Array.isArray(section4_6Raw)) {
+      section4_6 = section4_6Raw;
+    } else if (section4_6Raw && typeof section4_6Raw === 'object') {
+      if (Array.isArray(section4_6Raw.capacityArray)) {
+        section4_6 = section4_6Raw.capacityArray;
+      } else {
+        section4_6 = this.normalizeToArray(section4_6Raw);
+      }
+    }
+    
     const participants = section4_6.length;
-    const capacityScore = Math.min(participants * 1, 50); // 1 mark per officer
+    const capacityScore = Math.min(participants * 1, 50); // 1 mark per officer, max 50
     
     calculations.push({
       indicator: '4.6 Capacity Building - Officer Participation',
