@@ -694,16 +694,22 @@ export class SubmissionController {
       section?: string;
       status?: boolean;
       mospi_status?: string;
+      sourceSubmissionId?: string;
     },
     @Request() req
   ) {
-    const { submissionId, category, section, status, mospi_status } = body;
+    const { submissionId, category, section, status, mospi_status, sourceSubmissionId } = body;
 
     if (!submissionId || !category || !section || typeof status !== "boolean") {
       throw new BadRequestException(
         "Missing required fields: submissionId, category, section, accepted"
       );
     }
+
+     // Only pass sourceSubmissionId if it exists and is not empty
+    const sourceId = sourceSubmissionId && sourceSubmissionId.trim() !== "" 
+      ? sourceSubmissionId 
+      : undefined;
 
     let fields: any = [];
     // Create fields array with status
@@ -723,7 +729,8 @@ export class SubmissionController {
       fields,
       req.user.id,
       req.user.role,
-      req.user.stateUt
+      req.user.stateUt,
+      sourceId,
     );
   }
 
@@ -751,5 +758,25 @@ async getCumulativePreviewForState(
     userStateUt: req.user.stateUt,
   });
 }
+
+// ...existing code...
+  @Post("mospi-approver-send-back/:id")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.MOSPI_APPROVER)
+  @HttpCode(HttpStatus.OK)
+  async mospiApproverSendBack(
+    @Param("id") id: string,
+    @Body() body: { comment?: string },
+    @Request() req
+  ) {
+    return this.submissionService.mospiApproverSendBack(
+      id,
+      // body.comment,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
+  }
+// ...existing code...
 
 }
