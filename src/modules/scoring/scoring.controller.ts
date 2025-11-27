@@ -61,4 +61,28 @@ export class ScoringController {
       timestamp: new Date().toISOString(),
     };
   }
+
+  @Get('diagnostics')
+  @Roles(UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getDiagnostics(@Request() req) {
+    const diagnostics = await this.scoringService.getDiagnostics();
+    return {
+      status: true,
+      data: diagnostics,
+      message: 'Diagnostics retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('calculate-missing')
+  @Roles(UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async calculateMissingScores(@Request() req) {
+    const result = await this.scoringService.calculateMissingScores(req.user.id);
+    return {
+      status: true,
+      data: result,
+      message: `Calculated ${result.calculated} scores, ${result.failed} failed`,
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

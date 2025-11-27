@@ -577,8 +577,11 @@ if (node.filePath && node.fileName) return node;
         Array.isArray((createSubmissionDto as any).attachedFiles) &&
         (createSubmissionDto as any).attachedFiles.length
       ) {
-        newAttachedFiles = (createSubmissionDto as any).attachedFiles.map(
-          (f: any) => {
+        // Track unique file paths to prevent duplicates
+        const seenFilePaths = new Set<string>();
+        
+        newAttachedFiles = (createSubmissionDto as any).attachedFiles
+          .map((f: any) => {
             // normalize keys and types; ensure required fileUrl exists; convert uploadedAt -> Date
             const fileUrl = f.fileUrl ?? f.fileurl ?? "";
             const uploadedAtRaw = f.uploadedAt ?? f.uploaded_at ?? null;
@@ -601,8 +604,22 @@ if (node.filePath && node.fileName) return node;
                     ? new Date(uploadedAtRaw)
                     : new Date(),
             } as SubmissionFile;
-          }
-        );
+          })
+          .filter((file: SubmissionFile) => {
+            // Filter out duplicates based on filePath
+            if (file.filePath && file.filePath.trim() !== "") {
+              if (seenFilePaths.has(file.filePath)) {
+                this.logger.warn(
+                  `Duplicate file detected in attachedFiles, skipping: ${file.filePath}`
+                );
+                return false;
+              }
+              seenFilePaths.add(file.filePath);
+              return true;
+            }
+            // If no filePath, include it (shouldn't happen, but handle gracefully)
+            return true;
+          });
       }
 
       const submission = this.submissionRepository.create({
@@ -1858,18 +1875,151 @@ if (node.filePath && node.fileName) return node;
 
       this.logger.log(`Update result: ${JSON.stringify(result)}`);
 
-      // Step 9: Calculate and store final score (after status is updated)
-      try {
-        const finalScore = await this.scoringService.calculateScore(id, userId);
-        this.logger.log(
-          `Final score calculated successfully for submission: ${id}, Score: ${finalScore.totalScore}`
-        );
-      } catch (scoringError) {
-        this.logger.error(
-          `Scoring failed for submission ${id}: ${scoringError.message}`
-        );
-        // Note: We don't rollback here as the main approval is already done
+      // Step 9: Refresh submission entity to ensure we have the latest status
+      // This is important because we updated via raw SQL and need to ensure the entity is in sync
+      const refreshedSubmission = await this.submissionRepository.findOne({
+        where: { id },
+      });
+      
+      if (refreshedSubmission) {
+        this.logger.log(`Refreshed submission status: ${refreshedSubmission.status}`);
       }
+
+      // Step 10: Calculate and store final score (after status is updated and entity is refreshed)
+      // We know the status is APPROVED since we just set it, so we can skip the status check
+      // Score calculation is MANDATORY - if it fails, we should retry before giving up
+      this.logger.log(`=== STARTING SCORE CALCULATION FOR SUBMISSION: ${id} ===`);
+      
+      let finalScore: any = null;
+      let scoringAttempts = 0;
+      const maxScoringAttempts = 3;
+      let lastScoringError: Error | null = null;
+
+      // First, verify submission has formData before attempting calculation
+      const submissionForValidation = await this.submissionRepository.findOne({
+        where: { id },
+        select: ['id', 'status', 'stateUt', 'formData'],
+      });
+      
+      if (!submissionForValidation) {
+        this.logger.error(`❌ CRITICAL: Cannot find submission ${id} for score calculation`);
+        throw new Error(`Submission ${id} not found for score calculation`);
+      }
+
+      this.logger.log(`Submission validation - Status: ${submissionForValidation.status}, State: ${submissionForValidation.stateUt}, Has formData: ${!!submissionForValidation.formData}`);
+      
+      if (!submissionForValidation.formData || typeof submissionForValidation.formData !== 'object') {
+        this.logger.error(`❌ CRITICAL: Submission ${id} has no formData. Cannot calculate score.`);
+        throw new Error(`Submission ${id} has no form data. Cannot calculate score.`);
+      }
+
+      // Check formData structure
+      const formDataKeys = Object.keys(submissionForValidation.formData);
+      this.logger.log(`FormData keys found: ${formDataKeys.join(', ')}`);
+
+      while (scoringAttempts < maxScoringAttempts && !finalScore) {
+        scoringAttempts++;
+        try {
+          this.logger.log(`🔄 Attempting to calculate score for submission: ${id} (Attempt ${scoringAttempts}/${maxScoringAttempts})`);
+          
+          // Add a small delay before retrying if this is not the first attempt
+          if (scoringAttempts > 1) {
+            this.logger.log(`⏳ Waiting 500ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Refresh submission again before retry
+            const refreshedSubmissionForRetry = await this.submissionRepository.findOne({
+              where: { id },
+            });
+            if (refreshedSubmissionForRetry) {
+              this.logger.log(`Refreshed submission status before retry: ${refreshedSubmissionForRetry.status}`);
+            }
+          }
+
+          this.logger.log(`📊 Calling scoringService.calculateScore for submission: ${id}`);
+          finalScore = await this.scoringService.calculateScore(id, userId, true);
+          this.logger.log(
+            `✅ Final score calculated successfully for submission: ${id}, Score: ${finalScore.totalScore}, Percentage: ${finalScore.percentage}%`
+          );
+          break; // Success, exit retry loop
+        } catch (scoringError) {
+          lastScoringError = scoringError;
+          this.logger.error(
+            `❌ Scoring attempt ${scoringAttempts} failed for submission ${id}: ${scoringError.message}`
+          );
+          this.logger.error(
+            `❌ Scoring error stack: ${scoringError.stack}`
+          );
+          
+          // Log submission details for debugging
+          const submissionForDebug = await this.submissionRepository.findOne({
+            where: { id },
+            select: ['id', 'status', 'stateUt', 'formData'],
+          });
+          if (submissionForDebug) {
+            this.logger.error(
+              `Submission details - Status: ${submissionForDebug.status}, State: ${submissionForDebug.stateUt}, Has formData: ${!!submissionForDebug.formData}`
+            );
+            if (submissionForDebug.formData) {
+              const formDataKeys = Object.keys(submissionForDebug.formData);
+              this.logger.error(`FormData keys: ${formDataKeys.join(', ')}`);
+            }
+          }
+
+          // If this is the last attempt, throw error to prevent silent failure
+          if (scoringAttempts >= maxScoringAttempts) {
+            this.logger.error(
+              `❌ CRITICAL: All ${maxScoringAttempts} scoring attempts failed for submission ${id}.`
+            );
+            this.logger.error(
+              `❌ Last error: ${lastScoringError?.message}`
+            );
+            // Throw error to make it visible - approval should not complete without score
+            throw new Error(
+              `Score calculation failed after ${maxScoringAttempts} attempts for submission ${id}. ` +
+              `Last error: ${lastScoringError?.message}. ` +
+              `Please check logs and calculate score manually using /scoring/calculate/${id}`
+            );
+          }
+        }
+      }
+
+      // Verify score was saved to database
+      if (finalScore) {
+        // Wait a moment for database to sync
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        const savedScore = await this.finalScoreRepository.findOne({
+          where: { submissionId: id },
+        });
+        if (savedScore) {
+          this.logger.log(`✅ Verified: Score saved to database for submission: ${id}, Total Score: ${savedScore.totalScore}, Percentage: ${savedScore.percentage}%`);
+        } else {
+          this.logger.error(`❌ CRITICAL: Score calculated but not found in database for submission: ${id}. This indicates a database save issue.`);
+          // Try to save again
+          try {
+            const scoreToSave = this.finalScoreRepository.create({
+              submissionId: id,
+              stateUt: submissionForValidation.stateUt,
+              totalScore: finalScore.totalScore,
+              percentage: finalScore.percentage,
+              scoreBreakdown: finalScore,
+              categoryScores: finalScore.categoryScores,
+              calculationMethodology: finalScore.methodology,
+              approvedBy: userId,
+            });
+            await this.finalScoreRepository.save(scoreToSave);
+            this.logger.log(`✅ Retry save successful for submission: ${id}`);
+          } catch (retrySaveError) {
+            this.logger.error(`❌ Retry save failed: ${retrySaveError.message}`);
+            throw new Error(`Failed to save score to database: ${retrySaveError.message}`);
+          }
+        }
+      } else {
+        this.logger.error(`❌ CRITICAL: Score calculation failed after ${maxScoringAttempts} attempts for submission: ${id}.`);
+        throw new Error(`Score calculation failed for submission ${id}. Check logs for details.`);
+      }
+
+      this.logger.log(`=== SCORE CALCULATION COMPLETED FOR SUBMISSION: ${id} ===`);
 
       // Step 10: Return updated submission
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
