@@ -577,8 +577,11 @@ if (node.filePath && node.fileName) return node;
         Array.isArray((createSubmissionDto as any).attachedFiles) &&
         (createSubmissionDto as any).attachedFiles.length
       ) {
-        newAttachedFiles = (createSubmissionDto as any).attachedFiles.map(
-          (f: any) => {
+        // Track unique file paths to prevent duplicates
+        const seenFilePaths = new Set<string>();
+        
+        newAttachedFiles = (createSubmissionDto as any).attachedFiles
+          .map((f: any) => {
             // normalize keys and types; ensure required fileUrl exists; convert uploadedAt -> Date
             const fileUrl = f.fileUrl ?? f.fileurl ?? "";
             const uploadedAtRaw = f.uploadedAt ?? f.uploaded_at ?? null;
@@ -601,8 +604,22 @@ if (node.filePath && node.fileName) return node;
                     ? new Date(uploadedAtRaw)
                     : new Date(),
             } as SubmissionFile;
-          }
-        );
+          })
+          .filter((file: SubmissionFile) => {
+            // Filter out duplicates based on filePath
+            if (file.filePath && file.filePath.trim() !== "") {
+              if (seenFilePaths.has(file.filePath)) {
+                this.logger.warn(
+                  `Duplicate file detected in attachedFiles, skipping: ${file.filePath}`
+                );
+                return false;
+              }
+              seenFilePaths.add(file.filePath);
+              return true;
+            }
+            // If no filePath, include it (shouldn't happen, but handle gracefully)
+            return true;
+          });
       }
 
       const submission = this.submissionRepository.create({

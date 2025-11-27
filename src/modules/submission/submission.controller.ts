@@ -109,6 +109,10 @@ export class SubmissionController {
 
     // Map files to nested fields
     if (files?.length) {
+      // Track unique file paths AND originalName+fileSize combinations to prevent duplicates
+      const seenFilePaths = new Set<string>();
+      const seenFileKeys = new Set<string>(); // originalName + fileSize combination
+      
       for (const file of files) {
         const fieldPath = file.fieldname
           .replace(/\[(\d+)\]/g, ".$1") // handle arrays
@@ -156,16 +160,35 @@ export class SubmissionController {
         // store full metadata into form JSON (not just the path)
         current[lastKey] = fileMeta;
 
-        // also add to parsedSubmission.attachedFiles (keep your existing behavior)
-        parsedSubmission.attachedFiles.push({
-          fileName: fileMeta.fileName,
-          originalName: fileMeta.originalName,
-          filePath: fileMeta.filePath,
-          fileUrl: fileMeta.fileUrl,
-          fileSize: fileMeta.fileSize,
-          mimeType: fileMeta.mimeType,
-          uploadedAt: fileMeta.uploadedAt,
-        });
+        // also add to parsedSubmission.attachedFiles (with deduplication)
+        // Deduplicate by filePath first, then by originalName+fileSize combination
+        // This prevents the same logical file from being added multiple times
+        const fileKey = fileMeta.originalName && fileMeta.fileSize 
+          ? `${fileMeta.originalName}_${fileMeta.fileSize}` 
+          : null;
+        
+        const isDuplicateByPath = fileMeta.filePath && seenFilePaths.has(fileMeta.filePath);
+        const isDuplicateByKey = fileKey && seenFileKeys.has(fileKey);
+        
+        if (!isDuplicateByPath && !isDuplicateByKey) {
+          // Mark as seen
+          if (fileMeta.filePath) {
+            seenFilePaths.add(fileMeta.filePath);
+          }
+          if (fileKey) {
+            seenFileKeys.add(fileKey);
+          }
+          
+          parsedSubmission.attachedFiles.push({
+            fileName: fileMeta.fileName,
+            originalName: fileMeta.originalName,
+            filePath: fileMeta.filePath,
+            fileUrl: fileMeta.fileUrl,
+            fileSize: fileMeta.fileSize,
+            mimeType: fileMeta.mimeType,
+            uploadedAt: fileMeta.uploadedAt,
+          });
+        }
       }
     }
 
