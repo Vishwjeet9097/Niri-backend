@@ -25,6 +25,26 @@ export class UserController {
     private readonly userService: UserService,
     private readonly indicatorService: IndicatorService
   ) {}
+  
+    // Get all users by each role with isActive=true
+    @Get("all/active-by-role")
+    @UseGuards(RolesGuard)
+    @Roles(
+      UserRole.ADMIN,
+      UserRole.STATE_APPROVER,
+      UserRole.MOSPI_REVIEWER,
+      UserRole.MOSPI_APPROVER
+    )
+    async getAllActiveUsersByRole(@Request() req) {
+      // Only privileged roles can access
+      const usersByRole = await this.userService.getAllActiveUsersByRole();
+      return {
+        status: true,
+        data: usersByRole,
+        message: "Active users grouped by role retrieved successfully",
+      };
+    }
+  
 
   @Get()
   async findAll(@Request() req) {
