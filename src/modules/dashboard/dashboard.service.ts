@@ -615,4 +615,92 @@ export class DashboardService {
       pendingSubmission,
     };
   }
+
+  // ...existing code...
+  async getMospiDashboardCounts(userRole: UserRole, userStateUt: string) {
+    this.logger.log(
+      `Getting MOSPI dashboard counts for role=${userRole}, stateUt=${userStateUt}`
+    );
+
+    try {
+      const queryBuilder = this.submissionRepository
+        .createQueryBuilder("submission")
+        .select("submission.status", "status")
+        .addSelect("COUNT(submission.id)", "count")
+        .groupBy("submission.status");
+
+      let assignedStatesCount = 0;
+      // MOSPI_REVIEWER: Filter by assigned states
+      if (userRole === UserRole.MOSPI_REVIEWER) {
+        // Get assigned states for this reviewer
+        const assignedStates = userStateUt ? userStateUt.split(",") : [];
+        assignedStatesCount = assignedStates.length;
+
+        if (assignedStates.length > 0) {
+          queryBuilder.where("submission.stateUt IN (:...states)", {
+            states: assignedStates,
+          });
+        }
+        
+        // Also filter relevant statuses for reviewer
+        queryBuilder.andWhere("submission.status IN (:...statuses)", {
+          statuses: [
+            SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+            // SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+            SubmissionStatus.APPROVED,
+            // SubmissionStatus.REJECTED_FINAL,
+          ],
+        });
+      }
+
+      // MOSPI_APPROVER: Can see all submissions across all states
+      if (userRole === UserRole.MOSPI_APPROVER) {
+        // Filter relevant statuses for approver
+        queryBuilder.where("submission.status IN (:...statuses)", {
+          statuses: [
+            SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+            SubmissionStatus.APPROVED,
+            // SubmissionStatus.REJECTED_FINAL,
+            SubmissionStatus.RETURNED_FROM_MOSPI,
+          ],
+        });
+      }
+
+      const results = await queryBuilder.getRawMany();
+
+      // Transform results into an object with status as keys
+      const groupedByStatus = results.reduce((acc, row) => {
+        acc[row.status] = parseInt(row.count, 10);
+        return acc;
+      }, {});
+
+      this.logger.log(
+        `MOSPI dashboard counts retrieved: ${JSON.stringify(groupedByStatus)}`
+      );
+
+     const response: any = {
+        role: userRole,
+        groupedByStatus,
+        totalSubmissions: results.reduce(
+          (sum, row) => sum + parseInt(row.count, 10),
+          0
+        ),
+      };
+
+      // Add assigned states info for MOSPI_REVIEWER
+      if (userRole === UserRole.MOSPI_REVIEWER) {
+        response.assignedStatesCount = assignedStatesCount;
+      }
+
+      return response;
+    } catch (error) {
+      this.logger.error(
+        `Error getting MOSPI dashboard counts: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+// ...existing code...
+
 }
