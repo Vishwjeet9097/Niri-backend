@@ -685,8 +685,24 @@ export class ScoringService {
 
     // 3.4 Proportion of TPC of PPP Projects (100 marks) - FIXED: Calculate % first, then marks
     const section3_4 = formData.pppDevelopment?.section3_4 || {};
-    const totalCostBankablePPP = parseFloat(section3_4.tpcOfPPPProjects) || 0;
-    const totalCostAllInfra = parseFloat(section3_4.totalTPC) || 0;
+    
+    // A1: Sum of totalProjectCost from projects array (PPP/Bankable projects with award)
+    let section3_4Projects: any[] = [];
+    if (Array.isArray(section3_4.projects)) {
+      section3_4Projects = section3_4.projects;
+    } else if (section3_4.projects && typeof section3_4.projects === 'object') {
+      section3_4Projects = this.normalizeToArray(section3_4.projects);
+    }
+    
+    const totalCostBankablePPP = section3_4Projects.reduce((sum, project) => {
+      if (!project) return sum;
+      const cost = parseFloat(project.totalProjectCost) || 0;
+      return sum + cost;
+    }, 0);
+    
+    // A2: Total Infrastructure Projects Cost (use totalProjectCostAwarded, fallback to totalTPC)
+    const totalCostAllInfra = parseFloat(section3_4.totalProjectCostAwarded) || 
+                              parseFloat(section3_4.totalTPC) || 0;
     
     // First calculate percentage: % = (A1 / A2) × 100
     const proportionPercentage = totalCostAllInfra > 0 ? (totalCostBankablePPP / totalCostAllInfra) * 100 : 0;
