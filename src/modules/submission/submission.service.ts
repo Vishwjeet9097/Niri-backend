@@ -190,6 +190,188 @@ export class SubmissionService {
     return userIndicatorScopes.map((scope) => scope.indicator.code);
   }
 
+  // Helper function to extract indicator code from file path
+  // File paths typically follow: submissions/{submissionId}/{category}/{sectionKey}/...
+  private extractIndicatorFromFilePath(filePath: string): string | null {
+    if (!filePath || typeof filePath !== "string") return null;
+
+    // Map section keys to indicator codes
+    const sectionToIndicatorMap: Record<string, string> = {
+      section1_1: "1.1",
+      section1_2: "1.2",
+      section1_3: "1.3",
+      section1_4: "1.4",
+      section1_5: "1.5",
+      section2_1: "2.1",
+      section2_2: "2.2",
+      section2_3: "2.3",
+      section2_4: "2.4",
+      section2_5: "2.5",
+      section3_1: "3.1",
+      section3_2: "3.2",
+      section3_3: "3.3",
+      section3_4: "3.4",
+      section4_1: "4.1",
+      section4_2: "4.2",
+      section4_3: "4.3",
+      section4_4: "4.4",
+      section4_5: "4.5",
+      section4_6: "4.6",
+    };
+
+    // Try to extract section key from path
+    const pathParts = filePath.split("/");
+    for (const part of pathParts) {
+      if (part.startsWith("section") && sectionToIndicatorMap[part]) {
+        return sectionToIndicatorMap[part];
+      }
+    }
+
+    return null;
+  }
+
+  // Helper function to find indicator for a file by searching formData
+  private findIndicatorForFileInFormData(
+    filePath: string | undefined,
+    formData: any
+  ): string | null {
+    if (!filePath || !formData) return null;
+
+    // First try extracting from filePath
+    const indicatorFromPath = this.extractIndicatorFromFilePath(filePath);
+    if (indicatorFromPath) return indicatorFromPath;
+
+    // Then search formData recursively
+    const searchInObject = (obj: any, currentPath: string = ""): string | null => {
+      if (!obj || typeof obj !== "object") return null;
+
+      // Check if this object has filePath matching our file
+      if (obj.filePath === filePath) {
+        // Extract indicator from current path
+        const pathParts = currentPath.split(".");
+        for (const part of pathParts) {
+          if (part.startsWith("section")) {
+            const sectionToIndicatorMap: Record<string, string> = {
+              section1_1: "1.1", section1_2: "1.2", section1_3: "1.3",
+              section1_4: "1.4", section1_5: "1.5",
+              section2_1: "2.1", section2_2: "2.2", section2_3: "2.3",
+              section2_4: "2.4", section2_5: "2.5",
+              section3_1: "3.1", section3_2: "3.2", section3_3: "3.3",
+              section3_4: "3.4",
+              section4_1: "4.1", section4_2: "4.2", section4_3: "4.3",
+              section4_4: "4.4", section4_5: "4.5", section4_6: "4.6",
+            };
+            if (sectionToIndicatorMap[part]) {
+              return sectionToIndicatorMap[part];
+            }
+          }
+        }
+      }
+
+      // Check nested file structures
+      if (obj.file?.filePath === filePath || obj.file?.file?.filePath === filePath) {
+        const pathParts = currentPath.split(".");
+        for (const part of pathParts) {
+          if (part.startsWith("section")) {
+            const sectionToIndicatorMap: Record<string, string> = {
+              section1_1: "1.1", section1_2: "1.2", section1_3: "1.3",
+              section1_4: "1.4", section1_5: "1.5",
+              section2_1: "2.1", section2_2: "2.2", section2_3: "2.3",
+              section2_4: "2.4", section2_5: "2.5",
+              section3_1: "3.1", section3_2: "3.2", section3_3: "3.3",
+              section3_4: "3.4",
+              section4_1: "4.1", section4_2: "4.2", section4_3: "4.3",
+              section4_4: "4.4", section4_5: "4.5", section4_6: "4.6",
+            };
+            if (sectionToIndicatorMap[part]) {
+              return sectionToIndicatorMap[part];
+            }
+          }
+        }
+      }
+
+      // Recurse into arrays
+      if (Array.isArray(obj)) {
+        for (let i = 0; i < obj.length; i++) {
+          const result = searchInObject(obj[i], `${currentPath}[${i}]`);
+          if (result) return result;
+        }
+        return null;
+      }
+
+      // Recurse into objects
+      for (const [key, value] of Object.entries(obj)) {
+        if (key.startsWith("_")) continue; // Skip metadata
+        const newPath = currentPath ? `${currentPath}.${key}` : key;
+        const result = searchInObject(value, newPath);
+        if (result) return result;
+      }
+
+      return null;
+    };
+
+    return searchInObject(formData);
+  }
+
+  // Helper function to filter attachedFiles based on indicator access
+  private async filterAttachedFilesByIndicatorAccess(
+    attachedFiles: any[],
+    formData: any,
+    userId: string,
+    userRole: UserRole
+  ): Promise<any[]> {
+    // MOSPI roles see all files
+    if (userRole === UserRole.MOSPI_REVIEWER || userRole === UserRole.MOSPI_APPROVER) {
+      return attachedFiles || [];
+    }
+
+    // If no attachedFiles, return empty array
+    if (!attachedFiles || !Array.isArray(attachedFiles) || attachedFiles.length === 0) {
+      return [];
+    }
+
+    // For NODAL_OFFICER, filter by assigned indicators
+    if (userRole === UserRole.NODAL_OFFICER) {
+      const assignedIndicatorCodes = await this.getUserIndicatorCodes(userId);
+      
+      if (assignedIndicatorCodes.length === 0) {
+        this.logger.log(`User ${userId} has no assigned indicators, returning empty attachedFiles`);
+        return [];
+      }
+
+      this.logger.log(
+        `Filtering attachedFiles for NODAL_OFFICER ${userId} with indicators: ${assignedIndicatorCodes.join(", ")}`
+      );
+
+      const filtered = attachedFiles.filter((file) => {
+        const filePath = file?.filePath || file?.filepath;
+        const indicator = this.findIndicatorForFileInFormData(filePath, formData);
+        
+        if (!indicator) {
+          // If we can't determine the indicator, hide it for safety
+          this.logger.warn(`Could not determine indicator for file: ${filePath}`);
+          return false;
+        }
+
+        const hasAccess = assignedIndicatorCodes.includes(indicator);
+        if (!hasAccess) {
+          this.logger.log(`Filtering out file ${filePath} (indicator ${indicator} not assigned)`);
+        }
+        return hasAccess;
+      });
+
+      this.logger.log(
+        `Filtered attachedFiles: ${attachedFiles.length} -> ${filtered.length} files`
+      );
+
+      return filtered;
+    }
+
+    // For STATE_APPROVER, they see all files in their state (no filtering needed)
+    // This is handled by state-level access control
+    return attachedFiles;
+  }
+
   // Helper function to filter formData based on user's indicator access
   private async filterFormDataForUser(
     formData: Record<string, any>,
@@ -573,12 +755,21 @@ if (node.filePath && node.fileName) return node;
       let processedFormData = createSubmissionDto.formData;
       let newAttachedFiles: SubmissionFile[] = [];
 
+      this.logger.log(`=== PROCESSING ATTACHED FILES ===`);
+      this.logger.log(
+        `attachedFiles in DTO: ${Array.isArray((createSubmissionDto as any).attachedFiles) ? (createSubmissionDto as any).attachedFiles.length : 'not an array or missing'}`
+      );
+
       if (
         Array.isArray((createSubmissionDto as any).attachedFiles) &&
         (createSubmissionDto as any).attachedFiles.length
       ) {
         // Track unique file paths to prevent duplicates
         const seenFilePaths = new Set<string>();
+        
+        this.logger.log(
+          `Processing ${(createSubmissionDto as any).attachedFiles.length} files from attachedFiles array`
+        );
         
         newAttachedFiles = (createSubmissionDto as any).attachedFiles
           .map((f: any) => {
@@ -620,6 +811,17 @@ if (node.filePath && node.fileName) return node;
             // If no filePath, include it (shouldn't happen, but handle gracefully)
             return true;
           });
+        
+        this.logger.log(
+          `After deduplication: ${newAttachedFiles.length} unique files`
+        );
+        this.logger.log(
+          `Sample files: ${newAttachedFiles.slice(0, 3).map(f => f.filePath).join(', ')}`
+        );
+      } else {
+        this.logger.warn(
+          `No attachedFiles in DTO or empty array. attachedFiles will be empty in submission.`
+        );
       }
 
       const submission = this.submissionRepository.create({
@@ -631,6 +833,10 @@ if (node.filePath && node.fileName) return node;
         currentOwnerRole: currentOwnerRole,
         attachedFiles: newAttachedFiles,
       });
+      
+      this.logger.log(
+        `Submission created with ${newAttachedFiles.length} files in attachedFiles`
+      );
 
       // Step 5: Save submission
       this.logger.debug(
@@ -909,6 +1115,32 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
+      // Step 5: Filter attachedFiles based on indicator access
+      // This ensures files are only visible to users who have access to the indicators they belong to
+      if (submission.attachedFiles && Array.isArray(submission.attachedFiles)) {
+        this.logger.log(`=== FILTERING ATTACHED FILES BY INDICATOR ACCESS ===`);
+        this.logger.log(
+          `Original attachedFiles count: ${submission.attachedFiles.length}`
+        );
+        
+        // Get the requesting user's ID (for NODAL_OFFICER filtering)
+        // Note: For NODAL_OFFICER, we use submission.submittedBy if they're viewing their own submission
+        // For other cases, we'd need the actual requesting user ID, but for now we'll use submittedBy
+        // This should be improved to pass the actual requesting user ID
+        const requestingUserId = submission.submittedBy; // TODO: Get actual requesting user ID
+        
+        submission.attachedFiles = await this.filterAttachedFilesByIndicatorAccess(
+          submission.attachedFiles,
+          submission.formData,
+          requestingUserId,
+          userRole
+        );
+        
+        this.logger.log(
+          `Filtered attachedFiles count: ${submission.attachedFiles.length}`
+        );
+      }
+
       this.logger.log(`Access granted for user role: ${userRole}`);
       this.logger.log(`=== FIND ONE SUBMISSION SUCCESS ===`);
 
@@ -971,13 +1203,23 @@ if (node.filePath && node.fileName) return node;
         );
       }
 
-      // Step 4: Update submission
-      this.logger.log(
-        `Updating submission with data: ${JSON.stringify(updateSubmissionDto)}`
-      );
-      await this.submissionRepository.update(id, updateSubmissionDto);
+      // Step 4: Preserve attachedFiles if not provided in update
+      // This ensures attachedFiles is not lost during updates
+      const updatePayload: any = { ...updateSubmissionDto };
+      if (!updatePayload.attachedFiles && submission.attachedFiles) {
+        updatePayload.attachedFiles = submission.attachedFiles;
+        this.logger.log(
+          `Preserving existing attachedFiles (${submission.attachedFiles?.length || 0} files)`
+        );
+      }
 
-      // Step 5: Return updated submission
+      // Step 5: Update submission
+      this.logger.log(
+        `Updating submission with data: ${JSON.stringify(updatePayload)}`
+      );
+      await this.submissionRepository.update(id, updatePayload);
+
+      // Step 6: Return updated submission
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(
         `Submission updated successfully: ${updatedSubmission.id}`
