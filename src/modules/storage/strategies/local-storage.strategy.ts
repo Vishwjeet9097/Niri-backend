@@ -11,7 +11,7 @@ export class LocalStorageStrategy implements IStorageStrategy {
   private basePath: string;
 
   constructor() {
-    this.basePath = process.env.STORAGE_PATH_LOCAL;
+    this.basePath = process.env.STORAGE_PATH_LOCAL || './uploads';
     // ensure base dir exists
     ensureDirSync(this.basePath);
   }
