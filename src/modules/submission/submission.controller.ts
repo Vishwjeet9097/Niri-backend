@@ -107,11 +107,51 @@ export class SubmissionController {
     parsedSubmission.formData = parsedSubmission.formData || {};
     parsedSubmission.attachedFiles = parsedSubmission.attachedFiles || [];
 
+    // Track existing file paths from JSON attachedFiles to prevent duplicates
+    const existingFilePaths = new Set<string>();
+    const existingFileKeys = new Set<string>();
+    
+    console.log(`📎 [Controller] Processing submission: ${parsedSubmission.submissionId || 'unknown'}`);
+    console.log(`📎 [Controller] attachedFiles from JSON: ${Array.isArray(parsedSubmission.attachedFiles) ? parsedSubmission.attachedFiles.length : 'not an array'} files`);
+    
+    if (Array.isArray(parsedSubmission.attachedFiles) && parsedSubmission.attachedFiles.length > 0) {
+      parsedSubmission.attachedFiles.forEach((f: any, idx: number) => {
+        const filePath = f?.filePath || f?.filepath;
+        const fileKey = f?.originalName && f?.fileSize 
+          ? `${f.originalName}_${f.fileSize}` 
+          : null;
+        
+        if (filePath) {
+          existingFilePaths.add(filePath);
+        }
+        if (fileKey) {
+          existingFileKeys.add(fileKey);
+        }
+        
+        // Log first few files for debugging
+        if (idx < 3) {
+          console.log(`📎 [Controller] File ${idx + 1}:`, {
+            fileName: f?.fileName,
+            filePath: filePath,
+            fileSize: f?.fileSize,
+            originalName: f?.originalName
+          });
+        }
+      });
+      
+      console.log(`📎 [Controller] Found ${parsedSubmission.attachedFiles.length} existing files in attachedFiles from JSON`);
+      console.log(`📎 [Controller] Existing file paths: ${existingFilePaths.size}`);
+    } else {
+      console.warn(`⚠️ [Controller] WARNING: attachedFiles is empty or not an array!`);
+      console.warn(`⚠️ [Controller] attachedFiles value:`, parsedSubmission.attachedFiles);
+      console.warn(`⚠️ [Controller] This will result in empty attachedFiles in the database!`);
+    }
+
     // Map files to nested fields
     if (files?.length) {
       // Track unique file paths AND originalName+fileSize combinations to prevent duplicates
-      const seenFilePaths = new Set<string>();
-      const seenFileKeys = new Set<string>(); // originalName + fileSize combination
+      const seenFilePaths = new Set<string>(existingFilePaths); // Initialize with existing paths
+      const seenFileKeys = new Set<string>(existingFileKeys); // Initialize with existing keys
       
       for (const file of files) {
         const fieldPath = file.fieldname
