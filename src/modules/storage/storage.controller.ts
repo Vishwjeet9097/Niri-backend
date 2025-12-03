@@ -41,6 +41,11 @@ export class StorageController {
       throw new BadRequestException('Only Nodal Officers and State Approvers can upload files');
     }
 
+    // Validate file was properly uploaded
+    if (!file || !file.originalname) {
+      throw new BadRequestException('No file provided. Please upload a file using multipart/form-data with field name "file"');
+    }
+
     const result = await this.storageService.uploadFile(file, submissionId);
 
     return {

@@ -70,7 +70,8 @@ export class StorageService {
     submissionId: string,
     fileType?: string
   ): Promise<StoredFile> {
-    if (!file) {
+    // Validate that file exists and has required properties
+    if (!file || !file.originalname || (!file.buffer && !file.path)) {
       throw new BadRequestException("No file provided");
     }
 

@@ -312,6 +312,8 @@ export class SubmissionController {
     return submission;
   }
 
+  // Removed legacy section-status and check-completion endpoints (sectionStatus deprecated)
+
   @Get("user/:userId")
   @UseGuards(RolesGuard)
   @Roles(
@@ -329,10 +331,34 @@ export class SubmissionController {
     );
 
     if (!submission) {
-      return { message: "No submission found for this user", data: null };
+      return { 
+        status: false,
+        message: "No submission found for this user", 
+        data: null 
+      };
     }
 
-    return { message: "Submission found", data: submission };
+    // Check if all sections are completed
+    const completionStatus = await this.submissionService.checkAllSectionsCompleted(
+      submission.id,
+      req.user.role,
+      req.user.stateUt
+    );
+
+    return { 
+      status: true,
+      message: completionStatus.allCompleted 
+        ? "Submission found - All sections completed" 
+        : `Submission found - ${completionStatus.incompleteSections.length} section(s) incomplete`,
+      data: submission,
+      sectionCompletion: {
+        allCompleted: completionStatus.allCompleted,
+        completedCount: completionStatus.completedCount,
+        totalCount: completionStatus.totalCount,
+        incompleteSections: completionStatus.incompleteSections,
+        canSubmitForReview: completionStatus.allCompleted,
+      }
+    };
   }
   @Put(":id")
   @UseGuards(RolesGuard)
@@ -675,20 +701,39 @@ export class SubmissionController {
   // @Roles(UserRole.STATE_APPROVER)
   @HttpCode(HttpStatus.OK)
   async updateFormSection(
-    @Body()
-    body: {
-      submissionId?: string;
-      category?: string;
-      section?: string;
-      fields?: any[];
-    },
+    @Body() body: any,
     @Request() req
   ) {
-    const { submissionId, category, section, fields } = body;
+    // Check if this is the new bulk format (contains category keys like infraDevelopment)
+    const categoryKeys = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+    const isBulkFormat = categoryKeys.some(key => body[key] !== undefined);
+
+    if (isBulkFormat) {
+      // New format: body contains category objects directly
+      // Extract submissionId from the request or body
+      const submissionId = body.submissionId || body.submission_id;
+      
+      if (!submissionId) {
+        throw new BadRequestException("Missing submissionId or submission_id");
+      }
+
+      // Process the bulk update
+      return this.submissionService.bulkUpdateFormData(
+        submissionId,
+        body,
+        req.user.id,
+        req.user.role,
+        req.user.stateUt
+      );
+    }
+
+    // Original format: specific category/section/fields
+    const submissionId = body.submissionId || body.submission_id;
+    const { category, section, fields } = body;
 
     if (!submissionId || !category || !section || !Array.isArray(fields)) {
       throw new BadRequestException(
-        "Missing required fields: submission_id, category, section, fields[]"
+        "Missing required fields: submissionId/submission_id, category, section, fields[]"
       );
     }
 
@@ -713,6 +758,7 @@ export class SubmissionController {
     @Body()
     body: {
       submissionId?: string;
+      submission_id?: string;
       category?: string;
       section?: string;
       status?: boolean;
@@ -725,7 +771,7 @@ export class SubmissionController {
 
     if (!submissionId || !category || !section || typeof status !== "boolean") {
       throw new BadRequestException(
-        "Missing required fields: submissionId, category, section, accepted"
+        "Missing required fields: submissionId/submission_id, category, section, status"
       );
     }
 
