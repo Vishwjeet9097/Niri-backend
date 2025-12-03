@@ -2662,7 +2662,7 @@ if (node.filePath && node.fileName) return node;
     userRole: UserRole,
     userStateUt: string,
     sourceSubmissionId?: string,
-  ): Promise<Submission> {
+  ): Promise<Submission | { warning: string; submission: Submission }> {
     this.logger.log(
       `Updating form section for submissionId=${submissionId} category=${category} section=${section} by user ${userId}`
     );
@@ -2710,6 +2710,17 @@ if (node.filePath && node.fileName) return node;
         "Access denied: submission not in your state"
       );
     }
+
+     // Check if current user is the submitter
+    // if (submission.submittedBy === userId) {
+    //   this.logger.warn(
+    //     `User ${userId} attempted to send back their own submission ${submissionId}`
+    //   );
+    //   return {
+    //     warning: "You cannot send back your own submission. This action requires a different reviewer.",
+    //     submission: submission,
+    //   };
+    // }
 
     // Restrict edits once MOSPI processing or final approval/rejection has progressed
     // However, allow MOSPI_REVIEWER to update indicators when status is SUBMITTED_TO_MOSPI_REVIEWER
@@ -3290,5 +3301,73 @@ async buildCumulativePreview(params: {
   }
 // ...existing code...
 
+// ...existing code...
+  /**
+   * Revert submissions from RETURNED_FROM_MOSPI to SUBMITTED_TO_MOSPI_REVIEWER
+   * for a specific user
+   */
+  async revertFromMospiToReviewer(
+    userId: string,
+    requestingUserId: string,
+    requestingUserRole: UserRole
+  ): Promise<{ message: string; updatedCount: number; submissions: any[] }> {
+    this.logger.log(
+      `Reverting RETURNED_FROM_MOSPI submissions for userId=${userId} by ${requestingUserId}`
+    );
+
+    try {
+      // Find all submissions by this user with status RETURNED_FROM_MOSPI
+      const submissions = await this.submissionRepository.find({
+        where: {
+          submittedBy: userId,
+          status: SubmissionStatus.RETURNED_FROM_MOSPI,
+        },
+        relations: ["user", "finalScore"],
+      });
+
+      if (submissions.length === 0) {
+        return {
+          message: `No submissions found with status RETURNED_FROM_MOSPI for user ${userId}`,
+          updatedCount: 0,
+          submissions: [],
+        };
+      }
+
+      // Update each submission
+      const updatedSubmissions = [];
+      for (const submission of submissions) {
+        await this.submissionRepository.update(submission.id, {
+          status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          currentOwnerRole: UserRole.MOSPI_REVIEWER,
+          updatedAt: new Date(),
+        });
+
+        updatedSubmissions.push({
+          submissionId: submission.submissionId,
+          id: submission.id,
+          previousStatus: SubmissionStatus.RETURNED_FROM_MOSPI,
+          newStatus: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          newOwner: UserRole.MOSPI_REVIEWER,
+        });
+
+        this.logger.log(
+          `Updated submission ${submission.submissionId} from RETURNED_FROM_MOSPI to SUBMITTED_TO_MOSPI_REVIEWER`
+        );
+      }
+
+      return {
+        message: `Successfully reverted ${submissions.length} submission(s) to MOSPI Reviewer`,
+        updatedCount: submissions.length,
+        submissions: updatedSubmissions,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error reverting submissions for user ${userId}: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+// ...existing code...
 
 }
