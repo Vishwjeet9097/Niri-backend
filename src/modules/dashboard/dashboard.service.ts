@@ -484,18 +484,20 @@ export class DashboardService {
     let totalSubmitted = 0;
     try {
       const totalSubmittedQuery = await this.submissionRepository.query(
-        `
-      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
-        SELECT (
-          SELECT COUNT(*) FROM jsonb_array_elements_text(
-            jsonb_path_query_array(s.form_data, '$.**.status')
-          ) AS st(val)
-        ) AS cnt
-        FROM submissions s
-        WHERE s.submitted_by = $1
-      ) t;
+        `   
+
+      SELECT 
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM submissions s 
+      WHERE s.submitted_by = $1 AND s.status != 'DRAFT'
+    )
+    THEN $2
+    ELSE 0
+  END AS count;
+       
       `,
-        [userId]
+        [userId, totalAssigned]
       );
       totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
     } catch (err) {
