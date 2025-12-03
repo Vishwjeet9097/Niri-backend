@@ -801,5 +801,23 @@ async getCumulativePreviewForState(
     );
   }
 // ...existing code...
+// ...existing code...
+  @Post("revert-from-mospi/:userId")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async revertFromMospiToReviewer(
+    @Param("userId") userId: string,
+    @Request() req
+  ) {
+
+    console.log("Revert request by user:", req.user.id, "for user:", userId);
+    return this.submissionService.revertFromMospiToReviewer(
+      userId,
+      req.user.id,
+      req.user.role
+    );
+  }
+// ...existing code...
 
 }
