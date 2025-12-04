@@ -182,9 +182,9 @@ export class SubmissionService {
       .leftJoinAndSelect("scope.indicator", "indicator")
       .where("scope.userId = :userId", { userId })
       // .andWhere("scope.isActive = :isActive", { isActive: true })
-      // .andWhere("indicator.isActive = :indicatorActive", {
-      //   indicatorActive: true,
-      // })
+      .andWhere("indicator.isActive = :indicatorActive", {
+        indicatorActive: true,
+      })
       .getMany();
 
     return userIndicatorScopes.map((scope) => scope.indicator.code);
