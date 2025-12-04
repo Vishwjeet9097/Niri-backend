@@ -402,7 +402,7 @@ export class SubmissionController {
   }
   @Put(":id")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.NODAL_OFFICER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
   @UseGuards(IndicatorAccessMiddleware)
   async update(
     @Param("id") id: string,
