@@ -78,7 +78,9 @@ export class UserService {
         "user.createdAt",
       ])
       .where("user.isActive = :isActive", { isActive: true })
-      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN })
+      .orderBy("user.firstName", "ASC")
+      .addOrderBy("user.lastName", "ASC");
 
     // Hide logged-in user from the list
     if (userId) {
