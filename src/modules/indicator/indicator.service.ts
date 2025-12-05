@@ -4,6 +4,7 @@ import { Repository, In, Between } from "typeorm";
 import { Indicator } from "../../entities/indicator.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { User, UserRole } from "../../entities/user.entity";
+import { SubmissionStatus } from "../../entities/submission.entity";
 import { Submission } from "../../entities/submission.entity";
 
 @Injectable()
@@ -378,6 +379,7 @@ export class IndicatorService {
   }
 
   async getAvailableIndicatorsForApprover(
+      // Debug: Log code-to-id mapping and sets for troubleshooting
     stateUt: string,
     approverUserId?: string
   ) {
@@ -428,9 +430,49 @@ export class IndicatorService {
       scopesInState.map((s) => s.indicatorId.toString())
     );
 
-    // 4️⃣ Keep indicators NOT already assigned
+
+    // 3.5️⃣ Exclude indicators already ACCEPTED by any state approver in this state
+
+    // Find accepted indicator codes from submissions
+    const acceptedCodes = new Set<string>();
+    const submissions = await this.submissionRepository.find({
+      where: { stateUt, currentOwnerRole: UserRole.STATE_APPROVER, status: SubmissionStatus.SUBMITTED_TO_STATE },
+    });
+    for (const submission of submissions) {
+      const formData = submission.formData || {};
+      Object.entries(formData).forEach(([parentKey, parentData]: [string, any]) => {
+        if (typeof parentData !== "object" || parentData === null) return;
+        Object.entries(parentData).forEach(([sectionKey, data]: [string, any]) => {
+          if (data && typeof data === "object" && data.status === "ACCEPTED") {
+            let code = sectionKey;
+            if (code.startsWith("section")) {
+              code = code.replace(/^section/, "").replace("_", ".");
+            }
+            acceptedCodes.add(code);
+          }
+        });
+      });
+    }
+
+    // Map acceptedCodes to indicator IDs
+    const codeToId = new Map<string, string>();
+    allIndicators.forEach(ind => {
+      codeToId.set(ind.code, ind.id.toString());
+    });
+    const acceptedIds = new Set<string>();
+    acceptedCodes.forEach(code => {
+      const id = codeToId.get(code);
+      if (id) acceptedIds.add(id);
+    });
+
+ 
+
+    // Merge assignedToOthers and acceptedIds
+    const excludedIds = new Set<string>([...assignedToOthers, ...acceptedIds]);
+
+    // 4️⃣ Keep indicators NOT in excludedIds
     const available = allIndicators.filter(
-      (ind) => !assignedToOthers.has(ind.id.toString())
+      (ind) => !excludedIds.has(ind.id.toString())
     );
 
     console.log(

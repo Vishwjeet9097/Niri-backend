@@ -10,9 +10,6 @@ import {
   Request,
   Query,
   Put,
-  HttpCode,
-  HttpStatus,
-  BadRequestException,
 } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { IndicatorService } from "../indicator/indicator.service";
@@ -28,6 +25,26 @@ export class UserController {
     private readonly userService: UserService,
     private readonly indicatorService: IndicatorService
   ) {}
+  
+    // Get all users by each role with isActive=true
+    @Get("all/active-by-role")
+    @UseGuards(RolesGuard)
+    @Roles(
+      UserRole.ADMIN,
+      UserRole.STATE_APPROVER,
+      UserRole.MOSPI_REVIEWER,
+      UserRole.MOSPI_APPROVER
+    )
+    async getAllActiveUsersByRole(@Request() req) {
+      // Only privileged roles can access
+      const usersByRole = await this.userService.getAllActiveUsersByRole();
+      return {
+        status: true,
+        data: usersByRole,
+        message: "Active users grouped by role retrieved successfully",
+      };
+    }
+  
 
   @Get()
   async findAll(@Request() req) {
@@ -315,33 +332,5 @@ export class UserController {
     @Request() req
   ) {
     return this.userService.assignedStateByStateApprover(roleName);
-  }
-
-  /**
-   * TESTING ONLY: Delete all users by role
-   * Deletes all users with the specified role along with their UserIndicatorScope records
-   * WARNING: This is a destructive operation!
-   *
-   * @param role - The role of users to delete (from query parameter or body)
-   */
-  @Delete("test/delete-by-role")
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async deleteUsersByRole(
-    @Query("role") role?: UserRole,
-    @Body() body?: { role?: UserRole },
-    @Request() req?: any
-  ) {
-    // Accept role from either query parameter or request body
-    const targetRole = role || body?.role;
-
-    if (!targetRole) {
-      throw new BadRequestException(
-        "Role parameter is required. Provide 'role' in query string or request body."
-      );
-    }
-
-    return this.userService.deleteUsersByRole(targetRole);
   }
 }

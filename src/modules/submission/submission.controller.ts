@@ -107,8 +107,52 @@ export class SubmissionController {
     parsedSubmission.formData = parsedSubmission.formData || {};
     parsedSubmission.attachedFiles = parsedSubmission.attachedFiles || [];
 
+    // Track existing file paths from JSON attachedFiles to prevent duplicates
+    const existingFilePaths = new Set<string>();
+    const existingFileKeys = new Set<string>();
+    
+    console.log(`📎 [Controller] Processing submission: ${parsedSubmission.submissionId || 'unknown'}`);
+    console.log(`📎 [Controller] attachedFiles from JSON: ${Array.isArray(parsedSubmission.attachedFiles) ? parsedSubmission.attachedFiles.length : 'not an array'} files`);
+    
+    if (Array.isArray(parsedSubmission.attachedFiles) && parsedSubmission.attachedFiles.length > 0) {
+      parsedSubmission.attachedFiles.forEach((f: any, idx: number) => {
+        const filePath = f?.filePath || f?.filepath;
+        const fileKey = f?.originalName && f?.fileSize 
+          ? `${f.originalName}_${f.fileSize}` 
+          : null;
+        
+        if (filePath) {
+          existingFilePaths.add(filePath);
+        }
+        if (fileKey) {
+          existingFileKeys.add(fileKey);
+        }
+        
+        // Log first few files for debugging
+        if (idx < 3) {
+          console.log(`📎 [Controller] File ${idx + 1}:`, {
+            fileName: f?.fileName,
+            filePath: filePath,
+            fileSize: f?.fileSize,
+            originalName: f?.originalName
+          });
+        }
+      });
+      
+      console.log(`📎 [Controller] Found ${parsedSubmission.attachedFiles.length} existing files in attachedFiles from JSON`);
+      console.log(`📎 [Controller] Existing file paths: ${existingFilePaths.size}`);
+    } else {
+      console.warn(`⚠️ [Controller] WARNING: attachedFiles is empty or not an array!`);
+      console.warn(`⚠️ [Controller] attachedFiles value:`, parsedSubmission.attachedFiles);
+      console.warn(`⚠️ [Controller] This will result in empty attachedFiles in the database!`);
+    }
+
     // Map files to nested fields
     if (files?.length) {
+      // Track unique file paths AND originalName+fileSize combinations to prevent duplicates
+      const seenFilePaths = new Set<string>(existingFilePaths); // Initialize with existing paths
+      const seenFileKeys = new Set<string>(existingFileKeys); // Initialize with existing keys
+      
       for (const file of files) {
         const fieldPath = file.fieldname
           .replace(/\[(\d+)\]/g, ".$1") // handle arrays
@@ -156,16 +200,35 @@ export class SubmissionController {
         // store full metadata into form JSON (not just the path)
         current[lastKey] = fileMeta;
 
-        // also add to parsedSubmission.attachedFiles (keep your existing behavior)
-        parsedSubmission.attachedFiles.push({
-          fileName: fileMeta.fileName,
-          originalName: fileMeta.originalName,
-          filePath: fileMeta.filePath,
-          fileUrl: fileMeta.fileUrl,
-          fileSize: fileMeta.fileSize,
-          mimeType: fileMeta.mimeType,
-          uploadedAt: fileMeta.uploadedAt,
-        });
+        // also add to parsedSubmission.attachedFiles (with deduplication)
+        // Deduplicate by filePath first, then by originalName+fileSize combination
+        // This prevents the same logical file from being added multiple times
+        const fileKey = fileMeta.originalName && fileMeta.fileSize 
+          ? `${fileMeta.originalName}_${fileMeta.fileSize}` 
+          : null;
+        
+        const isDuplicateByPath = fileMeta.filePath && seenFilePaths.has(fileMeta.filePath);
+        const isDuplicateByKey = fileKey && seenFileKeys.has(fileKey);
+        
+        if (!isDuplicateByPath && !isDuplicateByKey) {
+          // Mark as seen
+          if (fileMeta.filePath) {
+            seenFilePaths.add(fileMeta.filePath);
+          }
+          if (fileKey) {
+            seenFileKeys.add(fileKey);
+          }
+          
+          parsedSubmission.attachedFiles.push({
+            fileName: fileMeta.fileName,
+            originalName: fileMeta.originalName,
+            filePath: fileMeta.filePath,
+            fileUrl: fileMeta.fileUrl,
+            fileSize: fileMeta.fileSize,
+            mimeType: fileMeta.mimeType,
+            uploadedAt: fileMeta.uploadedAt,
+          });
+        }
       }
     }
 
@@ -289,6 +352,8 @@ export class SubmissionController {
     return submission;
   }
 
+  // Removed legacy section-status and check-completion endpoints (sectionStatus deprecated)
+
   @Get("user/:userId")
   @UseGuards(RolesGuard)
   @Roles(
@@ -306,14 +371,38 @@ export class SubmissionController {
     );
 
     if (!submission) {
-      return { message: "No submission found for this user", data: null };
+      return { 
+        status: false,
+        message: "No submission found for this user", 
+        data: null 
+      };
     }
 
-    return { message: "Submission found", data: submission };
+    // Check if all sections are completed
+    const completionStatus = await this.submissionService.checkAllSectionsCompleted(
+      submission.id,
+      req.user.role,
+      req.user.stateUt
+    );
+
+    return { 
+      status: true,
+      message: completionStatus.allCompleted 
+        ? "Submission found - All sections completed" 
+        : `Submission found - ${completionStatus.incompleteSections.length} section(s) incomplete`,
+      data: submission,
+      sectionCompletion: {
+        allCompleted: completionStatus.allCompleted,
+        completedCount: completionStatus.completedCount,
+        totalCount: completionStatus.totalCount,
+        incompleteSections: completionStatus.incompleteSections,
+        canSubmitForReview: completionStatus.allCompleted,
+      }
+    };
   }
   @Put(":id")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.NODAL_OFFICER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
   @UseGuards(IndicatorAccessMiddleware)
   async update(
     @Param("id") id: string,
@@ -652,20 +741,39 @@ export class SubmissionController {
   // @Roles(UserRole.STATE_APPROVER)
   @HttpCode(HttpStatus.OK)
   async updateFormSection(
-    @Body()
-    body: {
-      submissionId?: string;
-      category?: string;
-      section?: string;
-      fields?: any[];
-    },
+    @Body() body: any,
     @Request() req
   ) {
-    const { submissionId, category, section, fields } = body;
+    // Check if this is the new bulk format (contains category keys like infraDevelopment)
+    const categoryKeys = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+    const isBulkFormat = categoryKeys.some(key => body[key] !== undefined);
+
+    if (isBulkFormat) {
+      // New format: body contains category objects directly
+      // Extract submissionId from the request or body
+      const submissionId = body.submissionId || body.submission_id;
+      
+      if (!submissionId) {
+        throw new BadRequestException("Missing submissionId or submission_id");
+      }
+
+      // Process the bulk update
+      return this.submissionService.bulkUpdateFormData(
+        submissionId,
+        body,
+        req.user.id,
+        req.user.role,
+        req.user.stateUt
+      );
+    }
+
+    // Original format: specific category/section/fields
+    const submissionId = body.submissionId || body.submission_id;
+    const { category, section, fields } = body;
 
     if (!submissionId || !category || !section || !Array.isArray(fields)) {
       throw new BadRequestException(
-        "Missing required fields: submission_id, category, section, fields[]"
+        "Missing required fields: submissionId/submission_id, category, section, fields[]"
       );
     }
 
@@ -684,38 +792,43 @@ export class SubmissionController {
 
   @Post("indicator-submission-status")
   @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.STATE_APPROVER,
-    UserRole.MOSPI_APPROVER,
-    UserRole.MOSPI_REVIEWER
-  )
+  @Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_APPROVER, UserRole.MOSPI_REVIEWER)
   @HttpCode(HttpStatus.OK)
   async indicatorSubmissionAccepted(
     @Body()
     body: {
       submissionId?: string;
+      submission_id?: string;
       category?: string;
       section?: string;
       status?: boolean;
       mospi_status?: string;
+      sourceSubmissionId?: string;
     },
     @Request() req
   ) {
-    const { submissionId, category, section, status, mospi_status } = body;
+    const { submissionId, category, section, status, mospi_status, sourceSubmissionId } = body;
 
     if (!submissionId || !category || !section || typeof status !== "boolean") {
       throw new BadRequestException(
-        "Missing required fields: submissionId, category, section, accepted"
+        "Missing required fields: submissionId/submission_id, category, section, status"
       );
     }
 
+     // Only pass sourceSubmissionId if it exists and is not empty
+    const sourceId = sourceSubmissionId && sourceSubmissionId.trim() !== "" 
+      ? sourceSubmissionId 
+      : undefined;
+
     let fields: any = [];
     // Create fields array with status
-    if (req.user.role === UserRole.STATE_APPROVER) {
+    if(req.user.role === UserRole.STATE_APPROVER ){
       fields = [{ status: status ? "ACCEPTED" : "REVERTED" }];
-    } else {
+    }
+    else{
       fields = [{ mospi_status: mospi_status }];
     }
+
 
     // Reuse existing service method
     return this.submissionService.updateFormSectionFields(
@@ -725,47 +838,72 @@ export class SubmissionController {
       fields,
       req.user.id,
       req.user.role,
-      req.user.stateUt
+      req.user.stateUt,
+      sourceId,
     );
   }
 
   // --- cumulative preview for a state ---
-  @Get("state/:stateUt/cumulative-preview")
-  @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.NODAL_OFFICER,
-    UserRole.STATE_APPROVER,
-    UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER,
-    UserRole.ADMIN
-  )
-  async getCumulativePreviewForState(
-    @Param("stateUt") stateUt: string,
-    @Request() req,
-    @Query("year") year?: string,
-    @Query("includeAssignments") includeAssignments?: string
-  ) {
-    return this.submissionService.buildCumulativePreview({
-      stateUt,
-      year,
-      // includeAssignments: includeAssignments === "true",
-      userRole: req.user.role,
-      userStateUt: req.user.stateUt,
-    });
-  }
+@Get("state/:stateUt/cumulative-preview")
+@UseGuards(RolesGuard)
+@Roles(
+  UserRole.NODAL_OFFICER,
+  UserRole.STATE_APPROVER,
+  UserRole.MOSPI_REVIEWER,
+  UserRole.MOSPI_APPROVER,
+  UserRole.ADMIN
+)
+async getCumulativePreviewForState(
+  @Param("stateUt") stateUt: string,
+  @Request() req,
+  @Query("year") year?: string,
+  @Query("includeAssignments") includeAssignments?: string
+) {
+  return this.submissionService.buildCumulativePreview({
+    stateUt,
+    year,
+    // includeAssignments: includeAssignments === "true",
+    userRole: req.user.role,
+    userStateUt: req.user.stateUt,
+  });
+}
 
-  /**
-   * TESTING ONLY: Cleanup endpoint to delete test data
-   * Deletes submissions and indicator assignments for testing purposes
-   * WARNING: This is a destructive operation!
-   */
-  @Delete("test/cleanup")
+// ...existing code...
+  @Post("mospi-approver-send-back/:id")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN,
-    UserRole.MOSPI_APPROVER,
-  )
+  @Roles(UserRole.MOSPI_APPROVER)
   @HttpCode(HttpStatus.OK)
-  async cleanupTestData(@Request() req) {
-    return this.submissionService.cleanupTestData();
+  async mospiApproverSendBack(
+    @Param("id") id: string,
+    @Body() body: { comment?: string },
+    @Request() req
+  ) {
+    return this.submissionService.mospiApproverSendBack(
+      id,
+      // body.comment,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
   }
+// ...existing code...
+// ...existing code...
+  @Post("revert-from-mospi/:userId")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async revertFromMospiToReviewer(
+    @Param("userId") userId: string,
+    @Request() req
+  ) {
+
+    console.log("Revert request by user:", req.user.id, "for user:", userId);
+    return this.submissionService.revertFromMospiToReviewer(
+      userId,
+      req.user.id,
+      req.user.role
+    );
+  }
+// ...existing code...
+
 }

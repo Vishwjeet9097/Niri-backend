@@ -70,7 +70,8 @@ export class StorageService {
     submissionId: string,
     fileType?: string
   ): Promise<StoredFile> {
-    if (!file) {
+    // Validate that file exists and has required properties
+    if (!file || !file.originalname || (!file.buffer && !file.path)) {
       throw new BadRequestException("No file provided");
     }
 
@@ -158,6 +159,20 @@ export class StorageService {
           : String(error);
       this.logger.error(`Multiple file upload failed: ${msg}`);
       throw new BadRequestException(`Multiple file upload failed: ${msg}`);
+    }
+  }
+  async getFileStream(filePath: string): Promise<{
+    stream: NodeJS.ReadableStream;
+    contentType: string;
+    contentLength?: number;
+    fileName?: string;
+  }> {
+    try {
+      return await this.storageStrategy.getFileStream(filePath);
+    } catch (error) {
+      const msg = error && (error as any).message ? (error as any).message : String(error);
+      this.logger.error(`Failed to get file stream: ${msg}`);
+      throw new BadRequestException(`Failed to get file stream: ${msg}`);
     }
   }
 

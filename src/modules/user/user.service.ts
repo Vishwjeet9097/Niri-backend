@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
-  Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, DataSource, In } from "typeorm";
@@ -19,8 +18,37 @@ import * as bcrypt from "bcryptjs";
 
 @Injectable()
 export class UserService {
-  private readonly logger = new Logger(UserService.name);
+    // Get all users by each role with isActive=true
+    async getAllActiveUsersByRole(): Promise<Record<UserRole, any[]>> {
+      const roles: UserRole[] = [
+        UserRole.NODAL_OFFICER,
+        UserRole.STATE_APPROVER,
+        UserRole.MOSPI_REVIEWER,
+        UserRole.MOSPI_APPROVER,
+        UserRole.ADMIN,
+      ];
 
+      const result: Record<UserRole, any[]> = {} as any;
+      for (const role of roles) {
+        const users = await this.userRepository.find({
+          where: { role, isActive: true },
+          select: [
+            "id",
+            "email",
+            "firstName",
+            "lastName",
+            "contactNumber",
+            "role",
+            "stateUt",
+            "isActive",
+            "createdAt",
+          ],
+          order: { createdAt: "DESC" },
+        });
+        result[role] = users;
+      }
+      return result;
+    }
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
@@ -52,7 +80,9 @@ export class UserService {
         "user.createdAt",
       ])
       .where("user.isActive = :isActive", { isActive: true })
-      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN })
+      .orderBy("user.firstName", "ASC")
+      .addOrderBy("user.lastName", "ASC");
 
     // Hide logged-in user from the list
     if (userId) {

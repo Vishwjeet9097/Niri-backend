@@ -44,6 +44,7 @@ export interface SubmissionFile {
   uploadedAt: Date;
 }
 
+
 @Entity("submissions")
 @Index(["stateUt"])
 @Index(["status"])
@@ -94,6 +95,8 @@ export class Submission {
   })
   attachedFiles: any;
   // attachedFiles: SubmissionFile[];
+
+  // sectionStatus removed
 
   @Column({
     type: "enum",
