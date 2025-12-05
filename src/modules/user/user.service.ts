@@ -12,6 +12,8 @@ import { User, UserRole } from "../../entities/user.entity";
 import { Indicator } from "../../entities/indicator.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { Submission } from "../../entities/submission.entity";
+import { FinalScore } from "../../entities/final-score.entity";
+import { AuditLog } from "../../entities/audit-log.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
 
@@ -710,6 +712,9 @@ export class UserService {
     deleted: {
       users: number;
       userIndicatorScopes: number;
+      submissions: number;
+      finalScores: number;
+      auditLogs: number;
     };
   }> {
     this.logger.warn("=== DELETE USERS BY ROLE STARTED ===");
@@ -740,7 +745,72 @@ export class UserService {
 
       this.logger.log(`Found ${users.length} users with role: ${role}`);
 
-      // Step 2: Delete UserIndicatorScope records for these users
+      // Step 2: Find all submissions by these users
+      let deletedSubmissions = 0;
+      let deletedFinalScores = 0;
+      const submissionIds: string[] = [];
+
+      if (userIds.length > 0) {
+        const submissions = await manager.find(Submission, {
+          where: { submittedBy: In(userIds) },
+          select: ["id", "submissionId", "submittedBy"],
+        });
+
+        submissionIds.push(...submissions.map((s) => s.id));
+        deletedSubmissions = submissions.length;
+
+        this.logger.log(`Found ${submissions.length} submissions to delete`);
+
+        // Step 2.1: Delete FinalScore records related to these submissions
+        // This must be done BEFORE deleting submissions due to foreign key constraint (NO ACTION)
+        if (submissionIds.length > 0) {
+          const finalScores = await manager.find(FinalScore, {
+            where: { submissionId: In(submissionIds) },
+          });
+          deletedFinalScores = finalScores.length;
+          if (finalScores.length > 0) {
+            await manager.remove(FinalScore, finalScores);
+            this.logger.log(`Deleted ${finalScores.length} FinalScore records`);
+          }
+        }
+
+        // Step 2.2: Delete submissions
+        if (submissions.length > 0) {
+          await manager.remove(Submission, submissions);
+          this.logger.log(`Deleted ${submissions.length} submissions`);
+        }
+      }
+
+      // Step 3: Delete AuditLog records for these users and their submissions
+      let deletedAuditLogs = 0;
+      if (userIds.length > 0 || submissionIds.length > 0) {
+        // Delete audit logs for users
+        const userAuditLogs = await manager.find(AuditLog, {
+          where: { userId: In(userIds.map((id) => id.toString())) },
+        });
+
+        // Delete audit logs for submissions (if any)
+        const submissionAuditLogs = await manager.find(AuditLog, {
+          where: {
+            entityType: "Submission",
+            entityId: In(submissionIds.map((id) => id.toString())),
+          },
+        });
+
+        const allAuditLogs = [...userAuditLogs, ...submissionAuditLogs];
+        deletedAuditLogs = allAuditLogs.length;
+
+        if (allAuditLogs.length > 0) {
+          // Remove duplicates based on id
+          const uniqueAuditLogs = Array.from(
+            new Map(allAuditLogs.map((log) => [log.id, log])).values()
+          );
+          await manager.remove(AuditLog, uniqueAuditLogs);
+          this.logger.log(`Deleted ${uniqueAuditLogs.length} AuditLog records`);
+        }
+      }
+
+      // Step 4: Delete UserIndicatorScope records for these users
       let deletedScopes = 0;
       if (userIds.length > 0) {
         const userIndicatorScopes = await manager.find(UserIndicatorScope, {
@@ -755,7 +825,8 @@ export class UserService {
         }
       }
 
-      // Step 3: Delete users
+      // Step 5: Delete users (this will cascade delete submissions if FK has CASCADE,
+      // but we already deleted them explicitly to handle FinalScore properly)
       let deletedUsers = 0;
       if (users.length > 0) {
         await manager.remove(User, users);
@@ -771,6 +842,9 @@ export class UserService {
         deleted: {
           users: deletedUsers,
           userIndicatorScopes: deletedScopes,
+          submissions: deletedSubmissions,
+          finalScores: deletedFinalScores,
+          auditLogs: deletedAuditLogs,
         },
       };
     });

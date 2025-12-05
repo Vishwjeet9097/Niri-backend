@@ -19,6 +19,7 @@ import { UserRole, User } from "../../entities/user.entity";
 import { FinalScore } from "../../entities/final-score.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { Indicator } from "../../entities/indicator.entity";
+import { AuditLog } from "../../entities/audit-log.entity";
 import { ScoringService } from "../scoring/scoring.service";
 import { StorageService } from "../storage/storage.service";
 import {
@@ -3119,6 +3120,7 @@ export class SubmissionService {
       submissions: number;
       finalScores: number;
       userIndicatorScopes: number;
+      auditLogs: number;
     };
   }> {
     this.logger.warn("=== TEST DATA CLEANUP STARTED ===");
@@ -3221,6 +3223,35 @@ export class SubmissionService {
         }
       }
 
+      // Step 6: Delete AuditLog records for these users and their submissions
+      let deletedAuditLogs = 0;
+      if (userIds.length > 0 || submissionIds.length > 0) {
+        // Delete audit logs for users
+        const userAuditLogs = await manager.find(AuditLog, {
+          where: { userId: In(userIds.map((id) => id.toString())) },
+        });
+
+        // Delete audit logs for submissions (if any)
+        const submissionAuditLogs = await manager.find(AuditLog, {
+          where: {
+            entityType: "Submission",
+            entityId: In(submissionIds.map((id) => id.toString())),
+          },
+        });
+
+        const allAuditLogs = [...userAuditLogs, ...submissionAuditLogs];
+        deletedAuditLogs = allAuditLogs.length;
+
+        if (allAuditLogs.length > 0) {
+          // Remove duplicates based on id
+          const uniqueAuditLogs = Array.from(
+            new Map(allAuditLogs.map((log) => [log.id, log])).values()
+          );
+          await manager.remove(AuditLog, uniqueAuditLogs);
+          this.logger.log(`Deleted ${uniqueAuditLogs.length} AuditLog records`);
+        }
+      }
+
       this.logger.warn("=== TEST DATA CLEANUP COMPLETED ===");
 
       return {
@@ -3230,6 +3261,7 @@ export class SubmissionService {
           submissions: deletedSubmissions,
           finalScores: deletedFinalScores,
           userIndicatorScopes: deletedScopes,
+          auditLogs: deletedAuditLogs,
         },
       };
     });
