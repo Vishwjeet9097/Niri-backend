@@ -739,13 +739,27 @@ if (node.filePath && node.fileName) return node;
       this.logger.log(
         `Checking for existing submission for user: ${userId}`
       );
-      const existingUserSubmission = await this.submissionRepository.findOne({
-        where: { submittedBy: userId },
-        relations: ["user"],
-      });
+      
+      // Check if this is a consolidated submission
+      const isConsolidated = createSubmissionDto.formData?._metadata?.isConsolidated === true;
+      
+      let existingUserSubmission = null;
+      
+      // For consolidated submissions, always create new (don't check for existing)
+      // For regular submissions, check if user already has one
+      if (!isConsolidated) {
+        existingUserSubmission = await this.submissionRepository.findOne({
+          where: { submittedBy: userId },
+          relations: ["user"],
+        });
+      } else {
+        this.logger.log(
+          `Consolidated submission detected - will always create new submission`
+        );
+      }
 
-      // If user already has a submission, update it instead of creating new
-      if (existingUserSubmission) {
+      // If user already has a submission AND it's not consolidated, update it instead of creating new
+      if (existingUserSubmission && !isConsolidated) {
         this.logger.log(
           `User ${userId} already has submission ${existingUserSubmission.id}. Updating instead of creating new.`
         );
@@ -1234,26 +1248,46 @@ if (node.filePath && node.fileName) return node;
       const submission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(`Found submission with status: ${submission.status}`);
 
-      // Step 2: Validate user role and ownership
-      if (
-        userRole !== UserRole.NODAL_OFFICER ||
-        submission.submittedBy !== userId
-      ) {
+      // Step 2: Check if this is a consolidated submission
+      const isConsolidated = submission.formData?._metadata?.isConsolidated === true;
+      
+      // Step 3: Validate user role and ownership
+      // Allow NODAL_OFFICER to update their own submissions
+      // Allow STATE_APPROVER to update their own consolidated submissions (to forward to MOSPI)
+      const isOwner = submission.submittedBy === userId;
+      const isNodalOfficerUpdatingOwn = userRole === UserRole.NODAL_OFFICER && isOwner;
+      const isStateApproverUpdatingOwnConsolidated = 
+        userRole === UserRole.STATE_APPROVER && 
+        isOwner && 
+        isConsolidated;
+      
+      if (!isNodalOfficerUpdatingOwn && !isStateApproverUpdatingOwnConsolidated) {
         this.logger.error(
-          `Invalid user role or ownership. UserRole: ${userRole}, Owner: ${submission.submittedBy}`
+          `Invalid user role or ownership. UserRole: ${userRole}, Owner: ${submission.submittedBy}, IsConsolidated: ${isConsolidated}`
         );
         throw new ForbiddenException(
-          "Only Nodal Officers can update their own submissions"
+          "Only Nodal Officers can update their own submissions, or State Approvers can update their own consolidated submissions"
         );
       }
 
-      // Step 3: Validate submission status
-      if (submission.status !== SubmissionStatus.DRAFT) {
+      // Step 4: Validate submission status
+      // NODAL_OFFICER can only update DRAFT submissions
+      // STATE_APPROVER can update SUBMITTED_TO_STATE consolidated submissions (to forward to MOSPI)
+      if (userRole === UserRole.NODAL_OFFICER && submission.status !== SubmissionStatus.DRAFT) {
         this.logger.error(
           `Invalid status for update: ${submission.status}. Expected: DRAFT`
         );
         throw new BadRequestException(
           "Cannot update submission that has been submitted"
+        );
+      }
+      
+      if (userRole === UserRole.STATE_APPROVER && submission.status !== SubmissionStatus.SUBMITTED_TO_STATE) {
+        this.logger.error(
+          `Invalid status for State Approver update: ${submission.status}. Expected: SUBMITTED_TO_STATE`
+        );
+        throw new BadRequestException(
+          "State Approvers can only update consolidated submissions in SUBMITTED_TO_STATE status"
         );
       }
 
@@ -1276,6 +1310,15 @@ if (node.filePath && node.fileName) return node;
         );
         
         updateData.formData = mergedFormData;
+      }
+      
+      // If status is being updated, also update currentOwnerRole
+      if (updateSubmissionDto.status && updateSubmissionDto.status !== submission.status) {
+        const newOwnerRole = this.getOwnerRoleFromStatus(updateSubmissionDto.status);
+        updateData.currentOwnerRole = newOwnerRole;
+        this.logger.log(
+          `Status changed from ${submission.status} to ${updateSubmissionDto.status}, updating currentOwnerRole to ${newOwnerRole}`
+        );
       }
       
       await this.submissionRepository.update(id, updateData);
@@ -3437,9 +3480,15 @@ async buildCumulativePreview(params: {
   const normalizedStateUt = stateUt?.trim().toLowerCase();
   const normalizedUserStateUt = userStateUt?.trim().toLowerCase();
 
-  if (userRole === UserRole.STATE_APPROVER && normalizedUserStateUt && normalizedUserStateUt !== normalizedStateUt) {
-    this.logger.warn(`STATE_APPROVER access denied: userStateUt="${userStateUt}" !== stateUt="${stateUt}"`);
-    throw new ForbiddenException('You can only preview your own state');
+  if (userRole === UserRole.STATE_APPROVER) {
+    if (!normalizedUserStateUt) {
+      this.logger.error(`STATE_APPROVER access denied: userStateUt is missing or empty`);
+      throw new ForbiddenException('Unable to verify state access. Please contact support.');
+    }
+    if (normalizedUserStateUt !== normalizedStateUt) {
+      this.logger.warn(`STATE_APPROVER access denied: userStateUt="${userStateUt}" (normalized: "${normalizedUserStateUt}") !== stateUt="${stateUt}" (normalized: "${normalizedStateUt}")`);
+      throw new ForbiddenException(`You can only preview your own state. Your state: "${userStateUt}", Requested state: "${stateUt}"`);
+    }
   }
 
   // ---------- Helpers ----------
@@ -3749,7 +3798,59 @@ async buildCumulativePreview(params: {
     };
   }
 
+  /**
+   * MoSPI Approver sends submission back to State
+   */
+  async mospiApproverSendBack(
+    submissionId: string,
+    // comment: string | undefined,
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    this.logger.log(
+      `MoSPI Approver ${userId} sending back submission ${submissionId} to state`
+    );
 
+    // Find submission by internal id
+    const submission = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!submission) {
+      throw new NotFoundException(`Submission not found for id: ${submissionId}`);
+    }
+
+    // Only MoSPI Approver can use this endpoint (guard already enforces this)
+    if (userRole !== UserRole.MOSPI_APPROVER) {
+      throw new ForbiddenException("Only MoSPI Approver can send back to state");
+    }
+
+    // Validate current status (must be with MOSPI Approver)
+    if (submission.status !== SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER) {
+      throw new BadRequestException(
+        `Cannot send back submission in status ${submission.status}. Must be SUBMITTED_TO_MOSPI_APPROVER`
+      );
+    }
+
+    // Update submission: change status and owner role back to state
+    await this.submissionRepository.update(submissionId, {
+      status: SubmissionStatus.RETURNED_FROM_MOSPI,
+      currentOwnerRole: UserRole.STATE_APPROVER,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(
+      `Submission ${submissionId} sent back to state by MoSPI Approver successfully`
+    );
+
+    // Return updated submission
+    return await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+  }
 
   /**
    * TESTING ONLY: Cleanup method to delete test data
@@ -3796,25 +3897,122 @@ async buildCumulativePreview(params: {
       this.logger.log(
         `Found ${users.length} users with roles: ${targetRoles.join(", ")}`
       );
-    }
+      this.logger.log(`Found ${nodalOfficerIds.length} NODAL_OFFICER users`);
 
-   
+      // Step 2: Find all submissions by these users
+      const submissions = await manager.find(Submission, {
+        where: { submittedBy: In(userIds) },
+        select: ["id", "submissionId", "submittedBy", "attachedFiles"],
+      });
 
-    // Update submission: change status and owner role back to state
-    await this.submissionRepository.update(submissionId, {
-      status: SubmissionStatus.RETURNED_FROM_MOSPI,
-      currentOwnerRole: UserRole.STATE_APPROVER,
-      updatedAt: new Date(),
-    });
+      const submissionIds = submissions.map((s) => s.id);
 
-    this.logger.log(
-      `Submission ${submissionId} sent back to state by MoSPI Approver successfully`
-    );
+      this.logger.log(`Found ${submissions.length} submissions to delete`);
 
-    // Return updated submission
-    return await this.submissionRepository.findOne({
-      where: { id: submissionId },
-      relations: ["user", "finalScore"],
+      // Step 3: Delete FinalScore records related to these submissions
+      // This must be done BEFORE deleting submissions due to foreign key constraint (NO ACTION)
+      let deletedFinalScores = 0;
+      if (submissionIds.length > 0) {
+        const finalScores = await manager.find(FinalScore, {
+          where: { submissionId: In(submissionIds) },
+        });
+        deletedFinalScores = finalScores.length;
+        if (finalScores.length > 0) {
+          await manager.remove(FinalScore, finalScores);
+          this.logger.log(`Deleted ${finalScores.length} FinalScore records`);
+        }
+      }
+
+      // Step 4: Delete submissions
+      let deletedSubmissions = 0;
+      if (submissions.length > 0) {
+        // Also delete attached files if any
+        for (const submission of submissions) {
+          if (
+            submission.attachedFiles &&
+            Array.isArray(submission.attachedFiles) &&
+            submission.attachedFiles.length > 0
+          ) {
+            try {
+              // Extract file paths from attachedFiles
+              const filePaths = submission.attachedFiles
+                .map((file: any) => file.filePath || file.path)
+                .filter((path: string) => path); // Filter out null/undefined paths
+
+              if (filePaths.length > 0) {
+                await this.storageService.deleteSubmissionFiles(
+                  submission.submissionId,
+                  filePaths
+                );
+              }
+            } catch (error) {
+              this.logger.warn(
+                `Failed to delete files for submission ${submission.id}: ${error.message}`
+              );
+            }
+          }
+        }
+        await manager.remove(Submission, submissions);
+        deletedSubmissions = submissions.length;
+        this.logger.log(`Deleted ${submissions.length} submissions`);
+      }
+
+      // Step 5: Delete UserIndicatorScope records for NODAL_OFFICER users
+      let deletedScopes = 0;
+      if (nodalOfficerIds.length > 0) {
+        const userIndicatorScopes = await manager.find(UserIndicatorScope, {
+          where: { userId: In(nodalOfficerIds) },
+        });
+        deletedScopes = userIndicatorScopes.length;
+        if (userIndicatorScopes.length > 0) {
+          await manager.remove(UserIndicatorScope, userIndicatorScopes);
+          this.logger.log(
+            `Deleted ${userIndicatorScopes.length} UserIndicatorScope records`
+          );
+        }
+      }
+
+      // Step 6: Delete AuditLog records for these users and their submissions
+      let deletedAuditLogs = 0;
+      if (userIds.length > 0 || submissionIds.length > 0) {
+        // Delete audit logs for users
+        const userAuditLogs = await manager.find(AuditLog, {
+          where: { userId: In(userIds.map((id) => id.toString())) },
+        });
+
+        // Delete audit logs for submissions (if any)
+        const submissionAuditLogs = await manager.find(AuditLog, {
+          where: {
+            entityType: "Submission",
+            entityId: In(submissionIds.map((id) => id.toString())),
+          },
+        });
+
+        const allAuditLogs = [...userAuditLogs, ...submissionAuditLogs];
+        deletedAuditLogs = allAuditLogs.length;
+
+        if (allAuditLogs.length > 0) {
+          // Remove duplicates based on id
+          const uniqueAuditLogs = Array.from(
+            new Map(allAuditLogs.map((log) => [log.id, log])).values()
+          );
+          await manager.remove(AuditLog, uniqueAuditLogs);
+          this.logger.log(`Deleted ${uniqueAuditLogs.length} AuditLog records`);
+        }
+      }
+
+      this.logger.warn("=== TEST DATA CLEANUP COMPLETED ===");
+
+      return {
+        success: true,
+        message: "Test data cleanup completed successfully",
+        deleted: {
+          submissions: deletedSubmissions,
+          finalScores: deletedFinalScores,
+          userIndicatorScopes: deletedScopes,
+          auditLogs: deletedAuditLogs,
+        },
+      };
     });
   }
 // ...existing code...
@@ -3872,37 +4070,6 @@ async buildCumulativePreview(params: {
           `Updated submission ${submission.submissionId} from RETURNED_FROM_MOSPI to SUBMITTED_TO_MOSPI_REVIEWER`
         );
       }
-
-      // Step 6: Delete AuditLog records for these users and their submissions
-      let deletedAuditLogs = 0;
-      if (userIds.length > 0 || submissionIds.length > 0) {
-        // Delete audit logs for users
-        const userAuditLogs = await manager.find(AuditLog, {
-          where: { userId: In(userIds.map((id) => id.toString())) },
-        });
-
-        // Delete audit logs for submissions (if any)
-        const submissionAuditLogs = await manager.find(AuditLog, {
-          where: {
-            entityType: "Submission",
-            entityId: In(submissionIds.map((id) => id.toString())),
-          },
-        });
-
-        const allAuditLogs = [...userAuditLogs, ...submissionAuditLogs];
-        deletedAuditLogs = allAuditLogs.length;
-
-        if (allAuditLogs.length > 0) {
-          // Remove duplicates based on id
-          const uniqueAuditLogs = Array.from(
-            new Map(allAuditLogs.map((log) => [log.id, log])).values()
-          );
-          await manager.remove(AuditLog, uniqueAuditLogs);
-          this.logger.log(`Deleted ${uniqueAuditLogs.length} AuditLog records`);
-        }
-      }
-
-      this.logger.warn("=== TEST DATA CLEANUP COMPLETED ===");
 
       return {
         message: `Successfully reverted ${submissions.length} submission(s) to MOSPI Reviewer`,

@@ -42,6 +42,10 @@ export class UpdateSubmissionDto {
   @IsOptional()
   @IsObject()
   formData?: Record<string, any>;
+
+  @IsOptional()
+  @IsEnum(SubmissionStatus)
+  status?: SubmissionStatus;
 }
 
 export class AddCommentDto {

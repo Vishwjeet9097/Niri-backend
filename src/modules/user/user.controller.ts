@@ -10,6 +10,8 @@ import {
   Request,
   Query,
   Put,
+  HttpCode,
+  HttpStatus,
 } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { IndicatorService } from "../indicator/indicator.service";
@@ -332,5 +334,21 @@ export class UserController {
     @Request() req
   ) {
     return this.userService.assignedStateByStateApprover(roleName);
+  }
+
+  /**
+   * TESTING ONLY: Delete all users by role endpoint
+   * Deletes all users with the specified role along with their related data
+   * WARNING: This is a destructive operation for testing purposes only!
+   */
+  @Delete("by-role/:role")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async deleteUsersByRole(
+    @Param("role") role: UserRole,
+    @Request() req
+  ) {
+    return this.userService.deleteUsersByRole(role);
   }
 }

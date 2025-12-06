@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, DataSource, In } from "typeorm";
@@ -18,8 +19,10 @@ import * as bcrypt from "bcryptjs";
 
 @Injectable()
 export class UserService {
-    // Get all users by each role with isActive=true
-    async getAllActiveUsersByRole(): Promise<Record<UserRole, any[]>> {
+  private readonly logger = new Logger(UserService.name);
+
+  // Get all users by each role with isActive=true
+  async getAllActiveUsersByRole(): Promise<Record<UserRole, any[]>> {
       const roles: UserRole[] = [
         UserRole.NODAL_OFFICER,
         UserRole.STATE_APPROVER,
@@ -739,6 +742,7 @@ export class UserService {
   async deleteUsersByRole(role: UserRole): Promise<{
     success: boolean;
     message: string;
+    deletedCount: number;
     deleted: {
       users: number;
       userIndicatorScopes: number;
@@ -869,6 +873,7 @@ export class UserService {
       return {
         success: true,
         message: `Successfully deleted all users with role: ${role}`,
+        deletedCount: deletedUsers,
         deleted: {
           users: deletedUsers,
           userIndicatorScopes: deletedScopes,

@@ -904,6 +904,19 @@ async getCumulativePreviewForState(
       req.user.role
     );
   }
+
+  /**
+   * TESTING ONLY: Cleanup test data endpoint
+   * Deletes all test submissions, final scores, and user indicator scopes
+   * WARNING: This is a destructive operation for testing purposes only!
+   */
+  @Post("cleanup-test-data")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async cleanupTestData(@Request() req) {
+    return this.submissionService.cleanupTestData();
+  }
 // ...existing code...
 
 }
