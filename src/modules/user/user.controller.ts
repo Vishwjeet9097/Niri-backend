@@ -351,4 +351,54 @@ export class UserController {
   ) {
     return this.userService.deleteUsersByRole(role);
   }
+
+  @Get("check-email/:email")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async checkEmailAvailability(
+    @Param("email") email: string,
+    @Query("excludeUserId") excludeUserId?: string
+  ) {
+    const isAvailable = await this.userService.checkEmailAvailability(
+      email,
+      excludeUserId
+    );
+    return {
+      status: true,
+      data: { available: isAvailable },
+      message: isAvailable
+        ? "Email is available"
+        : "Email already exists",
+    };
+  }
+
+  @Get("check-contact/:contactNumber")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async checkContactAvailability(
+    @Param("contactNumber") contactNumber: string,
+    @Query("excludeUserId") excludeUserId?: string
+  ) {
+    const isAvailable = await this.userService.checkContactAvailability(
+      contactNumber,
+      excludeUserId
+    );
+    return {
+      status: true,
+      data: { available: isAvailable },
+      message: isAvailable
+        ? "Contact number is available"
+        : "Contact number already exists",
+    };
+  }
 }

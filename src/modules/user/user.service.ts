@@ -192,6 +192,54 @@ export class UserService {
     // throw new ForbiddenException("Cannot change state/UT");
     // }
 
+    // Check if contact number already exists when updating (excluding current user)
+    if (updateUserDto.contactNumber) {
+      const normalizedContactNumber = updateUserDto.contactNumber.replace(/\s/g, ""); // Remove spaces
+      const existingUserWithContact = await this.userRepository.findOne({
+        where: { contactNumber: normalizedContactNumber },
+      });
+
+      if (existingUserWithContact && existingUserWithContact.id !== id) {
+        throw new ConflictException(
+          "A user with this contact number already exists. Each user must have a unique contact number."
+        );
+      }
+    }
+
+    // Check if any state is already assigned to another MOSPI_REVIEWER when updating
+    // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
+    if (user.role === UserRole.MOSPI_REVIEWER && updateUserDto.stateUt) {
+      // Parse comma-separated state names
+      const requestedStates = updateUserDto.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+      
+      if (requestedStates.length > 0) {
+        // Get all active MOSPI_REVIEWERs (excluding the current user being updated)
+        const existingReviewers = await this.userRepository.find({
+          where: {
+            role: UserRole.MOSPI_REVIEWER,
+            isActive: true,
+          },
+        });
+
+        // Check if any requested state is already assigned to another reviewer
+        for (const requestedState of requestedStates) {
+          for (const reviewer of existingReviewers) {
+            // Skip the current user being updated
+            if (reviewer.id === id) continue;
+            
+            if (reviewer.stateUt) {
+              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+              if (reviewerStates.includes(requestedState)) {
+                throw new ConflictException(
+                  `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Handle indicator codes separately
     const { indicatorCodes, ...userUpdateData } = updateUserDto;
 
@@ -200,6 +248,11 @@ export class UserService {
     // Remove stateId if it exists, as User entity has stateUt
     if ("stateId" in updateData) {
       //  delete updateData.stateId;
+    }
+
+    // Normalize contact number if provided (remove spaces)
+    if (updateData.contactNumber) {
+      updateData.contactNumber = updateData.contactNumber.replace(/\s/g, "");
     }
 
     // Update user basic information
@@ -318,13 +371,27 @@ export class UserService {
       indicatorCodes,
     } = createUserDto;
 
-    // Check if user already exists
+    // Check if user already exists by email
     const existingUser = await this.userRepository.findOne({
       where: { email },
     });
 
     if (existingUser) {
       throw new ConflictException("User with this email already exists");
+    }
+
+    // Check if contact number already exists
+    if (contactNumber) {
+      const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+      const existingUserWithContact = await this.userRepository.findOne({
+        where: { contactNumber: normalizedContactNumber },
+      });
+
+      if (existingUserWithContact) {
+        throw new ConflictException(
+          "A user with this contact number already exists. Each user must have a unique contact number."
+        );
+      }
     }
 
     // Only ADMIN and MoSPI roles can create users
@@ -344,6 +411,57 @@ export class UserService {
     // State/UT approvers can only create users for their state
     if (userRole === UserRole.STATE_APPROVER && stateUt !== userStateUt) {
       throw new ForbiddenException("Cannot create user for different state/UT");
+    }
+
+    // Early check if STATE_APPROVER already exists for this state
+    // This provides fast feedback, but the definitive check is inside the transaction
+    // Each state can have only one active STATE_APPROVER
+    if (role === UserRole.STATE_APPROVER) {
+      const existingStateApprover = await this.userRepository.findOne({
+        where: {
+          role: UserRole.STATE_APPROVER,
+          stateUt: stateUt,
+          isActive: true,
+        },
+      });
+
+      if (existingStateApprover) {
+        throw new ConflictException(
+          `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
+        );
+      }
+    }
+
+    // Early check if any state is already assigned to another MOSPI_REVIEWER
+    // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
+    // This provides fast feedback, but the definitive check is inside the transaction
+    if (role === UserRole.MOSPI_REVIEWER && stateUt) {
+      // Parse comma-separated state names
+      const requestedStates = stateUt.split(',').map(s => s.trim()).filter(Boolean);
+      
+      if (requestedStates.length > 0) {
+        // Get all active MOSPI_REVIEWERs
+        const existingReviewers = await this.userRepository.find({
+          where: {
+            role: UserRole.MOSPI_REVIEWER,
+            isActive: true,
+          },
+        });
+
+        // Check if any requested state is already assigned to another reviewer
+        for (const requestedState of requestedStates) {
+          for (const reviewer of existingReviewers) {
+            if (reviewer.stateUt) {
+              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+              if (reviewerStates.includes(requestedState)) {
+                throw new ConflictException(
+                  `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
+                );
+              }
+            }
+          }
+        }
+      }
     }
 
     // Validate indicator codes for NODAL_OFFICER
@@ -372,8 +490,77 @@ export class UserService {
 
     // Use transaction for user creation and indicator scope assignment
     return this.dataSource.transaction(async (manager) => {
+      // Check if contact number already exists INSIDE transaction
+      // This prevents race conditions when multiple requests come simultaneously
+      if (contactNumber) {
+        const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+        const existingUserWithContact = await manager.findOne(User, {
+          where: { contactNumber: normalizedContactNumber },
+        });
+
+        if (existingUserWithContact) {
+          throw new ConflictException(
+            "A user with this contact number already exists. Each user must have a unique contact number."
+          );
+        }
+      }
+
+      // Check if STATE_APPROVER already exists for this state INSIDE transaction
+      // This prevents race conditions when multiple requests come simultaneously
+      // Each state can have only one active STATE_APPROVER
+      if (role === UserRole.STATE_APPROVER) {
+        const existingStateApprover = await manager.findOne(User, {
+          where: {
+            role: UserRole.STATE_APPROVER,
+            stateUt: stateUt,
+            isActive: true,
+          },
+        });
+
+        if (existingStateApprover) {
+          throw new ConflictException(
+            `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
+          );
+        }
+      }
+
+      // Check if any state is already assigned to another MOSPI_REVIEWER INSIDE transaction
+      // This prevents race conditions when multiple requests come simultaneously
+      // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
+      if (role === UserRole.MOSPI_REVIEWER && stateUt) {
+        // Parse comma-separated state names
+        const requestedStates = stateUt.split(',').map(s => s.trim()).filter(Boolean);
+        
+        if (requestedStates.length > 0) {
+          // Get all active MOSPI_REVIEWERs
+          const existingReviewers = await manager.find(User, {
+            where: {
+              role: UserRole.MOSPI_REVIEWER,
+              isActive: true,
+            },
+          });
+
+          // Check if any requested state is already assigned to another reviewer
+          for (const requestedState of requestedStates) {
+            for (const reviewer of existingReviewers) {
+              if (reviewer.stateUt) {
+                const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+                if (reviewerStates.includes(requestedState)) {
+                  throw new ConflictException(
+                    `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Normalize contact number (remove spaces)
+      const normalizedContactNumber = contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
 
       // Create user
       const user = manager.create(User, {
@@ -381,7 +568,7 @@ export class UserService {
         password: hashedPassword,
         firstName,
         lastName,
-        contactNumber,
+        contactNumber: normalizedContactNumber,
         role,
         stateUt,
       });
@@ -883,5 +1070,40 @@ export class UserService {
         },
       };
     });
+  }
+
+  async checkEmailAvailability(
+    email: string,
+    excludeUserId?: string
+  ): Promise<boolean> {
+    const whereCondition: any = { email };
+    if (excludeUserId) {
+      whereCondition.id = Not(excludeUserId);
+    }
+    
+    const existingUser = await this.userRepository.findOne({
+      where: whereCondition,
+    });
+    
+    return !existingUser; // Return true if available (no user found)
+  }
+
+  async checkContactAvailability(
+    contactNumber: string,
+    excludeUserId?: string
+  ): Promise<boolean> {
+    // Normalize contact number (remove spaces)
+    const normalizedContact = contactNumber.replace(/\s/g, "");
+    
+    const whereCondition: any = { contactNumber: normalizedContact };
+    if (excludeUserId) {
+      whereCondition.id = Not(excludeUserId);
+    }
+    
+    const existingUser = await this.userRepository.findOne({
+      where: whereCondition,
+    });
+    
+    return !existingUser; // Return true if available (no user found)
   }
 }
