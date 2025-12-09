@@ -898,10 +898,24 @@ export class UserService {
     // Get indicatorIds to assign
     const indicatorIds = indicators.map((i) => i.id);
 
-    // --- NEW: Find existing scopes for these indicators assigned to OTHER users
-    if (indicatorIds.length > 0) {
+    // Get current user's existing indicator assignments
+    const currentUserScopes = await this.userIndicatorScopeRepository.find({
+      where: { userId },
+    });
+    const currentUserIndicatorIds = currentUserScopes.map((s) => s.indicatorId);
+
+    // Find which indicators are NEW (not already assigned to this user)
+    const newIndicatorIds = indicatorIds.filter(
+      (id) => !currentUserIndicatorIds.includes(id)
+    );
+
+    // Rule: Each indicator can only be assigned to ONE user
+    // Check for conflicts with OTHER users for NEW indicators only
+    // This allows users to keep their existing indicators (no conflict check needed)
+    // But prevents assigning NEW indicators that are already assigned to other users
+    if (newIndicatorIds.length > 0) {
       const existingScopes = await this.userIndicatorScopeRepository.find({
-        where: { indicatorId: In(indicatorIds) },
+        where: { indicatorId: In(newIndicatorIds) },
       });
 
       const conflicts = existingScopes.filter((s) => s.userId !== userId);
@@ -913,7 +927,7 @@ export class UserService {
         );
         const conflictCodes = conflictIndicators.map((i) => i.code);
         throw new ConflictException(
-          `Indicator(s) already assigned: ${conflictCodes.join(", ")}`
+          `Indicator(s) already assigned to another user. Each indicator can only be assigned to one user: ${conflictCodes.join(", ")}`
         );
       }
     }
