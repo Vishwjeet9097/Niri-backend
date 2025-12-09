@@ -209,8 +209,8 @@ export class UserService {
     // Check if any state is already assigned to another MOSPI_REVIEWER when updating
     // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
     if (user.role === UserRole.MOSPI_REVIEWER && updateUserDto.stateUt) {
-      // Parse comma-separated state names
-      const requestedStates = updateUserDto.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+      // Parse comma-separated state names and normalize (trim and lowercase)
+      const requestedStates = updateUserDto.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
       
       if (requestedStates.length > 0) {
         // Get all active MOSPI_REVIEWERs (excluding the current user being updated)
@@ -221,14 +221,14 @@ export class UserService {
           },
         });
 
-        // Check if any requested state is already assigned to another reviewer
+        // Check if any requested state is already assigned to another reviewer (case-insensitive)
         for (const requestedState of requestedStates) {
           for (const reviewer of existingReviewers) {
             // Skip the current user being updated
             if (reviewer.id === id) continue;
             
             if (reviewer.stateUt) {
-              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
               if (reviewerStates.includes(requestedState)) {
                 throw new ConflictException(
                   `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
@@ -253,6 +253,13 @@ export class UserService {
     // Normalize contact number if provided (remove spaces)
     if (updateData.contactNumber) {
       updateData.contactNumber = updateData.contactNumber.replace(/\s/g, "");
+    }
+
+    // Normalize stateUt if provided (trim whitespace to prevent inconsistencies)
+    if (updateData.stateUt) {
+      updateData.stateUt = user.role === UserRole.MOSPI_REVIEWER
+        ? updateData.stateUt.split(',').map(s => s.trim()).filter(Boolean).join(', ')
+        : updateData.stateUt.trim();
     }
 
     // Update user basic information
@@ -417,27 +424,48 @@ export class UserService {
     // This provides fast feedback, but the definitive check is inside the transaction
     // Each state can have only one active STATE_APPROVER
     if (role === UserRole.STATE_APPROVER) {
-      const existingStateApprover = await this.userRepository.findOne({
+      // Normalize the incoming stateUt for comparison (trim and lowercase)
+      const normalizedStateUt = stateUt.trim().toLowerCase();
+      
+      // Get all STATE_APPROVERs to check against (case-insensitive comparison)
+      const existingStateApprovers = await this.userRepository.find({
         where: {
           role: UserRole.STATE_APPROVER,
-          stateUt: stateUt,
           isActive: true,
         },
       });
 
-      if (existingStateApprover) {
+      console.log(`[STATE_APPROVER Validation] Checking for state: "${stateUt}" (normalized: "${normalizedStateUt}")`);
+      console.log(`[STATE_APPROVER Validation] Found ${existingStateApprovers.length} existing STATE_APPROVERs`);
+      existingStateApprovers.forEach((approver, index) => {
+        const existingNormalized = approver.stateUt ? approver.stateUt.trim().toLowerCase() : '';
+        console.log(`[STATE_APPROVER Validation] Existing ${index + 1}: stateUt="${approver.stateUt}" (normalized: "${existingNormalized}"), isActive=${approver.isActive}, email=${approver.email}`);
+      });
+
+      // Check if any existing STATE_APPROVER has the same normalized state
+      const duplicate = existingStateApprovers.find(approver => {
+        if (!approver.stateUt) return false;
+        const existingNormalized = approver.stateUt.trim().toLowerCase();
+        return existingNormalized === normalizedStateUt;
+      });
+
+      if (duplicate) {
+        console.log(`[STATE_APPROVER Validation] ❌ DUPLICATE FOUND! Existing user: ${duplicate.email}, stateUt: "${duplicate.stateUt}"`);
         throw new ConflictException(
           `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
         );
       }
+      console.log(`[STATE_APPROVER Validation] ✅ No duplicate found, proceeding with creation`);
     }
 
     // Early check if any state is already assigned to another MOSPI_REVIEWER
     // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
     // This provides fast feedback, but the definitive check is inside the transaction
     if (role === UserRole.MOSPI_REVIEWER && stateUt) {
-      // Parse comma-separated state names
-      const requestedStates = stateUt.split(',').map(s => s.trim()).filter(Boolean);
+      // Parse comma-separated state names and normalize (trim and lowercase)
+      const requestedStates = stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      
+      console.log(`[MOSPI_REVIEWER Validation] Checking for states: "${stateUt}" (normalized: [${requestedStates.join(', ')}])`);
       
       if (requestedStates.length > 0) {
         // Get all active MOSPI_REVIEWERs
@@ -448,12 +476,19 @@ export class UserService {
           },
         });
 
-        // Check if any requested state is already assigned to another reviewer
+        console.log(`[MOSPI_REVIEWER Validation] Found ${existingReviewers.length} existing MOSPI_REVIEWERs`);
+        existingReviewers.forEach((reviewer, index) => {
+          const reviewerStates = reviewer.stateUt ? reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+          console.log(`[MOSPI_REVIEWER Validation] Existing ${index + 1}: stateUt="${reviewer.stateUt}" (normalized: [${reviewerStates.join(', ')}]), isActive=${reviewer.isActive}, email=${reviewer.email}`);
+        });
+
+        // Check if any requested state is already assigned to another reviewer (case-insensitive)
         for (const requestedState of requestedStates) {
           for (const reviewer of existingReviewers) {
             if (reviewer.stateUt) {
-              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
               if (reviewerStates.includes(requestedState)) {
+                console.log(`[MOSPI_REVIEWER Validation] ❌ DUPLICATE FOUND! State "${requestedState}" already assigned to reviewer: ${reviewer.email}`);
                 throw new ConflictException(
                   `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
                 );
@@ -461,6 +496,7 @@ export class UserService {
             }
           }
         }
+        console.log(`[MOSPI_REVIEWER Validation] ✅ No duplicate states found, proceeding with creation`);
       }
     }
 
@@ -509,27 +545,48 @@ export class UserService {
       // This prevents race conditions when multiple requests come simultaneously
       // Each state can have only one active STATE_APPROVER
       if (role === UserRole.STATE_APPROVER) {
-        const existingStateApprover = await manager.findOne(User, {
+        // Normalize the incoming stateUt for comparison (trim and lowercase)
+        const normalizedStateUt = stateUt.trim().toLowerCase();
+        
+        // Get all STATE_APPROVERs to check against (case-insensitive comparison)
+        const existingStateApprovers = await manager.find(User, {
           where: {
             role: UserRole.STATE_APPROVER,
-            stateUt: stateUt,
             isActive: true,
           },
         });
 
-        if (existingStateApprover) {
+        console.log(`[STATE_APPROVER Transaction Check] Checking for state: "${stateUt}" (normalized: "${normalizedStateUt}")`);
+        console.log(`[STATE_APPROVER Transaction Check] Found ${existingStateApprovers.length} existing STATE_APPROVERs in transaction`);
+        existingStateApprovers.forEach((approver, index) => {
+          const existingNormalized = approver.stateUt ? approver.stateUt.trim().toLowerCase() : '';
+          console.log(`[STATE_APPROVER Transaction Check] Existing ${index + 1}: stateUt="${approver.stateUt}" (normalized: "${existingNormalized}"), isActive=${approver.isActive}, email=${approver.email}`);
+        });
+
+        // Check if any existing STATE_APPROVER has the same normalized state
+        const duplicate = existingStateApprovers.find(approver => {
+          if (!approver.stateUt) return false;
+          const existingNormalized = approver.stateUt.trim().toLowerCase();
+          return existingNormalized === normalizedStateUt;
+        });
+
+        if (duplicate) {
+          console.log(`[STATE_APPROVER Transaction Check] ❌ DUPLICATE FOUND IN TRANSACTION! Existing user: ${duplicate.email}, stateUt: "${duplicate.stateUt}"`);
           throw new ConflictException(
             `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
           );
         }
+        console.log(`[STATE_APPROVER Transaction Check] ✅ No duplicate found in transaction, proceeding with creation`);
       }
 
       // Check if any state is already assigned to another MOSPI_REVIEWER INSIDE transaction
       // This prevents race conditions when multiple requests come simultaneously
       // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
       if (role === UserRole.MOSPI_REVIEWER && stateUt) {
-        // Parse comma-separated state names
-        const requestedStates = stateUt.split(',').map(s => s.trim()).filter(Boolean);
+        // Parse comma-separated state names and normalize (trim and lowercase)
+        const requestedStates = stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        
+        console.log(`[MOSPI_REVIEWER Transaction Check] Checking for states: "${stateUt}" (normalized: [${requestedStates.join(', ')}])`);
         
         if (requestedStates.length > 0) {
           // Get all active MOSPI_REVIEWERs
@@ -540,12 +597,19 @@ export class UserService {
             },
           });
 
-          // Check if any requested state is already assigned to another reviewer
+          console.log(`[MOSPI_REVIEWER Transaction Check] Found ${existingReviewers.length} existing MOSPI_REVIEWERs in transaction`);
+          existingReviewers.forEach((reviewer, index) => {
+            const reviewerStates = reviewer.stateUt ? reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+            console.log(`[MOSPI_REVIEWER Transaction Check] Existing ${index + 1}: stateUt="${reviewer.stateUt}" (normalized: [${reviewerStates.join(', ')}]), isActive=${reviewer.isActive}, email=${reviewer.email}`);
+          });
+
+          // Check if any requested state is already assigned to another reviewer (case-insensitive)
           for (const requestedState of requestedStates) {
             for (const reviewer of existingReviewers) {
               if (reviewer.stateUt) {
-                const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim()).filter(Boolean);
+                const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
                 if (reviewerStates.includes(requestedState)) {
+                  console.log(`[MOSPI_REVIEWER Transaction Check] ❌ DUPLICATE FOUND IN TRANSACTION! State "${requestedState}" already assigned to reviewer: ${reviewer.email}`);
                   throw new ConflictException(
                     `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
                   );
@@ -553,6 +617,7 @@ export class UserService {
               }
             }
           }
+          console.log(`[MOSPI_REVIEWER Transaction Check] ✅ No duplicate states found in transaction, proceeding with creation`);
         }
       }
 
@@ -562,6 +627,12 @@ export class UserService {
       // Normalize contact number (remove spaces)
       const normalizedContactNumber = contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
 
+      // Normalize stateUt (trim whitespace to prevent inconsistencies)
+      // For MOSPI_REVIEWER, normalize each state in comma-separated list
+      const normalizedStateUt = role === UserRole.MOSPI_REVIEWER && stateUt
+        ? stateUt.split(',').map(s => s.trim()).filter(Boolean).join(', ')
+        : stateUt ? stateUt.trim() : stateUt;
+
       // Create user
       const user = manager.create(User, {
         email,
@@ -570,7 +641,7 @@ export class UserService {
         lastName,
         contactNumber: normalizedContactNumber,
         role,
-        stateUt,
+        stateUt: normalizedStateUt,
       });
 
       const savedUser = await manager.save(user);

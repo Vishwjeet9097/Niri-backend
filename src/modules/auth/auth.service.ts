@@ -53,6 +53,98 @@ export class AuthService {
       throw new ConflictException("User with this email already exists");
     }
 
+    // Check if contact number already exists
+    if (contactNumber) {
+      const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+      const existingUserWithContact = await this.userRepository.findOne({
+        where: { contactNumber: normalizedContactNumber },
+      });
+
+      if (existingUserWithContact) {
+        throw new ConflictException(
+          "A user with this contact number already exists. Each user must have a unique contact number."
+        );
+      }
+    }
+
+    // Check if STATE_APPROVER already exists for this state
+    // Each state can have only one active STATE_APPROVER
+    if (role === UserRole.STATE_APPROVER && stateUt) {
+      // Normalize the incoming stateUt for comparison (trim and lowercase)
+      const normalizedStateUt = stateUt.trim().toLowerCase();
+      
+      // Get all STATE_APPROVERs to check against (case-insensitive comparison)
+      const existingStateApprovers = await this.userRepository.find({
+        where: {
+          role: UserRole.STATE_APPROVER,
+          isActive: true,
+        },
+      });
+
+      console.log(`[AUTH Register - STATE_APPROVER Validation] Checking for state: "${stateUt}" (normalized: "${normalizedStateUt}")`);
+      console.log(`[AUTH Register - STATE_APPROVER Validation] Found ${existingStateApprovers.length} existing STATE_APPROVERs`);
+      existingStateApprovers.forEach((approver, index) => {
+        const existingNormalized = approver.stateUt ? approver.stateUt.trim().toLowerCase() : '';
+        console.log(`[AUTH Register - STATE_APPROVER Validation] Existing ${index + 1}: stateUt="${approver.stateUt}" (normalized: "${existingNormalized}"), isActive=${approver.isActive}, email=${approver.email}`);
+      });
+
+      // Check if any existing STATE_APPROVER has the same normalized state
+      const duplicate = existingStateApprovers.find(approver => {
+        if (!approver.stateUt) return false;
+        const existingNormalized = approver.stateUt.trim().toLowerCase();
+        return existingNormalized === normalizedStateUt;
+      });
+
+      if (duplicate) {
+        console.log(`[AUTH Register - STATE_APPROVER Validation] ❌ DUPLICATE FOUND! Existing user: ${duplicate.email}, stateUt: "${duplicate.stateUt}"`);
+        throw new ConflictException(
+          `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
+        );
+      }
+      console.log(`[AUTH Register - STATE_APPROVER Validation] ✅ No duplicate found, proceeding with registration`);
+    }
+
+    // Check if any state is already assigned to another MOSPI_REVIEWER
+    // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
+    if (role === UserRole.MOSPI_REVIEWER && stateUt) {
+      // Parse comma-separated state names and normalize (trim and lowercase)
+      const requestedStates = stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      
+      console.log(`[AUTH Register - MOSPI_REVIEWER Validation] Checking for states: "${stateUt}" (normalized: [${requestedStates.join(', ')}])`);
+      
+      if (requestedStates.length > 0) {
+        // Get all active MOSPI_REVIEWERs
+        const existingReviewers = await this.userRepository.find({
+          where: {
+            role: UserRole.MOSPI_REVIEWER,
+            isActive: true,
+          },
+        });
+
+        console.log(`[AUTH Register - MOSPI_REVIEWER Validation] Found ${existingReviewers.length} existing MOSPI_REVIEWERs`);
+        existingReviewers.forEach((reviewer, index) => {
+          const reviewerStates = reviewer.stateUt ? reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+          console.log(`[AUTH Register - MOSPI_REVIEWER Validation] Existing ${index + 1}: stateUt="${reviewer.stateUt}" (normalized: [${reviewerStates.join(', ')}]), isActive=${reviewer.isActive}, email=${reviewer.email}`);
+        });
+
+        // Check if any requested state is already assigned to another reviewer (case-insensitive)
+        for (const requestedState of requestedStates) {
+          for (const reviewer of existingReviewers) {
+            if (reviewer.stateUt) {
+              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+              if (reviewerStates.includes(requestedState)) {
+                console.log(`[AUTH Register - MOSPI_REVIEWER Validation] ❌ DUPLICATE FOUND! State "${requestedState}" already assigned to reviewer: ${reviewer.email}`);
+                throw new ConflictException(
+                  `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
+                );
+              }
+            }
+          }
+        }
+        console.log(`[AUTH Register - MOSPI_REVIEWER Validation] ✅ No duplicate states found, proceeding with registration`);
+      }
+    }
+
     // Validate indicator codes for NODAL_OFFICER
     if (role === UserRole.NODAL_OFFICER) {
       if (!indicatorCodes || indicatorCodes.length === 0) {
@@ -80,24 +172,28 @@ export class AuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Normalize contact number (remove spaces)
+    const normalizedContactNumber = contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
+
+    // Normalize stateUt (trim whitespace to prevent inconsistencies)
+    // For MOSPI_REVIEWER, normalize each state in comma-separated list
+    let normalizedStateUt = "";
+    if (stateUt != null && stateUt !== "" && !(typeof stateUt === "object" && Object.keys(stateUt).length === 0)) {
+      normalizedStateUt = role === UserRole.MOSPI_REVIEWER
+        ? stateUt.split(',').map(s => s.trim()).filter(Boolean).join(', ')
+        : stateUt.trim();
+    }
+
     // Create user
-
-    const normalizedStateUt =
-  stateUt == null || // null or undefined
-  stateUt === "" ||
-  (typeof stateUt === "object" && Object.keys(stateUt).length === 0)
-    ? ""
-    : stateUt;
-
-      
     const user = this.userRepository.create({
       email,
       password: hashedPassword,
       firstName,
       lastName,
-      contactNumber,
+      contactNumber: normalizedContactNumber,
       role,
-      stateUt: normalizedStateUt
+      stateUt: normalizedStateUt,
+      isActive: true,
     });
 
     const savedUser = await this.userRepository.save(user);
