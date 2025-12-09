@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Submission, SubmissionStatus } from "../../entities/submission.entity";
 import { UserRole } from "../../entities/user.entity";
+import { Indicator } from "../../entities/indicator.entity";
 
 export interface DashboardSummary {
   pendingSubmissions: number;
@@ -15,6 +16,7 @@ export interface DashboardSummary {
   submissionsByMonth: Array<{ month: string; count: number }>;
 }
 export interface DashboardCounts {
+  totalIndicators: number;
   nodal: {
     totalAssigned: number;
     totalIndicatorsReceived: number;
@@ -34,7 +36,9 @@ export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
   constructor(
     @InjectRepository(Submission)
-    private submissionRepository: Repository<Submission>
+    private submissionRepository: Repository<Submission>,
+    @InjectRepository(Indicator)
+    private indicatorRepository: Repository<Indicator>
   ) {}
 
   async getDashboardSummary(
@@ -287,28 +291,30 @@ export class DashboardService {
     const totalAssignedCount = parseInt(totalAssigned[0]?.count || "0");
 
     // ✅ 2. Total indicators received (submitted by NODAL_OFFICERS)
-    // Count the number of indicators/sections that have been submitted by NODAL_OFFICERS
-    // This counts status fields in form_data from submissions where submitted_by is a NODAL_OFFICER
+    // Count distinct sections across all submissions from NODAL_OFFICERS
     let totalIndicatorsReceived = 0;
     try {
+      const sqlQuery = `
+        SELECT COUNT(DISTINCT section_key) AS count
+        FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
+        CROSS JOIN LATERAL (
+          SELECT jsonb_object_keys(value) AS section_key
+          FROM jsonb_each(s.form_data)
+          WHERE jsonb_typeof(value) = 'object'
+        ) AS sections
+        WHERE u.role IN ($1)
+          AND u.state_ut = $2
+          AND s."stateUt" = $2
+          AND s.status != 'DRAFT'
+          AND section_key ~ '^section[0-9]+_[0-9]+$';
+        `;
+      const params = [UserRole.NODAL_OFFICER, userStateUt];      
+      
       const totalIndicatorsReceivedQuery =
-        await this.submissionRepository.query(
-          `
-        SELECT COALESCE(SUM(cnt), 0) AS count FROM (
-          SELECT (
-            SELECT COUNT(*) FROM jsonb_array_elements_text(
-              jsonb_path_query_array(s.form_data, '$.**.status')
-            ) AS st(val)
-          ) AS cnt
-          FROM submissions s
-          JOIN users u ON s.submitted_by = u.id
-          WHERE u.role = $1
-            AND u.state_ut = $2
-            AND s."stateUt" = $2
-        ) t;
-        `,
-          [UserRole.NODAL_OFFICER, userStateUt]
-        );
+        await this.submissionRepository.query(sqlQuery, params);   
+       
+      
       totalIndicatorsReceived = parseInt(
         totalIndicatorsReceivedQuery[0]?.count || "0"
       );
@@ -439,8 +445,12 @@ export class DashboardService {
       byStatus[SubmissionStatus.RETURNED_FROM_MOSPI] || 0;
     const approvedByMoSPI = byStatus[SubmissionStatus.APPROVED] || 0;
 
-    // ✅ 8. Return final structured response
+    // ✅ 8. Get Total Active Indicators
+    const totalIndicators = await this.getTotalActiveIndicators();
+
+    // ✅ 9. Return final structured response
     return {
+      totalIndicators,
       nodal: {
         totalAssigned: totalAssignedCount,
         totalIndicatorsReceived,
@@ -698,6 +708,26 @@ export class DashboardService {
     } catch (error) {
       this.logger.error(
         `Error getting MOSPI dashboard counts: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get total count of active indicators
+   * @returns Promise<number> - Count of indicators where is_active is true
+   */
+  async getTotalActiveIndicators(): Promise<number> {
+    try {
+      const count = await this.indicatorRepository.count({
+        where: { isActive: true },
+      });
+      this.logger.log(`Total active indicators: ${count}`);
+      return count;
+    } catch (error) {
+      this.logger.error(
+        `Error getting total active indicators: ${error.message}`,
         error.stack
       );
       throw error;
