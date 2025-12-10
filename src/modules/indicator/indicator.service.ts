@@ -388,12 +388,12 @@ export class IndicatorService {
       where: { stateUt },
       select: ["id", "email", "stateUt"],
     });
-    console.log("👥 Users in this state:", usersInState);
+    // console.log("👥 Users in this state:", usersInState);
 
     const scopes = await this.userIndicatorScopeRepository.find({
       where: { userId: In(usersInState.map((u) => u.id)) },
     });
-    console.log("📊 Indicators assigned in this state:", scopes.length);
+    // console.log("📊 Indicators assigned in this state:", scopes.length);
     if ((!stateUt || !stateUt.trim()) && approverUserId) {
       const approver = await this.userRepository.findOne({
         where: { id: approverUserId },
@@ -476,7 +476,7 @@ export class IndicatorService {
     );
 
     console.log(
-      `🟢 Found ${available.length} available indicators for state=${stateUt}`
+     // `🟢 Found ${available.length} available indicators for state=${stateUt}`
     );
 
     return available.map((ind) => ({
