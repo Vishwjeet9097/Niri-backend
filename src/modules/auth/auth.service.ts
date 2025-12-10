@@ -145,15 +145,10 @@ export class AuthService {
       }
     }
 
-    // Validate indicator codes for NODAL_OFFICER
-    if (role === UserRole.NODAL_OFFICER) {
-      if (!indicatorCodes || indicatorCodes.length === 0) {
-        throw new ConflictException(
-          "Indicator codes are required for NODAL_OFFICER role"
-        );
-      }
-
-      // Check if all indicator codes exist
+    // Validate indicator codes for NODAL_OFFICER (if provided)
+    // Indicator assignment is optional - if no indicators are assigned, user will see all indicators
+    if (role === UserRole.NODAL_OFFICER && indicatorCodes && indicatorCodes.length > 0) {
+      // Check if all indicator codes exist (only validate if indicators are provided)
       const indicators = await this.indicatorRepository.find({
         where: { code: In(indicatorCodes), isActive: true },
       });
