@@ -526,7 +526,116 @@ export class IndicatorService {
 
     console.log(`[getAvailableIndicatorsForApprover] Accepted indicator codes: [${Array.from(acceptedCodes).join(', ')}]`);
 
-    // Map acceptedCodes to indicator IDs
+    // 3.6️⃣ Exclude indicators from STATE_APPROVER's own submitted consolidated submissions
+    // If a state approver has already submitted their consolidated submission, those indicators should not be available
+    const submittedByStateApproverCodes = new Set<string>();
+    
+    // First, let's find all STATE_APPROVER users in this state to get their IDs
+    const stateApproverUsers = await this.userRepository.find({
+      where: {
+        stateUt: stateUt,
+        role: UserRole.STATE_APPROVER,
+        isActive: true
+      },
+      select: ["id"]
+    });
+    const stateApproverUserIds = stateApproverUsers.map(u => u.id);
+    console.log(`[getAvailableIndicatorsForApprover] Found ${stateApproverUserIds.length} STATE_APPROVER users in state=${stateUt}: ${stateApproverUserIds.join(', ')}`);
+    
+    // Query submissions by submittedBy field (which is the actual creator) and also check user role
+    // Use case-insensitive comparison for stateUt to handle formatting differences
+    // Include all statuses that indicate the submission has been submitted (not just final statuses)
+    const stateApproverSubmissions = await this.submissionRepository
+      .createQueryBuilder("submission")
+      .innerJoinAndSelect("submission.user", "user")
+      .where("(submission.submittedBy IN (:...stateApproverIds) OR user.role = :stateApproverRole)", {
+        stateApproverIds: stateApproverUserIds.length > 0 ? stateApproverUserIds : [''],
+        stateApproverRole: UserRole.STATE_APPROVER
+      })
+      .andWhere("(LOWER(TRIM(submission.stateUt)) = LOWER(TRIM(:stateUt)) OR LOWER(TRIM(user.stateUt)) = LOWER(TRIM(:stateUt)))", { stateUt })
+      .andWhere("submission.status IN (:...statuses)", {
+        statuses: [
+          SubmissionStatus.SUBMITTED_TO_STATE, // Include this in case state approver submission has this status
+          SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+          SubmissionStatus.APPROVED
+        ]
+      })
+      .getMany();
+
+    console.log(`[getAvailableIndicatorsForApprover] Found ${stateApproverSubmissions.length} submitted consolidated submissions from STATE_APPROVERs in state=${stateUt}`);
+    if (stateApproverSubmissions.length > 0) {
+      console.log(`[getAvailableIndicatorsForApprover] Submission IDs: ${stateApproverSubmissions.map(s => s.submissionId).join(', ')}`);
+      console.log(`[getAvailableIndicatorsForApprover] Submission statuses: ${stateApproverSubmissions.map(s => s.status).join(', ')}`);
+      console.log(`[getAvailableIndicatorsForApprover] Submission submittedBy: ${stateApproverSubmissions.map(s => s.submittedBy).join(', ')}`);
+      console.log(`[getAvailableIndicatorsForApprover] Submission user IDs: ${stateApproverSubmissions.map(s => s.user?.id).join(', ')}`);
+      console.log(`[getAvailableIndicatorsForApprover] Submission user roles: ${stateApproverSubmissions.map(s => s.user?.role).join(', ')}`);
+    } else {
+      // Debug: Let's also check what submissions exist for this state
+      const allSubmissionsInState = await this.submissionRepository.find({
+        where: [
+          { stateUt: stateUt },
+        ],
+        relations: ["user"],
+        take: 10 // Limit to first 10 for debugging
+      });
+      console.log(`[getAvailableIndicatorsForApprover] DEBUG: Found ${allSubmissionsInState.length} total submissions in state=${stateUt}`);
+      allSubmissionsInState.forEach(sub => {
+        console.log(`[getAvailableIndicatorsForApprover] DEBUG: Submission ${sub.submissionId} - status: ${sub.status}, user.role: ${sub.user?.role}, submittedBy: ${sub.submittedBy}, stateUt: ${sub.stateUt}`);
+      });
+    }
+
+    for (const submission of stateApproverSubmissions) {
+      // Only consider submissions from STATE_APPROVERs
+      if (submission.user?.role !== UserRole.STATE_APPROVER) {
+        console.log(`[getAvailableIndicatorsForApprover] Skipping submission ${submission.submissionId} - user role is ${submission.user?.role}, not STATE_APPROVER`);
+        continue;
+      }
+
+      console.log(`[getAvailableIndicatorsForApprover] Processing submission ${submission.submissionId} from STATE_APPROVER ${submission.user?.id}`);
+      const formData = submission.formData || {};
+      
+      // Extract indicators from formData
+      // Check each category (infraFinancing, infraDevelopment, pppDevelopment, infraEnablers)
+      const categoryKeys = ["infraFinancing", "infraDevelopment", "pppDevelopment", "infraEnablers"];
+      
+      categoryKeys.forEach((categoryKey) => {
+        if (formData[categoryKey] && typeof formData[categoryKey] === "object") {
+          const categoryData = formData[categoryKey];
+          console.log(`[getAvailableIndicatorsForApprover] Checking category ${categoryKey}, found ${Object.keys(categoryData).length} sections`);
+          
+          // Check each section within the category
+          Object.keys(categoryData).forEach((sectionKey) => {
+            // Convert section key to indicator code (e.g., "section1_1" -> "1.1")
+            if (sectionKey.startsWith("section")) {
+              const indicatorCode = sectionKey
+                .replace(/^section/, "")
+                .replace(/_/g, ".");
+              
+              // Validate the code format (should be like "1.1", "4.2", etc.)
+              if (/^\d+\.\d+$/.test(indicatorCode)) {
+                const sectionData = categoryData[sectionKey];
+                // Only include if section has meaningful data
+                if (sectionData && typeof sectionData === "object" && Object.keys(sectionData).length > 0) {
+                  submittedByStateApproverCodes.add(indicatorCode);
+                  console.log(`[getAvailableIndicatorsForApprover] Found submitted indicator: ${indicatorCode} from STATE_APPROVER submission ${submission.submissionId} in category ${categoryKey}`);
+                } else {
+                  console.log(`[getAvailableIndicatorsForApprover] Skipping indicator ${indicatorCode} - section has no meaningful data`);
+                }
+              } else {
+                console.log(`[getAvailableIndicatorsForApprover] Invalid indicator code format: ${indicatorCode} from sectionKey: ${sectionKey}`);
+              }
+            }
+          });
+        } else {
+          console.log(`[getAvailableIndicatorsForApprover] Category ${categoryKey} not found or not an object in submission ${submission.submissionId}`);
+        }
+      });
+    }
+
+    console.log(`[getAvailableIndicatorsForApprover] Submitted by STATE_APPROVER indicator codes: [${Array.from(submittedByStateApproverCodes).join(', ')}]`);
+
+    // Map acceptedCodes and submittedByStateApproverCodes to indicator IDs
     const codeToId = new Map<string, string>();
     allIndicators.forEach(ind => {
       codeToId.set(ind.code, ind.id.toString());
@@ -542,21 +651,34 @@ export class IndicatorService {
       }
     });
 
+    const submittedByStateApproverIds = new Set<string>();
+    submittedByStateApproverCodes.forEach(code => {
+      const id = codeToId.get(code);
+      if (id) {
+        submittedByStateApproverIds.add(id);
+        console.log(`[getAvailableIndicatorsForApprover] Mapped submitted code ${code} to indicator ID: ${id}`);
+      } else {
+        console.warn(`[getAvailableIndicatorsForApprover] Could not find indicator ID for submitted code: ${code}`);
+      }
+    });
+
     // Check if indicator 4.2 is being excluded and why (for debugging)
     const indicator42 = allIndicators.find(ind => ind.code === "4.2");
     if (indicator42) {
       const indicator42Id = indicator42.id.toString();
       const isAssignedToOtherStateApprover = assignedToOtherStateApprovers.has(indicator42Id);
       const isAccepted = acceptedIds.has(indicator42Id);
-      console.log(`[getAvailableIndicatorsForApprover] Indicator 4.2 status: id=${indicator42Id}, assignedToOtherStateApprover=${isAssignedToOtherStateApprover}, accepted=${isAccepted}, willBeExcluded=${isAssignedToOtherStateApprover || isAccepted}`);
+      const isSubmittedByStateApprover = submittedByStateApproverIds.has(indicator42Id);
+      console.log(`[getAvailableIndicatorsForApprover] Indicator 4.2 status: id=${indicator42Id}, assignedToOtherStateApprover=${isAssignedToOtherStateApprover}, accepted=${isAccepted}, submittedByStateApprover=${isSubmittedByStateApprover}, willBeExcluded=${isAssignedToOtherStateApprover || isAccepted || isSubmittedByStateApprover}`);
     }
 
-    // Merge assignedToOtherStateApprovers, assignedToNodalOfficers, and acceptedIds
-    // STATE_APPROVERs should only see UNASSIGNED indicators (not assigned to anyone)
+    // Merge assignedToOtherStateApprovers, assignedToNodalOfficers, acceptedIds, and submittedByStateApproverIds
+    // STATE_APPROVERs should only see UNASSIGNED indicators (not assigned to anyone and not already submitted)
     const excludedIds = new Set<string>([
       ...assignedToOtherStateApprovers,
       ...assignedToNodalOfficers,
-      ...acceptedIds
+      ...acceptedIds,
+      ...submittedByStateApproverIds
     ]);
 
     console.log(`[getAvailableIndicatorsForApprover] Total excluded indicator IDs: [${Array.from(excludedIds).join(', ')}]`);
