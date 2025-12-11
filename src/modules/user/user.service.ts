@@ -885,6 +885,22 @@ export class UserService {
 
     // Use transaction to ensure atomicity - all or nothing
     return await this.dataSource.transaction(async (manager) => {
+      // Get the user's stateUt to filter conflicts by state
+      // Indicators should only be unique within the same state, not globally
+      const targetUser = await manager.findOne(User, {
+        where: { id: userId },
+        select: ["id", "stateUt", "role"],
+      });
+      
+      if (!targetUser) {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+      
+      const userStateUt = targetUser.stateUt;
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - State: ${userStateUt || "N/A"}, Role: ${targetUser.role}`
+      );
+
       // If no indicator codes provided, just delete existing and return
       if (!stringCodes || stringCodes.length === 0) {
         const deletedCount = await manager.delete(UserIndicatorScope, { userId });
@@ -975,26 +991,30 @@ export class UserService {
         );
       }
 
-      // Rule: Each indicator can only be assigned to ONE user
-      // Check for conflicts with OTHER users for NEW indicators only
+      // Rule: Each indicator can only be assigned to ONE user WITHIN THE SAME STATE
+      // Check for conflicts with OTHER users in the SAME STATE for NEW indicators only
       // This allows users to keep their existing indicators (no conflict check needed)
-      // But prevents assigning NEW indicators that are already assigned to other users
+      // But prevents assigning NEW indicators that are already assigned to other users in the same state
       if (newIndicatorIds.length > 0) {
         this.logger.log(
-          `[updateUserIndicatorCodes] User ${userId} - Checking conflicts for NEW indicators: [${newIndicatorCodes.join(", ")}]`
+          `[updateUserIndicatorCodes] User ${userId} - Checking conflicts for NEW indicators: [${newIndicatorCodes.join(", ")}] in state: ${userStateUt || "N/A"}`
         );
         
-        // Use explicit query to exclude current user upfront - this prevents false positives
+        // Use explicit query to exclude current user AND filter by same state
+        // Only check for conflicts with users in the SAME state
         const conflictingScopes = await manager
           .createQueryBuilder(UserIndicatorScope, "scope")
+          .innerJoin("scope.user", "user")
           .where("scope.indicatorId IN (:...indicatorIds)", {
             indicatorIds: newIndicatorIds,
           })
           .andWhere("scope.userId != :userId", { userId })
+          .andWhere("user.stateUt = :userStateUt", { userStateUt: userStateUt || "" })
+          .andWhere("user.isActive = :isActive", { isActive: true })
           .getMany();
 
         this.logger.log(
-          `[updateUserIndicatorCodes] User ${userId} - Found ${conflictingScopes.length} conflicting scopes for NEW indicators`
+          `[updateUserIndicatorCodes] User ${userId} - Found ${conflictingScopes.length} conflicting scopes for NEW indicators in state ${userStateUt || "N/A"}`
         );
 
         if (conflictingScopes.length > 0) {
