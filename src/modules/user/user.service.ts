@@ -879,69 +879,182 @@ export class UserService {
       typeof code === "number" ? code.toString() : code
     );
 
-    // If no indicator codes provided, just delete existing and return
-    if (!stringCodes || stringCodes.length === 0) {
-      await this.userIndicatorScopeRepository.delete({ userId });
-      return;
-    }
-
-    // Get indicators by codes
-    const indicators = await this.indicatorRepository.find({
-      where: { code: In(stringCodes), isActive: true },
-    });
-
-    // Get indicatorIds to assign
-    const indicatorIds = indicators.map((i) => i.id);
-
-    // Get current user's existing indicator assignments
-    const currentUserScopes = await this.userIndicatorScopeRepository.find({
-      where: { userId },
-    });
-    const currentUserIndicatorIds = currentUserScopes.map((s) => s.indicatorId);
-
-    // Find which indicators are NEW (not already assigned to this user)
-    const newIndicatorIds = indicatorIds.filter(
-      (id) => !currentUserIndicatorIds.includes(id)
+    this.logger.log(
+      `Updating indicator codes for user ${userId}: [${stringCodes.join(", ")}]`
     );
 
-    // Rule: Each indicator can only be assigned to ONE user
-    // Check for conflicts with OTHER users for NEW indicators only
-    // This allows users to keep their existing indicators (no conflict check needed)
-    // But prevents assigning NEW indicators that are already assigned to other users
-    if (newIndicatorIds.length > 0) {
-      const existingScopes = await this.userIndicatorScopeRepository.find({
-        where: { indicatorId: In(newIndicatorIds) },
+    // Use transaction to ensure atomicity - all or nothing
+    return await this.dataSource.transaction(async (manager) => {
+      // If no indicator codes provided, just delete existing and return
+      if (!stringCodes || stringCodes.length === 0) {
+        const deletedCount = await manager.delete(UserIndicatorScope, { userId });
+        this.logger.log(
+          `Removed all indicators for user ${userId} (${deletedCount.affected || 0} scopes deleted)`
+        );
+        return;
+      }
+
+      // Get indicators by codes
+      const indicators = await manager.find(Indicator, {
+        where: { code: In(stringCodes), isActive: true },
       });
 
-      const conflicts = existingScopes.filter((s) => s.userId !== userId);
-      if (conflicts.length > 0) {
-        // Map to codes
-        const conflictIndicatorIds = conflicts.map((c) => c.indicatorId);
-        const conflictIndicators = indicators.filter((i) =>
-          conflictIndicatorIds.includes(i.id)
+      // Validate that all requested indicators exist
+      if (indicators.length !== stringCodes.length) {
+        const foundCodes = indicators.map((i) => i.code);
+        const missingCodes = stringCodes.filter((code) => !foundCodes.includes(code));
+        this.logger.warn(
+          `Some indicators not found or inactive for user ${userId}: [${missingCodes.join(", ")}]`
         );
-        const conflictCodes = conflictIndicators.map((i) => i.code);
-        throw new ConflictException(
-          `Indicator(s) already assigned to another user. Each indicator can only be assigned to one user: ${conflictCodes.join(", ")}`
+        throw new BadRequestException(
+          `Some indicators not found or inactive: ${missingCodes.join(", ")}`
         );
       }
-    }
 
-    // No conflicts: delete existing scopes for this user and save new ones (atomic outside may be okay)
-    await this.userIndicatorScopeRepository.delete({ userId });
+      // Get indicatorIds to assign
+      const indicatorIds = indicators.map((i) => i.id);
 
-    // Create new indicator scopes
-    const indicatorScopes = indicators.map((indicator) => {
-      const scope = new UserIndicatorScope();
-      scope.userId = userId;
-      scope.indicatorId = indicator.id;
-      return scope;
+      // Get current user's existing indicator assignments using explicit query
+      // This ensures we get accurate data even in transaction scenarios
+      const currentUserScopes = await manager
+        .createQueryBuilder(UserIndicatorScope, "scope")
+        .leftJoinAndSelect("scope.indicator", "indicator")
+        .where("scope.userId = :userId", { userId })
+        .getMany();
+      
+      const currentUserIndicatorIds = currentUserScopes.map((s) => s.indicatorId);
+      const currentUserIndicatorCodes = currentUserScopes
+        .map((s) => s.indicator?.code)
+        .filter(Boolean);
+
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Found ${currentUserScopes.length} existing scopes`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Current indicator IDs: [${currentUserIndicatorIds.join(", ")}]`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Current indicator codes: [${currentUserIndicatorCodes.join(", ")}]`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Requested indicator codes: [${stringCodes.join(", ")}]`
+      );
+
+      // Find which indicators are NEW (not already assigned to this user)
+      const newIndicatorIds = indicatorIds.filter(
+        (id) => !currentUserIndicatorIds.includes(id)
+      );
+      
+      const newIndicatorCodes = indicators
+        .filter((i) => newIndicatorIds.includes(i.id))
+        .map((i) => i.code);
+      
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - NEW indicator IDs: [${newIndicatorIds.join(", ")}]`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - NEW indicator codes: [${newIndicatorCodes.join(", ")}]`
+      );
+
+      // Find which indicators are being REMOVED
+      // Need to get all indicators (not just the new ones) to find removed ones
+      const allIndicatorsForRemoved = await manager.find(Indicator, {
+        where: { id: In(currentUserIndicatorIds), isActive: true },
+      });
+      const removedIndicatorIds = currentUserIndicatorIds.filter(
+        (id) => !indicatorIds.includes(id)
+      );
+      const removedIndicators = allIndicatorsForRemoved.filter((i) => 
+        removedIndicatorIds.includes(i.id)
+      );
+      const removedCodes = removedIndicators.map((i) => i.code);
+
+      if (removedCodes.length > 0) {
+        this.logger.log(
+          `Removing indicators from user ${userId}: [${removedCodes.join(", ")}]`
+        );
+      }
+
+      // Rule: Each indicator can only be assigned to ONE user
+      // Check for conflicts with OTHER users for NEW indicators only
+      // This allows users to keep their existing indicators (no conflict check needed)
+      // But prevents assigning NEW indicators that are already assigned to other users
+      if (newIndicatorIds.length > 0) {
+        this.logger.log(
+          `[updateUserIndicatorCodes] User ${userId} - Checking conflicts for NEW indicators: [${newIndicatorCodes.join(", ")}]`
+        );
+        
+        // Use explicit query to exclude current user upfront - this prevents false positives
+        const conflictingScopes = await manager
+          .createQueryBuilder(UserIndicatorScope, "scope")
+          .where("scope.indicatorId IN (:...indicatorIds)", {
+            indicatorIds: newIndicatorIds,
+          })
+          .andWhere("scope.userId != :userId", { userId })
+          .getMany();
+
+        this.logger.log(
+          `[updateUserIndicatorCodes] User ${userId} - Found ${conflictingScopes.length} conflicting scopes for NEW indicators`
+        );
+
+        if (conflictingScopes.length > 0) {
+          // Map to codes for error message
+          const conflictIndicatorIds = conflictingScopes.map((c) => c.indicatorId);
+          const conflictIndicators = indicators.filter((i) =>
+            conflictIndicatorIds.includes(i.id)
+          );
+          const conflictCodes = conflictIndicators.map((i) => i.code);
+          
+          // Get which users have these indicators for better debugging
+          const conflictUserIds = Array.from(new Set(conflictingScopes.map((c) => c.userId)));
+          
+          this.logger.warn(
+            `[updateUserIndicatorCodes] User ${userId} - CONFLICT DETECTED: indicators [${conflictCodes.join(", ")}] already assigned to users [${conflictUserIds.join(", ")}]`
+          );
+          this.logger.warn(
+            `[updateUserIndicatorCodes] User ${userId} - Conflict details: ${conflictingScopes.map((s) => `indicatorId=${s.indicatorId}, userId=${s.userId}`).join("; ")}`
+          );
+          
+          throw new ConflictException(
+            `Indicator(s) already assigned to another user. Each indicator can only be assigned to one user: ${conflictCodes.join(", ")}`
+          );
+        } else {
+          this.logger.log(
+            `[updateUserIndicatorCodes] User ${userId} - No conflicts found for NEW indicators: [${newIndicatorCodes.join(", ")}]`
+          );
+        }
+      } else {
+        this.logger.log(
+          `[updateUserIndicatorCodes] User ${userId} - No NEW indicators to check (all indicators already assigned to this user)`
+        );
+      }
+
+      // No conflicts: delete existing scopes for this user and save new ones atomically
+      const deleteResult = await manager.delete(UserIndicatorScope, { userId });
+      this.logger.log(
+        `Deleted ${deleteResult.affected || 0} existing indicator scopes for user ${userId}`
+      );
+
+      // Create new indicator scopes
+      const indicatorScopes = indicators.map((indicator) => {
+        const scope = manager.create(UserIndicatorScope, {
+          userId,
+          indicatorId: indicator.id,
+        });
+        return scope;
+      });
+
+      // Save all new scopes
+      if (indicatorScopes.length > 0) {
+        await manager.save(UserIndicatorScope, indicatorScopes);
+        const newCodes = indicators.map((i) => i.code);
+        this.logger.log(
+          `Successfully assigned indicators to user ${userId}: [${newCodes.join(", ")}]`
+        );
+      } else {
+        this.logger.log(`No indicators to assign for user ${userId}`);
+      }
     });
-
-    // Save all new scopes
-    if (indicatorScopes.length > 0) {
-      await this.userIndicatorScopeRepository.save(indicatorScopes);
-    }
   }
 
   // Get indicators by codes
