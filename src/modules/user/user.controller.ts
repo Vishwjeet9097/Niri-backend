@@ -319,39 +319,7 @@ export class UserController {
     };
   }
 
-  // Move :id route to the very end to avoid conflicts with other routes
-  @Get(":id")
-  async findOne(@Param("id") id: string, @Request() req) {
-    return this.userService.findOne(id, req.user.role, req.user.stateUt);
-  }
-
-  //Restrict for state assigned users
-
-  @Get("states/assigned-state-by-state-approver/:roleName")
-  @UseGuards(RolesGuard)
-  async assignedStateByState(
-    @Param("roleName") roleName: UserRole,
-    @Request() req
-  ) {
-    return this.userService.assignedStateByStateApprover(roleName);
-  }
-
-  /**
-   * TESTING ONLY: Delete all users by role endpoint
-   * Deletes all users with the specified role along with their related data
-   * WARNING: This is a destructive operation for testing purposes only!
-   */
-  @Delete("by-role/:role")
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async deleteUsersByRole(
-    @Param("role") role: UserRole,
-    @Request() req
-  ) {
-    return this.userService.deleteUsersByRole(role);
-  }
-
+  // Specific routes that must come before the :id route to avoid route conflicts
   @Get("check-email/:email")
   @UseGuards(RolesGuard)
   @Roles(
@@ -400,5 +368,36 @@ export class UserController {
         ? "Contact number is available"
         : "Contact number already exists",
     };
+  }
+
+  @Get("states/assigned-state-by-state-approver/:roleName")
+  @UseGuards(RolesGuard)
+  async assignedStateByState(
+    @Param("roleName") roleName: UserRole,
+    @Request() req
+  ) {
+    return this.userService.assignedStateByStateApprover(roleName);
+  }
+
+  /**
+   * TESTING ONLY: Delete all users by role endpoint
+   * Deletes all users with the specified role along with their related data
+   * WARNING: This is a destructive operation for testing purposes only!
+   */
+  @Delete("by-role/:role")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async deleteUsersByRole(
+    @Param("role") role: UserRole,
+    @Request() req
+  ) {
+    return this.userService.deleteUsersByRole(role);
+  }
+
+  // Move :id route to the very end to avoid conflicts with other routes
+  @Get(":id")
+  async findOne(@Param("id") id: string, @Request() req) {
+    return this.userService.findOne(id, req.user.role, req.user.stateUt);
   }
 }
