@@ -10,6 +10,8 @@ import {
   Request,
   Query,
   Put,
+  HttpCode,
+  HttpStatus,
 } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { IndicatorService } from "../indicator/indicator.service";
@@ -26,23 +28,52 @@ export class UserController {
     private readonly indicatorService: IndicatorService
   ) {}
 
+  // Get all users by each role with isActive=true
+  @Get("all/active-by-role")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async getAllActiveUsersByRole(@Request() req) {
+    // Only privileged roles can access
+    const usersByRole = await this.userService.getAllActiveUsersByRole();
+    return {
+      status: true,
+      data: usersByRole,
+      message: "Active users grouped by role retrieved successfully",
+    };
+  }
+
   @Get()
   async findAll(@Request() req) {
-    return this.userService.findAll(
+    const users = await this.userService.findAll(
       req.user.role,
       req.user.stateUt,
       req.user.id
     );
+    return {
+      status: true,
+      data: users,
+      message: "Users retrieved successfully",
+    };
   }
 
   @Get("by-state/:stateUt")
   async getUsersByState(@Param("stateUt") stateUt: string, @Request() req) {
-    return this.userService.getUsersByState(
+    const users = await this.userService.getUsersByState(
       stateUt,
       req.user.role,
       req.user.stateUt,
       req.user.id
     );
+    return {
+      status: true,
+      data: users,
+      message: "Users retrieved successfully",
+    };
   }
 
   @Get("by-role/:role")
@@ -51,13 +82,18 @@ export class UserController {
     @Request() req,
     @Query("stateUt") stateUt?: string
   ) {
-    return this.userService.getUsersByRole(
+    const users = await this.userService.getUsersByRole(
       role,
       stateUt,
       req.user.role,
       req.user.stateUt,
       req.user.id
     );
+    return {
+      status: true,
+      data: users,
+      message: "Users retrieved successfully",
+    };
   }
 
   // Simple endpoint for NODAL_OFFICER to get their assigned indicators
@@ -300,7 +336,12 @@ export class UserController {
   // Move :id route to the very end to avoid conflicts with other routes
   @Get(":id")
   async findOne(@Param("id") id: string, @Request() req) {
-    return this.userService.findOne(id, req.user.role, req.user.stateUt);
+    const user = await this.userService.findOne(id, req.user.role, req.user.stateUt);
+    return {
+      status: true,
+      data: user,
+      message: "User retrieved successfully",
+    };
   }
 
   //Restrict for state assigned users
@@ -312,5 +353,71 @@ export class UserController {
     @Request() req
   ) {
     return this.userService.assignedStateByStateApprover(roleName);
+  }
+
+  /**
+   * TESTING ONLY: Delete all users by role endpoint
+   * Deletes all users with the specified role along with their related data
+   * WARNING: This is a destructive operation for testing purposes only!
+   */
+  @Delete("by-role/:role")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async deleteUsersByRole(
+    @Param("role") role: UserRole,
+    @Request() req
+  ) {
+    return this.userService.deleteUsersByRole(role);
+  }
+
+  @Get("check-email/:email")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async checkEmailAvailability(
+    @Param("email") email: string,
+    @Query("excludeUserId") excludeUserId?: string
+  ) {
+    const isAvailable = await this.userService.checkEmailAvailability(
+      email,
+      excludeUserId
+    );
+    return {
+      status: true,
+      data: { available: isAvailable },
+      message: isAvailable
+        ? "Email is available"
+        : "Email already exists",
+    };
+  }
+
+  @Get("check-contact/:contactNumber")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async checkContactAvailability(
+    @Param("contactNumber") contactNumber: string,
+    @Query("excludeUserId") excludeUserId?: string
+  ) {
+    const isAvailable = await this.userService.checkContactAvailability(
+      contactNumber,
+      excludeUserId
+    );
+    return {
+      status: true,
+      data: { available: isAvailable },
+      message: isAvailable
+        ? "Contact number is available"
+        : "Contact number already exists",
+    };
   }
 }

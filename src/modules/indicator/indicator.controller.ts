@@ -49,8 +49,14 @@ export class IndicatorController {
   }
 
   @Get("available-for-approver")
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.STATE_APPROVER)
+  @UseGuards(RolesGuard) 
+   @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
+  )
   async getAvailableForApprover(
     @Request() req,
     @Query("stateUt") stateUt?: string
