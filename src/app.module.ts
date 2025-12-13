@@ -18,6 +18,8 @@ import { ScoringModule } from "./modules/scoring/scoring.module";
 import { ValidationModule } from "./modules/validation/validation.module";
 import { IndicatorModule } from "./modules/indicator/indicator.module";
 import { AuditMiddleware } from "./middleware/audit.middleware";
+import { NotificationModule } from "./modules/notification/notification.module";
+import { UlbModule } from "./modules/ulb/ulb.module";
 
 @Module({
   imports: [
@@ -43,6 +45,8 @@ import { AuditMiddleware } from "./middleware/audit.middleware";
     ScoringModule,
     ValidationModule,
     IndicatorModule,
+    NotificationModule,
+    UlbModule
   ],
   controllers: [AppController],
   providers: [AppService],
