@@ -1061,25 +1061,58 @@ export class SubmissionService {
       this.logger.log(`Found submission with status: ${submission.status}`);
 
       // Step 2: Validate user role and ownership
-      if (
-        userRole !== UserRole.NODAL_OFFICER ||
-        submission.submittedBy !== userId
-      ) {
+      if (userRole === UserRole.NODAL_OFFICER) {
+        // NODAL_OFFICER can only update their own submissions in DRAFT status
+        if (submission.submittedBy !== userId) {
+          this.logger.error(
+            `Invalid ownership. UserRole: ${userRole}, Owner: ${submission.submittedBy}, UserId: ${userId}`
+          );
+          throw new ForbiddenException(
+            "Only Nodal Officers can update their own submissions"
+          );
+        }
+        if (submission.status !== SubmissionStatus.DRAFT) {
+          this.logger.error(
+            `Invalid status for update: ${submission.status}. Expected: DRAFT`
+          );
+          throw new BadRequestException(
+            "Cannot update submission that has been submitted"
+          );
+        }
+      } else if (userRole === UserRole.STATE_APPROVER) {
+        // STATE_APPROVER can update submissions from their state
+        // They can update when status is not yet SUBMITTED_TO_STATE (and it will become SUBMITTED_TO_STATE after update)
+        // Or when status is already SUBMITTED_TO_STATE (for editing)
+        if (submission.stateUt !== userStateUt) {
+          this.logger.error(
+            `Access denied: submission not in your state. Submission state: ${submission.stateUt}, User state: ${userStateUt}`
+          );
+          throw new ForbiddenException(
+            "Access denied: submission not in your state"
+          );
+        }
+        // Block updates if submission has progressed beyond STATE_APPROVER's control
+        const immutableStatuses = [
+          SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+          SubmissionStatus.APPROVED,
+          SubmissionStatus.REJECTED_FINAL,
+        ];
+        if (immutableStatuses.includes(submission.status)) {
+          this.logger.error(
+            `Invalid status for STATE_APPROVER update: ${submission.status}. Submission has progressed beyond state level.`
+          );
+          throw new BadRequestException(
+            `Cannot update submission in status ${submission.status}. Submission has already been forwarded to MoSPI or finalized.`
+          );
+        }
+      } else {
+        // Other roles are not allowed to use this update method
         this.logger.error(
-          `Invalid user role or ownership. UserRole: ${userRole}, Owner: ${submission.submittedBy}`
+          `Invalid user role for update. UserRole: ${userRole}`
         );
         throw new ForbiddenException(
-          "Only Nodal Officers can update their own submissions"
-        );
-      }
-
-      // Step 3: Validate submission status
-      if (submission.status !== SubmissionStatus.DRAFT) {
-        this.logger.error(
-          `Invalid status for update: ${submission.status}. Expected: DRAFT`
-        );
-        throw new BadRequestException(
-          "Cannot update submission that has been submitted"
+          "Only Nodal Officers and State Approvers can update submissions"
         );
       }
 
@@ -1132,6 +1165,18 @@ export class SubmissionService {
         }
       }
       // sectionStatus removed: no update needed
+
+      // If STATE_APPROVER is updating and status is not SUBMITTED_TO_STATE, update it to SUBMITTED_TO_STATE
+      if (
+        userRole === UserRole.STATE_APPROVER &&
+        submission.status !== SubmissionStatus.SUBMITTED_TO_STATE
+      ) {
+        updateData.status = SubmissionStatus.SUBMITTED_TO_STATE;
+        updateData.currentOwnerRole = UserRole.STATE_APPROVER;
+        this.logger.log(
+          `Updating submission status to SUBMITTED_TO_STATE for STATE_APPROVER update`
+        );
+      }
 
       await this.submissionRepository.update(id, updateData);
 

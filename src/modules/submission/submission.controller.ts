@@ -110,7 +110,9 @@ export class SubmissionController {
     // Auto-generate submissionId if not provided
     if (!parsedSubmission.submissionId) {
       const year = new Date().getFullYear();
-      const randomNum = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      const randomNum = Math.floor(Math.random() * 1000000)
+        .toString()
+        .padStart(6, "0");
       parsedSubmission.submissionId = `SUB-${year}-${randomNum}`;
     }
 
@@ -323,8 +325,6 @@ export class SubmissionController {
     };
   }
 
-
-
   @Get("user/:userId")
   @UseGuards(RolesGuard)
   @Roles(
@@ -360,7 +360,7 @@ export class SubmissionController {
   ) {
     // Handle both multipart/form-data and JSON body
     let updateSubmissionDto: UpdateSubmissionDto;
-    
+
     if (submission) {
       // Multipart form-data case
       try {
@@ -435,7 +435,7 @@ export class SubmissionController {
 
   @Patch(":id")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.NODAL_OFFICER)
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER)
   @UseGuards(IndicatorAccessMiddleware)
   @UseInterceptors(AnyFilesInterceptor())
   async patch(
@@ -472,7 +472,9 @@ export class SubmissionController {
 
     // Support section_status (snake_case) as alias for sectionStatus (camelCase)
     if ((updateSubmissionDto as any).section_status) {
-      updateSubmissionDto.sectionStatus = (updateSubmissionDto as any).section_status;
+      updateSubmissionDto.sectionStatus = (
+        updateSubmissionDto as any
+      ).section_status;
       delete (updateSubmissionDto as any).section_status;
     }
 
@@ -894,7 +896,11 @@ export class SubmissionController {
 
   @Post("indicator-submission-status")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_APPROVER, UserRole.MOSPI_REVIEWER)
+  @Roles(
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.MOSPI_REVIEWER
+  )
   @HttpCode(HttpStatus.OK)
   async indicatorSubmissionAccepted(
     @Body()
@@ -917,13 +923,11 @@ export class SubmissionController {
 
     let fields: any = [];
     // Create fields array with status
-    if(req.user.role === UserRole.STATE_APPROVER ){
+    if (req.user.role === UserRole.STATE_APPROVER) {
       fields = [{ status: status ? "ACCEPTED" : "REVERTED" }];
-    }
-    else{
+    } else {
       fields = [{ mospi_status: mospi_status }];
     }
-
 
     // Reuse existing service method
     return this.submissionService.updateFormSectionFields(
@@ -938,28 +942,27 @@ export class SubmissionController {
   }
 
   // --- cumulative preview for a state ---
-@Get("state/:stateUt/cumulative-preview")
-@UseGuards(RolesGuard)
-@Roles(
-  UserRole.NODAL_OFFICER,
-  UserRole.STATE_APPROVER,
-  UserRole.MOSPI_REVIEWER,
-  UserRole.MOSPI_APPROVER,
-  UserRole.ADMIN
-)
-async getCumulativePreviewForState(
-  @Param("stateUt") stateUt: string,
-  @Request() req,
-  @Query("year") year?: string,
-  @Query("includeAssignments") includeAssignments?: string
-) {
-  return this.submissionService.buildCumulativePreview({
-    stateUt,
-    year,
-    // includeAssignments: includeAssignments === "true",
-    userRole: req.user.role,
-    userStateUt: req.user.stateUt,
-  });
-}
-
+  @Get("state/:stateUt/cumulative-preview")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.NODAL_OFFICER,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
+  )
+  async getCumulativePreviewForState(
+    @Param("stateUt") stateUt: string,
+    @Request() req,
+    @Query("year") year?: string,
+    @Query("includeAssignments") includeAssignments?: string
+  ) {
+    return this.submissionService.buildCumulativePreview({
+      stateUt,
+      year,
+      // includeAssignments: includeAssignments === "true",
+      userRole: req.user.role,
+      userStateUt: req.user.stateUt,
+    });
+  }
 }
