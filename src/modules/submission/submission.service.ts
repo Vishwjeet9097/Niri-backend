@@ -594,7 +594,7 @@ export class SubmissionService {
 
       // Step 3: Determine status and owner role based on input
       const status = createSubmissionDto.status || SubmissionStatus.DRAFT;
-      const currentOwnerRole = this.getOwnerRoleFromStatus(status);
+      const currentOwnerRole = this.getOwnerRoleFromStatus(status, userRole);
 
       this.logger.log(
         `Initial Status: ${status}, Owner Role: ${currentOwnerRole}`
@@ -1081,8 +1081,6 @@ export class SubmissionService {
         }
       } else if (userRole === UserRole.STATE_APPROVER) {
         // STATE_APPROVER can update submissions from their state
-        // They can update when status is not yet SUBMITTED_TO_STATE (and it will become SUBMITTED_TO_STATE after update)
-        // Or when status is already SUBMITTED_TO_STATE (for editing)
         if (submission.stateUt !== userStateUt) {
           this.logger.error(
             `Access denied: submission not in your state. Submission state: ${submission.stateUt}, User state: ${userStateUt}`
@@ -1166,16 +1164,16 @@ export class SubmissionService {
       }
       // sectionStatus removed: no update needed
 
-      // If STATE_APPROVER is updating and status is not SUBMITTED_TO_STATE, update it to SUBMITTED_TO_STATE
-      if (
-        userRole === UserRole.STATE_APPROVER &&
-        submission.status !== SubmissionStatus.SUBMITTED_TO_STATE
-      ) {
-        updateData.status = SubmissionStatus.SUBMITTED_TO_STATE;
-        updateData.currentOwnerRole = UserRole.STATE_APPROVER;
-        this.logger.log(
-          `Updating submission status to SUBMITTED_TO_STATE for STATE_APPROVER update`
-        );
+      // If STATE_APPROVER is updating, ensure currentOwnerRole is set correctly
+      // But don't automatically change status - allow STATE_APPROVER to work on DRAFT submissions
+      if (userRole === UserRole.STATE_APPROVER) {
+        // Only update currentOwnerRole if it's not already STATE_APPROVER
+        if (submission.currentOwnerRole !== UserRole.STATE_APPROVER) {
+          updateData.currentOwnerRole = UserRole.STATE_APPROVER;
+          this.logger.log(
+            `Updating currentOwnerRole to STATE_APPROVER for STATE_APPROVER update`
+          );
+        }
       }
 
       await this.submissionRepository.update(id, updateData);
@@ -2214,9 +2212,16 @@ export class SubmissionService {
   }
 
   // Helper method to get owner role from status
-  private getOwnerRoleFromStatus(status: SubmissionStatus): UserRole {
+  private getOwnerRoleFromStatus(
+    status: SubmissionStatus,
+    userRole?: UserRole
+  ): UserRole {
     switch (status) {
       case SubmissionStatus.DRAFT:
+        // If STATE_APPROVER is creating a DRAFT, keep them as the owner
+        if (userRole === UserRole.STATE_APPROVER) {
+          return UserRole.STATE_APPROVER;
+        }
         return UserRole.NODAL_OFFICER;
       case SubmissionStatus.SUBMITTED_TO_STATE:
         return UserRole.STATE_APPROVER;

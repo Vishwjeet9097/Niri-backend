@@ -13,7 +13,6 @@ import {
 } from "../../../entities/submission.entity";
 import { UserRole } from "../../../entities/user.entity";
 
-
 export class CreateSubmissionDto {
   @IsOptional()
   @IsString()
@@ -26,7 +25,7 @@ export class CreateSubmissionDto {
   @IsEnum(SubmissionStatus)
   status?: SubmissionStatus;
 
-   @IsOptional()
+  @IsOptional()
   @IsArray()
   attachedFiles?: Array<{
     fileName?: string;
@@ -35,7 +34,7 @@ export class CreateSubmissionDto {
     fileUrl?: string;
     fileSize?: number;
     mimeType?: string;
-    uploadedAt?: string|Date;
+    uploadedAt?: string | Date;
   }>;
 }
 
