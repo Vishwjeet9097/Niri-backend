@@ -3,6 +3,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Submission, SubmissionStatus } from "../../entities/submission.entity";
 import { UserRole } from "../../entities/user.entity";
+import { Indicator } from "../../entities/indicator.entity";
 
 export interface DashboardSummary {
   pendingSubmissions: number;
@@ -15,6 +16,7 @@ export interface DashboardSummary {
   submissionsByMonth: Array<{ month: string; count: number }>;
 }
 export interface DashboardCounts {
+  totalIndicators: number;
   nodal: {
     totalAssigned: number;
     totalIndicatorsReceived: number;
@@ -34,7 +36,9 @@ export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
   constructor(
     @InjectRepository(Submission)
-    private submissionRepository: Repository<Submission>
+    private submissionRepository: Repository<Submission>,
+    @InjectRepository(Indicator)
+    private indicatorRepository: Repository<Indicator>
   ) {}
 
   async getDashboardSummary(
@@ -287,28 +291,30 @@ export class DashboardService {
     const totalAssignedCount = parseInt(totalAssigned[0]?.count || "0");
 
     // ✅ 2. Total indicators received (submitted by NODAL_OFFICERS)
-    // Count the number of indicators/sections that have been submitted by NODAL_OFFICERS
-    // This counts status fields in form_data from submissions where submitted_by is a NODAL_OFFICER
+    // Count distinct sections across all submissions from NODAL_OFFICERS
     let totalIndicatorsReceived = 0;
     try {
+      const sqlQuery = `
+        SELECT COUNT(DISTINCT section_key) AS count
+        FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
+        CROSS JOIN LATERAL (
+          SELECT jsonb_object_keys(value) AS section_key
+          FROM jsonb_each(s.form_data)
+          WHERE jsonb_typeof(value) = 'object'
+        ) AS sections
+        WHERE u.role IN ($1)
+          AND u.state_ut = $2
+          AND s."stateUt" = $2
+          AND s.status != 'DRAFT'
+          AND section_key ~ '^section[0-9]+_[0-9]+$';
+        `;
+      const params = [UserRole.NODAL_OFFICER, userStateUt];      
+      
       const totalIndicatorsReceivedQuery =
-        await this.submissionRepository.query(
-          `
-        SELECT COALESCE(SUM(cnt), 0) AS count FROM (
-          SELECT (
-            SELECT COUNT(*) FROM jsonb_array_elements_text(
-              jsonb_path_query_array(s.form_data, '$.**.status')
-            ) AS st(val)
-          ) AS cnt
-          FROM submissions s
-          JOIN users u ON s.submitted_by = u.id
-          WHERE u.role = $1
-            AND u.state_ut = $2
-            AND s."stateUt" = $2
-        ) t;
-        `,
-          [UserRole.NODAL_OFFICER, userStateUt]
-        );
+        await this.submissionRepository.query(sqlQuery, params);   
+       
+      
       totalIndicatorsReceived = parseInt(
         totalIndicatorsReceivedQuery[0]?.count || "0"
       );
@@ -439,8 +445,12 @@ export class DashboardService {
       byStatus[SubmissionStatus.RETURNED_FROM_MOSPI] || 0;
     const approvedByMoSPI = byStatus[SubmissionStatus.APPROVED] || 0;
 
-    // ✅ 8. Return final structured response
+    // ✅ 8. Get Total Active Indicators
+    const totalIndicators = await this.getTotalActiveIndicators();
+
+    // ✅ 9. Return final structured response
     return {
+      totalIndicators,
       nodal: {
         totalAssigned: totalAssignedCount,
         totalIndicatorsReceived,
@@ -484,18 +494,20 @@ export class DashboardService {
     let totalSubmitted = 0;
     try {
       const totalSubmittedQuery = await this.submissionRepository.query(
-        `
-      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
-        SELECT (
-          SELECT COUNT(*) FROM jsonb_array_elements_text(
-            jsonb_path_query_array(s.form_data, '$.**.status')
-          ) AS st(val)
-        ) AS cnt
-        FROM submissions s
-        WHERE s.submitted_by = $1
-      ) t;
+        `   
+
+      SELECT 
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM submissions s 
+      WHERE s.submitted_by = $1 AND s.status != 'DRAFT'
+    )
+    THEN $2
+    ELSE 0
+  END AS count;
+       
       `,
-        [userId]
+        [userId, totalAssigned]
       );
       totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
     } catch (err) {
@@ -615,4 +627,112 @@ export class DashboardService {
       pendingSubmission,
     };
   }
+
+  // ...existing code...
+  async getMospiDashboardCounts(userRole: UserRole, userStateUt: string) {
+    this.logger.log(
+      `Getting MOSPI dashboard counts for role=${userRole}, stateUt=${userStateUt}`
+    );
+
+    try {
+      const queryBuilder = this.submissionRepository
+        .createQueryBuilder("submission")
+        .select("submission.status", "status")
+        .addSelect("COUNT(submission.id)", "count")
+        .groupBy("submission.status");
+
+      let assignedStatesCount = 0;
+      // MOSPI_REVIEWER: Filter by assigned states
+      if (userRole === UserRole.MOSPI_REVIEWER) {
+        // Get assigned states for this reviewer
+        const assignedStates = userStateUt ? userStateUt.split(",") : [];
+        assignedStatesCount = assignedStates.length;
+
+        if (assignedStates.length > 0) {
+          queryBuilder.where("submission.stateUt IN (:...states)", {
+            states: assignedStates,
+          });
+        }
+        
+        // Also filter relevant statuses for reviewer
+        queryBuilder.andWhere("submission.status IN (:...statuses)", {
+          statuses: [
+            SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+            // SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+            SubmissionStatus.APPROVED,
+            // SubmissionStatus.REJECTED_FINAL,
+          ],
+        });
+      }
+
+      // MOSPI_APPROVER: Can see all submissions across all states
+      if (userRole === UserRole.MOSPI_APPROVER) {
+        // Filter relevant statuses for approver
+        queryBuilder.where("submission.status IN (:...statuses)", {
+          statuses: [
+            SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+            SubmissionStatus.APPROVED,
+            // SubmissionStatus.REJECTED_FINAL,
+            SubmissionStatus.RETURNED_FROM_MOSPI,
+          ],
+        });
+      }
+
+      const results = await queryBuilder.getRawMany();
+
+      // Transform results into an object with status as keys
+      const groupedByStatus = results.reduce((acc, row) => {
+        acc[row.status] = parseInt(row.count, 10);
+        return acc;
+      }, {});
+
+      this.logger.log(
+        `MOSPI dashboard counts retrieved: ${JSON.stringify(groupedByStatus)}`
+      );
+
+     const response: any = {
+        role: userRole,
+        groupedByStatus,
+        totalSubmissions: results.reduce(
+          (sum, row) => sum + parseInt(row.count, 10),
+          0
+        ),
+      };
+
+      // Add assigned states info for MOSPI_REVIEWER
+      if (userRole === UserRole.MOSPI_REVIEWER) {
+        response.assignedStatesCount = assignedStatesCount;
+      }
+
+      return response;
+    } catch (error) {
+      this.logger.error(
+        `Error getting MOSPI dashboard counts: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get total count of active indicators
+   * @returns Promise<number> - Count of indicators where is_active is true
+   */
+  async getTotalActiveIndicators(): Promise<number> {
+    try {
+      const count = await this.indicatorRepository.count({
+        where: { isActive: true },
+      });
+      this.logger.log(`Total active indicators: ${count}`);
+      return count;
+    } catch (error) {
+      this.logger.error(
+        `Error getting total active indicators: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+// ...existing code...
+
 }

@@ -10,6 +10,8 @@ import {
   Request,
   Query,
   Put,
+  HttpCode,
+  HttpStatus,
 } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { IndicatorService } from "../indicator/indicator.service";
@@ -25,6 +27,26 @@ export class UserController {
     private readonly userService: UserService,
     private readonly indicatorService: IndicatorService
   ) {}
+  
+    // Get all users by each role with isActive=true
+    @Get("all/active-by-role")
+    @UseGuards(RolesGuard)
+    @Roles(
+      UserRole.ADMIN,
+      UserRole.STATE_APPROVER,
+      UserRole.MOSPI_REVIEWER,
+      UserRole.MOSPI_APPROVER
+    )
+    async getAllActiveUsersByRole(@Request() req) {
+      // Only privileged roles can access
+      const usersByRole = await this.userService.getAllActiveUsersByRole();
+      return {
+        status: true,
+        data: usersByRole,
+        message: "Active users grouped by role retrieved successfully",
+      };
+    }
+  
 
   @Get()
   async findAll(@Request() req) {
@@ -297,13 +319,56 @@ export class UserController {
     };
   }
 
-  // Move :id route to the very end to avoid conflicts with other routes
-  @Get(":id")
-  async findOne(@Param("id") id: string, @Request() req) {
-    return this.userService.findOne(id, req.user.role, req.user.stateUt);
+  // Specific routes that must come before the :id route to avoid route conflicts
+  @Get("check-email/:email")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async checkEmailAvailability(
+    @Param("email") email: string,
+    @Query("excludeUserId") excludeUserId?: string
+  ) {
+    const isAvailable = await this.userService.checkEmailAvailability(
+      email,
+      excludeUserId
+    );
+    return {
+      status: true,
+      data: { available: isAvailable },
+      message: isAvailable
+        ? "Email is available"
+        : "Email already exists",
+    };
   }
 
-  //Restrict for state assigned users
+  @Get("check-contact/:contactNumber")
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER
+  )
+  async checkContactAvailability(
+    @Param("contactNumber") contactNumber: string,
+    @Query("excludeUserId") excludeUserId?: string
+  ) {
+    const isAvailable = await this.userService.checkContactAvailability(
+      contactNumber,
+      excludeUserId
+    );
+    return {
+      status: true,
+      data: { available: isAvailable },
+      message: isAvailable
+        ? "Contact number is available"
+        : "Contact number already exists",
+    };
+  }
 
   @Get("states/assigned-state-by-state-approver/:roleName")
   @UseGuards(RolesGuard)
@@ -312,5 +377,27 @@ export class UserController {
     @Request() req
   ) {
     return this.userService.assignedStateByStateApprover(roleName);
+  }
+
+  /**
+   * TESTING ONLY: Delete all users by role endpoint
+   * Deletes all users with the specified role along with their related data
+   * WARNING: This is a destructive operation for testing purposes only!
+   */
+  @Delete("by-role/:role")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async deleteUsersByRole(
+    @Param("role") role: UserRole,
+    @Request() req
+  ) {
+    return this.userService.deleteUsersByRole(role);
+  }
+
+  // Move :id route to the very end to avoid conflicts with other routes
+  @Get(":id")
+  async findOne(@Param("id") id: string, @Request() req) {
+    return this.userService.findOne(id, req.user.role, req.user.stateUt);
   }
 }

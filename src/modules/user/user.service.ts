@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, DataSource, In } from "typeorm";
@@ -11,11 +12,46 @@ import { User, UserRole } from "../../entities/user.entity";
 import { Indicator } from "../../entities/indicator.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { Submission } from "../../entities/submission.entity";
+import { FinalScore } from "../../entities/final-score.entity";
+import { AuditLog } from "../../entities/audit-log.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import * as bcrypt from "bcryptjs";
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
+  // Get all users by each role with isActive=true
+  async getAllActiveUsersByRole(): Promise<Record<UserRole, any[]>> {
+      const roles: UserRole[] = [
+        UserRole.NODAL_OFFICER,
+        UserRole.STATE_APPROVER,
+        UserRole.MOSPI_REVIEWER,
+        UserRole.MOSPI_APPROVER,
+        UserRole.ADMIN,
+      ];
+
+      const result: Record<UserRole, any[]> = {} as any;
+      for (const role of roles) {
+        const users = await this.userRepository.find({
+          where: { role, isActive: true },
+          select: [
+            "id",
+            "email",
+            "firstName",
+            "lastName",
+            "contactNumber",
+            "role",
+            "stateUt",
+            "isActive",
+            "createdAt",
+          ],
+          order: { createdAt: "DESC" },
+        });
+        result[role] = users;
+      }
+      return result;
+    }
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
@@ -47,7 +83,9 @@ export class UserService {
         "user.createdAt",
       ])
       .where("user.isActive = :isActive", { isActive: true })
-      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN })
+      .orderBy("user.firstName", "ASC")
+      .addOrderBy("user.lastName", "ASC");
 
     // Hide logged-in user from the list
     if (userId) {
@@ -154,6 +192,54 @@ export class UserService {
     // throw new ForbiddenException("Cannot change state/UT");
     // }
 
+    // Check if contact number already exists when updating (excluding current user)
+    if (updateUserDto.contactNumber) {
+      const normalizedContactNumber = updateUserDto.contactNumber.replace(/\s/g, ""); // Remove spaces
+      const existingUserWithContact = await this.userRepository.findOne({
+        where: { contactNumber: normalizedContactNumber },
+      });
+
+      if (existingUserWithContact && existingUserWithContact.id !== id) {
+        throw new ConflictException(
+          "A user with this contact number already exists. Each user must have a unique contact number."
+        );
+      }
+    }
+
+    // Check if any state is already assigned to another MOSPI_REVIEWER when updating
+    // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
+    if (user.role === UserRole.MOSPI_REVIEWER && updateUserDto.stateUt) {
+      // Parse comma-separated state names and normalize (trim and lowercase)
+      const requestedStates = updateUserDto.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      
+      if (requestedStates.length > 0) {
+        // Get all active MOSPI_REVIEWERs (excluding the current user being updated)
+        const existingReviewers = await this.userRepository.find({
+          where: {
+            role: UserRole.MOSPI_REVIEWER,
+            isActive: true,
+          },
+        });
+
+        // Check if any requested state is already assigned to another reviewer (case-insensitive)
+        for (const requestedState of requestedStates) {
+          for (const reviewer of existingReviewers) {
+            // Skip the current user being updated
+            if (reviewer.id === id) continue;
+            
+            if (reviewer.stateUt) {
+              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+              if (reviewerStates.includes(requestedState)) {
+                throw new ConflictException(
+                  `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Handle indicator codes separately
     const { indicatorCodes, ...userUpdateData } = updateUserDto;
 
@@ -162,6 +248,18 @@ export class UserService {
     // Remove stateId if it exists, as User entity has stateUt
     if ("stateId" in updateData) {
       //  delete updateData.stateId;
+    }
+
+    // Normalize contact number if provided (remove spaces)
+    if (updateData.contactNumber) {
+      updateData.contactNumber = updateData.contactNumber.replace(/\s/g, "");
+    }
+
+    // Normalize stateUt if provided (trim whitespace to prevent inconsistencies)
+    if (updateData.stateUt) {
+      updateData.stateUt = user.role === UserRole.MOSPI_REVIEWER
+        ? updateData.stateUt.split(',').map(s => s.trim()).filter(Boolean).join(', ')
+        : updateData.stateUt.trim();
     }
 
     // Update user basic information
@@ -280,13 +378,27 @@ export class UserService {
       indicatorCodes,
     } = createUserDto;
 
-    // Check if user already exists
+    // Check if user already exists by email
     const existingUser = await this.userRepository.findOne({
       where: { email },
     });
 
     if (existingUser) {
       throw new ConflictException("User with this email already exists");
+    }
+
+    // Check if contact number already exists
+    if (contactNumber) {
+      const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+      const existingUserWithContact = await this.userRepository.findOne({
+        where: { contactNumber: normalizedContactNumber },
+      });
+
+      if (existingUserWithContact) {
+        throw new ConflictException(
+          "A user with this contact number already exists. Each user must have a unique contact number."
+        );
+      }
     }
 
     // Only ADMIN and MoSPI roles can create users
@@ -308,15 +420,90 @@ export class UserService {
       throw new ForbiddenException("Cannot create user for different state/UT");
     }
 
-    // Validate indicator codes for NODAL_OFFICER
-    if (role === UserRole.NODAL_OFFICER) {
-      if (!indicatorCodes || indicatorCodes.length === 0) {
+    // Early check if STATE_APPROVER already exists for this state
+    // This provides fast feedback, but the definitive check is inside the transaction
+    // Each state can have only one active STATE_APPROVER
+    if (role === UserRole.STATE_APPROVER) {
+      // Normalize the incoming stateUt for comparison (trim and lowercase)
+      const normalizedStateUt = stateUt.trim().toLowerCase();
+      
+      // Get all STATE_APPROVERs to check against (case-insensitive comparison)
+      const existingStateApprovers = await this.userRepository.find({
+        where: {
+          role: UserRole.STATE_APPROVER,
+          isActive: true,
+        },
+      });
+
+      console.log(`[STATE_APPROVER Validation] Checking for state: "${stateUt}" (normalized: "${normalizedStateUt}")`);
+      console.log(`[STATE_APPROVER Validation] Found ${existingStateApprovers.length} existing STATE_APPROVERs`);
+      existingStateApprovers.forEach((approver, index) => {
+        const existingNormalized = approver.stateUt ? approver.stateUt.trim().toLowerCase() : '';
+        console.log(`[STATE_APPROVER Validation] Existing ${index + 1}: stateUt="${approver.stateUt}" (normalized: "${existingNormalized}"), isActive=${approver.isActive}, email=${approver.email}`);
+      });
+
+      // Check if any existing STATE_APPROVER has the same normalized state
+      const duplicate = existingStateApprovers.find(approver => {
+        if (!approver.stateUt) return false;
+        const existingNormalized = approver.stateUt.trim().toLowerCase();
+        return existingNormalized === normalizedStateUt;
+      });
+
+      if (duplicate) {
+        console.log(`[STATE_APPROVER Validation] ❌ DUPLICATE FOUND! Existing user: ${duplicate.email}, stateUt: "${duplicate.stateUt}"`);
         throw new ConflictException(
-          "Indicator codes are required for NODAL_OFFICER role"
+          `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
         );
       }
+      console.log(`[STATE_APPROVER Validation] ✅ No duplicate found, proceeding with creation`);
+    }
 
-      // Check if all indicator codes exist
+    // Early check if any state is already assigned to another MOSPI_REVIEWER
+    // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
+    // This provides fast feedback, but the definitive check is inside the transaction
+    if (role === UserRole.MOSPI_REVIEWER && stateUt) {
+      // Parse comma-separated state names and normalize (trim and lowercase)
+      const requestedStates = stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      
+      console.log(`[MOSPI_REVIEWER Validation] Checking for states: "${stateUt}" (normalized: [${requestedStates.join(', ')}])`);
+      
+      if (requestedStates.length > 0) {
+        // Get all active MOSPI_REVIEWERs
+        const existingReviewers = await this.userRepository.find({
+          where: {
+            role: UserRole.MOSPI_REVIEWER,
+            isActive: true,
+          },
+        });
+
+        console.log(`[MOSPI_REVIEWER Validation] Found ${existingReviewers.length} existing MOSPI_REVIEWERs`);
+        existingReviewers.forEach((reviewer, index) => {
+          const reviewerStates = reviewer.stateUt ? reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+          console.log(`[MOSPI_REVIEWER Validation] Existing ${index + 1}: stateUt="${reviewer.stateUt}" (normalized: [${reviewerStates.join(', ')}]), isActive=${reviewer.isActive}, email=${reviewer.email}`);
+        });
+
+        // Check if any requested state is already assigned to another reviewer (case-insensitive)
+        for (const requestedState of requestedStates) {
+          for (const reviewer of existingReviewers) {
+            if (reviewer.stateUt) {
+              const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+              if (reviewerStates.includes(requestedState)) {
+                console.log(`[MOSPI_REVIEWER Validation] ❌ DUPLICATE FOUND! State "${requestedState}" already assigned to reviewer: ${reviewer.email}`);
+                throw new ConflictException(
+                  `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
+                );
+              }
+            }
+          }
+        }
+        console.log(`[MOSPI_REVIEWER Validation] ✅ No duplicate states found, proceeding with creation`);
+      }
+    }
+
+    // Validate indicator codes for NODAL_OFFICER (if provided)
+    // Indicator assignment is optional - if no indicators are assigned, user will see all indicators
+    if (role === UserRole.NODAL_OFFICER && indicatorCodes && indicatorCodes.length > 0) {
+      // Check if all indicator codes exist (only validate if indicators are provided)
       const indicators = await this.indicatorRepository.find({
         where: { code: In(indicatorCodes), isActive: true },
       });
@@ -334,8 +521,112 @@ export class UserService {
 
     // Use transaction for user creation and indicator scope assignment
     return this.dataSource.transaction(async (manager) => {
+      // Check if contact number already exists INSIDE transaction
+      // This prevents race conditions when multiple requests come simultaneously
+      if (contactNumber) {
+        const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+        const existingUserWithContact = await manager.findOne(User, {
+          where: { contactNumber: normalizedContactNumber },
+        });
+
+        if (existingUserWithContact) {
+          throw new ConflictException(
+            "A user with this contact number already exists. Each user must have a unique contact number."
+          );
+        }
+      }
+
+      // Check if STATE_APPROVER already exists for this state INSIDE transaction
+      // This prevents race conditions when multiple requests come simultaneously
+      // Each state can have only one active STATE_APPROVER
+      if (role === UserRole.STATE_APPROVER) {
+        // Normalize the incoming stateUt for comparison (trim and lowercase)
+        const normalizedStateUt = stateUt.trim().toLowerCase();
+        
+        // Get all STATE_APPROVERs to check against (case-insensitive comparison)
+        const existingStateApprovers = await manager.find(User, {
+          where: {
+            role: UserRole.STATE_APPROVER,
+            isActive: true,
+          },
+        });
+
+        console.log(`[STATE_APPROVER Transaction Check] Checking for state: "${stateUt}" (normalized: "${normalizedStateUt}")`);
+        console.log(`[STATE_APPROVER Transaction Check] Found ${existingStateApprovers.length} existing STATE_APPROVERs in transaction`);
+        existingStateApprovers.forEach((approver, index) => {
+          const existingNormalized = approver.stateUt ? approver.stateUt.trim().toLowerCase() : '';
+          console.log(`[STATE_APPROVER Transaction Check] Existing ${index + 1}: stateUt="${approver.stateUt}" (normalized: "${existingNormalized}"), isActive=${approver.isActive}, email=${approver.email}`);
+        });
+
+        // Check if any existing STATE_APPROVER has the same normalized state
+        const duplicate = existingStateApprovers.find(approver => {
+          if (!approver.stateUt) return false;
+          const existingNormalized = approver.stateUt.trim().toLowerCase();
+          return existingNormalized === normalizedStateUt;
+        });
+
+        if (duplicate) {
+          console.log(`[STATE_APPROVER Transaction Check] ❌ DUPLICATE FOUND IN TRANSACTION! Existing user: ${duplicate.email}, stateUt: "${duplicate.stateUt}"`);
+          throw new ConflictException(
+            `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
+          );
+        }
+        console.log(`[STATE_APPROVER Transaction Check] ✅ No duplicate found in transaction, proceeding with creation`);
+      }
+
+      // Check if any state is already assigned to another MOSPI_REVIEWER INSIDE transaction
+      // This prevents race conditions when multiple requests come simultaneously
+      // Each state can have only one active MOSPI_REVIEWER, but a MOSPI_REVIEWER can have multiple states
+      if (role === UserRole.MOSPI_REVIEWER && stateUt) {
+        // Parse comma-separated state names and normalize (trim and lowercase)
+        const requestedStates = stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        
+        console.log(`[MOSPI_REVIEWER Transaction Check] Checking for states: "${stateUt}" (normalized: [${requestedStates.join(', ')}])`);
+        
+        if (requestedStates.length > 0) {
+          // Get all active MOSPI_REVIEWERs
+          const existingReviewers = await manager.find(User, {
+            where: {
+              role: UserRole.MOSPI_REVIEWER,
+              isActive: true,
+            },
+          });
+
+          console.log(`[MOSPI_REVIEWER Transaction Check] Found ${existingReviewers.length} existing MOSPI_REVIEWERs in transaction`);
+          existingReviewers.forEach((reviewer, index) => {
+            const reviewerStates = reviewer.stateUt ? reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+            console.log(`[MOSPI_REVIEWER Transaction Check] Existing ${index + 1}: stateUt="${reviewer.stateUt}" (normalized: [${reviewerStates.join(', ')}]), isActive=${reviewer.isActive}, email=${reviewer.email}`);
+          });
+
+          // Check if any requested state is already assigned to another reviewer (case-insensitive)
+          for (const requestedState of requestedStates) {
+            for (const reviewer of existingReviewers) {
+              if (reviewer.stateUt) {
+                const reviewerStates = reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+                if (reviewerStates.includes(requestedState)) {
+                  console.log(`[MOSPI_REVIEWER Transaction Check] ❌ DUPLICATE FOUND IN TRANSACTION! State "${requestedState}" already assigned to reviewer: ${reviewer.email}`);
+                  throw new ConflictException(
+                    `State "${requestedState}" is already assigned to another MOSPI Reviewer. Each state can have only one active MOSPI Reviewer.`
+                  );
+                }
+              }
+            }
+          }
+          console.log(`[MOSPI_REVIEWER Transaction Check] ✅ No duplicate states found in transaction, proceeding with creation`);
+        }
+      }
+
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Normalize contact number (remove spaces)
+      const normalizedContactNumber = contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
+
+      // Normalize stateUt (trim whitespace to prevent inconsistencies)
+      // For MOSPI_REVIEWER, normalize each state in comma-separated list
+      const normalizedStateUt = role === UserRole.MOSPI_REVIEWER && stateUt
+        ? stateUt.split(',').map(s => s.trim()).filter(Boolean).join(', ')
+        : stateUt ? stateUt.trim() : stateUt;
 
       // Create user
       const user = manager.create(User, {
@@ -343,9 +634,9 @@ export class UserService {
         password: hashedPassword,
         firstName,
         lastName,
-        contactNumber,
+        contactNumber: normalizedContactNumber,
         role,
-        stateUt,
+        stateUt: normalizedStateUt,
       });
 
       const savedUser = await manager.save(user);
@@ -588,55 +879,202 @@ export class UserService {
       typeof code === "number" ? code.toString() : code
     );
 
-    // If no indicator codes provided, just delete existing and return
-    if (!stringCodes || stringCodes.length === 0) {
-      await this.userIndicatorScopeRepository.delete({ userId });
-      return;
-    }
+    this.logger.log(
+      `Updating indicator codes for user ${userId}: [${stringCodes.join(", ")}]`
+    );
 
-    // Get indicators by codes
-    const indicators = await this.indicatorRepository.find({
-      where: { code: In(stringCodes), isActive: true },
-    });
+    // Use transaction to ensure atomicity - all or nothing
+    return await this.dataSource.transaction(async (manager) => {
+      // Get the user's stateUt to filter conflicts by state
+      // Indicators should only be unique within the same state, not globally
+      const targetUser = await manager.findOne(User, {
+        where: { id: userId },
+        select: ["id", "stateUt", "role"],
+      });
+      
+      if (!targetUser) {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+      
+      const userStateUt = targetUser.stateUt;
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - State: ${userStateUt || "N/A"}, Role: ${targetUser.role}`
+      );
 
-    // Get indicatorIds to assign
-    const indicatorIds = indicators.map((i) => i.id);
+      // If no indicator codes provided, just delete existing and return
+      if (!stringCodes || stringCodes.length === 0) {
+        const deletedCount = await manager.delete(UserIndicatorScope, { userId });
+        this.logger.log(
+          `Removed all indicators for user ${userId} (${deletedCount.affected || 0} scopes deleted)`
+        );
+        return;
+      }
 
-    // --- NEW: Find existing scopes for these indicators assigned to OTHER users
-    if (indicatorIds.length > 0) {
-      const existingScopes = await this.userIndicatorScopeRepository.find({
-        where: { indicatorId: In(indicatorIds) },
+      // Get indicators by codes
+      const indicators = await manager.find(Indicator, {
+        where: { code: In(stringCodes), isActive: true },
       });
 
-      const conflicts = existingScopes.filter((s) => s.userId !== userId);
-      if (conflicts.length > 0) {
-        // Map to codes
-        const conflictIndicatorIds = conflicts.map((c) => c.indicatorId);
-        const conflictIndicators = indicators.filter((i) =>
-          conflictIndicatorIds.includes(i.id)
+      // Validate that all requested indicators exist
+      if (indicators.length !== stringCodes.length) {
+        const foundCodes = indicators.map((i) => i.code);
+        const missingCodes = stringCodes.filter((code) => !foundCodes.includes(code));
+        this.logger.warn(
+          `Some indicators not found or inactive for user ${userId}: [${missingCodes.join(", ")}]`
         );
-        const conflictCodes = conflictIndicators.map((i) => i.code);
-        throw new ConflictException(
-          `Indicator(s) already assigned: ${conflictCodes.join(", ")}`
+        throw new BadRequestException(
+          `Some indicators not found or inactive: ${missingCodes.join(", ")}`
         );
       }
-    }
 
-    // No conflicts: delete existing scopes for this user and save new ones (atomic outside may be okay)
-    await this.userIndicatorScopeRepository.delete({ userId });
+      // Get indicatorIds to assign
+      const indicatorIds = indicators.map((i) => i.id);
 
-    // Create new indicator scopes
-    const indicatorScopes = indicators.map((indicator) => {
-      const scope = new UserIndicatorScope();
-      scope.userId = userId;
-      scope.indicatorId = indicator.id;
-      return scope;
+      // Get current user's existing indicator assignments using explicit query
+      // This ensures we get accurate data even in transaction scenarios
+      const currentUserScopes = await manager
+        .createQueryBuilder(UserIndicatorScope, "scope")
+        .leftJoinAndSelect("scope.indicator", "indicator")
+        .where("scope.userId = :userId", { userId })
+        .getMany();
+      
+      const currentUserIndicatorIds = currentUserScopes.map((s) => s.indicatorId);
+      const currentUserIndicatorCodes = currentUserScopes
+        .map((s) => s.indicator?.code)
+        .filter(Boolean);
+
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Found ${currentUserScopes.length} existing scopes`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Current indicator IDs: [${currentUserIndicatorIds.join(", ")}]`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Current indicator codes: [${currentUserIndicatorCodes.join(", ")}]`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - Requested indicator codes: [${stringCodes.join(", ")}]`
+      );
+
+      // Find which indicators are NEW (not already assigned to this user)
+      const newIndicatorIds = indicatorIds.filter(
+        (id) => !currentUserIndicatorIds.includes(id)
+      );
+      
+      const newIndicatorCodes = indicators
+        .filter((i) => newIndicatorIds.includes(i.id))
+        .map((i) => i.code);
+      
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - NEW indicator IDs: [${newIndicatorIds.join(", ")}]`
+      );
+      this.logger.log(
+        `[updateUserIndicatorCodes] User ${userId} - NEW indicator codes: [${newIndicatorCodes.join(", ")}]`
+      );
+
+      // Find which indicators are being REMOVED
+      // Need to get all indicators (not just the new ones) to find removed ones
+      const allIndicatorsForRemoved = await manager.find(Indicator, {
+        where: { id: In(currentUserIndicatorIds), isActive: true },
+      });
+      const removedIndicatorIds = currentUserIndicatorIds.filter(
+        (id) => !indicatorIds.includes(id)
+      );
+      const removedIndicators = allIndicatorsForRemoved.filter((i) => 
+        removedIndicatorIds.includes(i.id)
+      );
+      const removedCodes = removedIndicators.map((i) => i.code);
+
+      if (removedCodes.length > 0) {
+        this.logger.log(
+          `Removing indicators from user ${userId}: [${removedCodes.join(", ")}]`
+        );
+      }
+
+      // Rule: Each indicator can only be assigned to ONE user WITHIN THE SAME STATE
+      // Check for conflicts with OTHER users in the SAME STATE for NEW indicators only
+      // This allows users to keep their existing indicators (no conflict check needed)
+      // But prevents assigning NEW indicators that are already assigned to other users in the same state
+      if (newIndicatorIds.length > 0) {
+        this.logger.log(
+          `[updateUserIndicatorCodes] User ${userId} - Checking conflicts for NEW indicators: [${newIndicatorCodes.join(", ")}] in state: ${userStateUt || "N/A"}`
+        );
+        
+        // Use explicit query to exclude current user AND filter by same state
+        // Only check for conflicts with users in the SAME state
+        const conflictingScopes = await manager
+          .createQueryBuilder(UserIndicatorScope, "scope")
+          .innerJoin("scope.user", "user")
+          .where("scope.indicatorId IN (:...indicatorIds)", {
+            indicatorIds: newIndicatorIds,
+          })
+          .andWhere("scope.userId != :userId", { userId })
+          .andWhere("user.stateUt = :userStateUt", { userStateUt: userStateUt || "" })
+          .andWhere("user.isActive = :isActive", { isActive: true })
+          .getMany();
+
+        this.logger.log(
+          `[updateUserIndicatorCodes] User ${userId} - Found ${conflictingScopes.length} conflicting scopes for NEW indicators in state ${userStateUt || "N/A"}`
+        );
+
+        if (conflictingScopes.length > 0) {
+          // Map to codes for error message
+          const conflictIndicatorIds = conflictingScopes.map((c) => c.indicatorId);
+          const conflictIndicators = indicators.filter((i) =>
+            conflictIndicatorIds.includes(i.id)
+          );
+          const conflictCodes = conflictIndicators.map((i) => i.code);
+          
+          // Get which users have these indicators for better debugging
+          const conflictUserIds = Array.from(new Set(conflictingScopes.map((c) => c.userId)));
+          
+          this.logger.warn(
+            `[updateUserIndicatorCodes] User ${userId} - CONFLICT DETECTED: indicators [${conflictCodes.join(", ")}] already assigned to users [${conflictUserIds.join(", ")}]`
+          );
+          this.logger.warn(
+            `[updateUserIndicatorCodes] User ${userId} - Conflict details: ${conflictingScopes.map((s) => `indicatorId=${s.indicatorId}, userId=${s.userId}`).join("; ")}`
+          );
+          
+          throw new ConflictException(
+            `Indicator(s) already assigned to another user. Each indicator can only be assigned to one user: ${conflictCodes.join(", ")}`
+          );
+        } else {
+          this.logger.log(
+            `[updateUserIndicatorCodes] User ${userId} - No conflicts found for NEW indicators: [${newIndicatorCodes.join(", ")}]`
+          );
+        }
+      } else {
+        this.logger.log(
+          `[updateUserIndicatorCodes] User ${userId} - No NEW indicators to check (all indicators already assigned to this user)`
+        );
+      }
+
+      // No conflicts: delete existing scopes for this user and save new ones atomically
+      const deleteResult = await manager.delete(UserIndicatorScope, { userId });
+      this.logger.log(
+        `Deleted ${deleteResult.affected || 0} existing indicator scopes for user ${userId}`
+      );
+
+      // Create new indicator scopes
+      const indicatorScopes = indicators.map((indicator) => {
+        const scope = manager.create(UserIndicatorScope, {
+          userId,
+          indicatorId: indicator.id,
+        });
+        return scope;
+      });
+
+      // Save all new scopes
+      if (indicatorScopes.length > 0) {
+        await manager.save(UserIndicatorScope, indicatorScopes);
+        const newCodes = indicators.map((i) => i.code);
+        this.logger.log(
+          `Successfully assigned indicators to user ${userId}: [${newCodes.join(", ")}]`
+        );
+      } else {
+        this.logger.log(`No indicators to assign for user ${userId}`);
+      }
     });
-
-    // Save all new scopes
-    if (indicatorScopes.length > 0) {
-      await this.userIndicatorScopeRepository.save(indicatorScopes);
-    }
   }
 
   // Get indicators by codes
@@ -690,5 +1128,195 @@ export class UserService {
     );
 
     return uniqueStateUtValues;
+  }
+
+  /**
+   * TESTING ONLY: Delete all users by role
+   * Deletes all users with the specified role along with their UserIndicatorScope records
+   *
+   * WARNING: This is a destructive operation for testing purposes only!
+   *
+   * @param role - The role of users to delete (NODAL_OFFICER, STATE_APPROVER, MOSPI_REVIEWER, MOSPI_APPROVER)
+   * @returns Summary of deleted records
+   */
+  async deleteUsersByRole(role: UserRole): Promise<{
+    success: boolean;
+    message: string;
+    deletedCount: number;
+    deleted: {
+      users: number;
+      userIndicatorScopes: number;
+      submissions: number;
+      finalScores: number;
+      auditLogs: number;
+    };
+  }> {
+    this.logger.warn("=== DELETE USERS BY ROLE STARTED ===");
+    this.logger.warn(`WARNING: This will delete all users with role: ${role}`);
+
+    // Validate that the role is one of the allowed roles (not ADMIN)
+    const allowedRoles = [
+      UserRole.NODAL_OFFICER,
+      UserRole.STATE_APPROVER,
+      UserRole.MOSPI_REVIEWER,
+      UserRole.MOSPI_APPROVER,
+    ];
+
+    if (!allowedRoles.includes(role)) {
+      throw new BadRequestException(
+        `Cannot delete users with role: ${role}. Allowed roles: ${allowedRoles.join(", ")}`
+      );
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      // Step 1: Find all users with the specified role
+      const users = await manager.find(User, {
+        where: { role },
+        select: ["id", "email", "role"],
+      });
+
+      const userIds = users.map((u) => u.id);
+
+      this.logger.log(`Found ${users.length} users with role: ${role}`);
+
+      // Step 2: Find all submissions by these users
+      let deletedSubmissions = 0;
+      let deletedFinalScores = 0;
+      const submissionIds: string[] = [];
+
+      if (userIds.length > 0) {
+        const submissions = await manager.find(Submission, {
+          where: { submittedBy: In(userIds) },
+          select: ["id", "submissionId", "submittedBy"],
+        });
+
+        submissionIds.push(...submissions.map((s) => s.id));
+        deletedSubmissions = submissions.length;
+
+        this.logger.log(`Found ${submissions.length} submissions to delete`);
+
+        // Step 2.1: Delete FinalScore records related to these submissions
+        // This must be done BEFORE deleting submissions due to foreign key constraint (NO ACTION)
+        if (submissionIds.length > 0) {
+          const finalScores = await manager.find(FinalScore, {
+            where: { submissionId: In(submissionIds) },
+          });
+          deletedFinalScores = finalScores.length;
+          if (finalScores.length > 0) {
+            await manager.remove(FinalScore, finalScores);
+            this.logger.log(`Deleted ${finalScores.length} FinalScore records`);
+          }
+        }
+
+        // Step 2.2: Delete submissions
+        if (submissions.length > 0) {
+          await manager.remove(Submission, submissions);
+          this.logger.log(`Deleted ${submissions.length} submissions`);
+        }
+      }
+
+      // Step 3: Delete AuditLog records for these users and their submissions
+      let deletedAuditLogs = 0;
+      if (userIds.length > 0 || submissionIds.length > 0) {
+        // Delete audit logs for users
+        const userAuditLogs = await manager.find(AuditLog, {
+          where: { userId: In(userIds.map((id) => id.toString())) },
+        });
+
+        // Delete audit logs for submissions (if any)
+        const submissionAuditLogs = await manager.find(AuditLog, {
+          where: {
+            entityType: "Submission",
+            entityId: In(submissionIds.map((id) => id.toString())),
+          },
+        });
+
+        const allAuditLogs = [...userAuditLogs, ...submissionAuditLogs];
+        deletedAuditLogs = allAuditLogs.length;
+
+        if (allAuditLogs.length > 0) {
+          // Remove duplicates based on id
+          const uniqueAuditLogs = Array.from(
+            new Map(allAuditLogs.map((log) => [log.id, log])).values()
+          );
+          await manager.remove(AuditLog, uniqueAuditLogs);
+          this.logger.log(`Deleted ${uniqueAuditLogs.length} AuditLog records`);
+        }
+      }
+
+      // Step 4: Delete UserIndicatorScope records for these users
+      let deletedScopes = 0;
+      if (userIds.length > 0) {
+        const userIndicatorScopes = await manager.find(UserIndicatorScope, {
+          where: { userId: In(userIds) },
+        });
+        deletedScopes = userIndicatorScopes.length;
+        if (userIndicatorScopes.length > 0) {
+          await manager.remove(UserIndicatorScope, userIndicatorScopes);
+          this.logger.log(
+            `Deleted ${userIndicatorScopes.length} UserIndicatorScope records`
+          );
+        }
+      }
+
+      // Step 5: Delete users (this will cascade delete submissions if FK has CASCADE,
+      // but we already deleted them explicitly to handle FinalScore properly)
+      let deletedUsers = 0;
+      if (users.length > 0) {
+        await manager.remove(User, users);
+        deletedUsers = users.length;
+        this.logger.log(`Deleted ${users.length} users with role: ${role}`);
+      }
+
+      this.logger.warn("=== DELETE USERS BY ROLE COMPLETED ===");
+
+      return {
+        success: true,
+        message: `Successfully deleted all users with role: ${role}`,
+        deletedCount: deletedUsers,
+        deleted: {
+          users: deletedUsers,
+          userIndicatorScopes: deletedScopes,
+          submissions: deletedSubmissions,
+          finalScores: deletedFinalScores,
+          auditLogs: deletedAuditLogs,
+        },
+      };
+    });
+  }
+
+  async checkEmailAvailability(
+    email: string,
+    excludeUserId?: string
+  ): Promise<boolean> {
+    const whereCondition: any = { email };
+    if (excludeUserId) {
+      whereCondition.id = Not(excludeUserId);
+    }
+    
+    const existingUser = await this.userRepository.findOne({
+      where: whereCondition,
+    });
+    
+    return !existingUser; // Return true if available (no user found)
+  }
+
+  async checkContactAvailability(
+    contactNumber: string,
+    excludeUserId?: string
+  ): Promise<boolean> {
+    // Normalize contact number (remove spaces)
+    const normalizedContact = contactNumber.replace(/\s/g, "");
+    
+    const whereCondition: any = { contactNumber: normalizedContact };
+    if (excludeUserId) {
+      whereCondition.id = Not(excludeUserId);
+    }
+    
+    const existingUser = await this.userRepository.findOne({
+      where: whereCondition,
+    });
+    
+    return !existingUser; // Return true if available (no user found)
   }
 }
