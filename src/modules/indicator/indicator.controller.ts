@@ -280,4 +280,30 @@ async stateStatuses(
   async getUsageReport() {
     return this.indicatorService.getUsageReport();
   }
+
+  /**
+   * Get submitted indicators in a state
+   * Returns array of indicator codes that have been submitted by any user in the state
+   * GET /indicators/submitted-in-state/:stateUt
+   */
+  @Get("submitted-in-state/:stateUt")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.STATE_APPROVER, UserRole.ADMIN)
+  async getSubmittedIndicatorsInState(@Param("stateUt") stateUt: string) {
+    try {
+      const submittedIndicators =
+        await this.indicatorService.getSubmittedIndicatorsInState(stateUt);
+      return {
+        status: true,
+        data: submittedIndicators,
+        message: `Submitted indicators for state ${stateUt} fetched successfully`,
+      };
+    } catch (error) {
+      return {
+        status: false,
+        message: error.message || "Error fetching submitted indicators",
+        data: [],
+      };
+    }
+  }
 }

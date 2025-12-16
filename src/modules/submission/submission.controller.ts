@@ -960,6 +960,59 @@ async getCumulativePreviewForState(
     userRole: req.user.role,
     userStateUt: req.user.stateUt,
   });
+  
+
+
 }
 
+// ...existing code...
+@Post("mospi-approver-send-back/:id")
+@UseGuards(RolesGuard)
+@Roles(UserRole.MOSPI_APPROVER)
+@HttpCode(HttpStatus.OK)
+async mospiApproverSendBack(
+  @Param("id") id: string,
+  @Body() body: { comment?: string },
+  @Request() req
+) {
+  return this.submissionService.mospiApproverSendBack(
+    id,
+    // body.comment,
+    req.user.id,
+    req.user.role,
+    req.user.stateUt
+  );
+}
+// ...existing code...
+// ...existing code...
+@Post("revert-from-mospi/:userId")
+@UseGuards(RolesGuard)
+@Roles(UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.ADMIN)
+@HttpCode(HttpStatus.OK)
+async revertFromMospiToReviewer(
+  @Param("userId") userId: string,
+  @Request() req
+) {
+
+  console.log("Revert request by user:", req.user.id, "for user:", userId);
+  return this.submissionService.revertFromMospiToReviewer(
+    userId,
+    req.user.id,
+    req.user.role
+  );
+}
+
+/**
+ * TESTING ONLY: Cleanup test data endpoint
+ * Deletes all test submissions, final scores, and user indicator scopes
+ * WARNING: This is a destructive operation for testing purposes only!
+ */
+@Post("cleanup-test-data")
+@UseGuards(RolesGuard)
+@Roles(UserRole.ADMIN)
+@HttpCode(HttpStatus.OK)
+async cleanupTestData(@Request() req) {
+  return this.submissionService.cleanupTestData();
+}
+// ...existing code...
 }

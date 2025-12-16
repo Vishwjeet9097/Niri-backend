@@ -526,114 +526,98 @@ export class IndicatorService {
 
     console.log(`[getAvailableIndicatorsForApprover] Accepted indicator codes: [${Array.from(acceptedCodes).join(', ')}]`);
 
-    // 3.6️⃣ Exclude indicators from STATE_APPROVER's own submitted consolidated submissions
-    // If a state approver has already submitted their consolidated submission, those indicators should not be available
+    // 3.6️⃣ Exclude indicators from STATE_APPROVER's submissions that have been submitted
+    // CHANGED: Check section-level status (like getSubmittedIndicatorsInState) instead of submission-level status
+    // If a section has status "SUBMITTED_TO_STATE", that indicator should not be available
     const submittedByStateApproverCodes = new Set<string>();
     
-    // First, let's find all STATE_APPROVER users in this state to get their IDs
-    const stateApproverUsers = await this.userRepository.find({
-      where: {
-        stateUt: stateUt,
-        role: UserRole.STATE_APPROVER,
-        isActive: true
-      },
-      select: ["id"]
-    });
-    const stateApproverUserIds = stateApproverUsers.map(u => u.id);
-    console.log(`[getAvailableIndicatorsForApprover] Found ${stateApproverUserIds.length} STATE_APPROVER users in state=${stateUt}: ${stateApproverUserIds.join(', ')}`);
+    // Use same blocking statuses as getSubmittedIndicatorsInState
+    // These are section-level statuses that indicate an indicator has been submitted
+    // Note: At section level, status is "SUBMITTED_TO_STATE" when state approver submits
+    // SUBMITTED_TO_MOSPI_REVIEWER/APPROVER are submission-level statuses, not section-level
+    const blockingStatuses = [
+      "SUBMITTED_TO_STATE",
+      "ACCEPTED",
+      "APPROVED"
+    ];
+
+    const sectionToIndicatorMap: Record<string, string> = {
+      section1_1: "1.1",
+      section1_2: "1.2",
+      section1_3: "1.3",
+      section1_4: "1.4",
+      section1_5: "1.5",
+      section2_1: "2.1",
+      section2_2: "2.2",
+      section2_3: "2.3",
+      section2_4: "2.4",
+      section2_5: "2.5",
+      section3_1: "3.1",
+      section3_2: "3.2",
+      section3_3: "3.3",
+      section3_4: "3.4",
+      section4_1: "4.1",
+      section4_2: "4.2",
+      section4_3: "4.3",
+      section4_4: "4.4",
+      section4_5: "4.5",
+      section4_6: "4.6",
+    };
     
-    // Query submissions by submittedBy field (which is the actual creator) and also check user role
-    // Use case-insensitive comparison for stateUt to handle formatting differences
-    // Include all statuses that indicate the submission has been submitted (not just final statuses)
+    // CHANGED: Get ALL submissions from STATE_APPROVERs (INCLUDING DRAFT)
+    // Only exclude REJECTED_FINAL - we need to check DRAFT submissions too
     const stateApproverSubmissions = await this.submissionRepository
       .createQueryBuilder("submission")
       .innerJoinAndSelect("submission.user", "user")
-      .where("(submission.submittedBy IN (:...stateApproverIds) OR user.role = :stateApproverRole)", {
-        stateApproverIds: stateApproverUserIds.length > 0 ? stateApproverUserIds : [''],
-        stateApproverRole: UserRole.STATE_APPROVER
+      .where("user.stateUt = :stateUt", { stateUt })
+      .andWhere("user.isActive = :isActive", { isActive: true })
+      .andWhere("user.role = :stateApproverRole", { stateApproverRole: UserRole.STATE_APPROVER })
+      .andWhere("submission.status != :rejectedFinalStatus", {
+        rejectedFinalStatus: SubmissionStatus.REJECTED_FINAL,
       })
-      .andWhere("(LOWER(TRIM(submission.stateUt)) = LOWER(TRIM(:stateUt)) OR LOWER(TRIM(user.stateUt)) = LOWER(TRIM(:stateUt)))", { stateUt })
-      .andWhere("submission.status IN (:...statuses)", {
-        statuses: [
-          SubmissionStatus.SUBMITTED_TO_STATE, // Include this in case state approver submission has this status
-          SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
-          SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
-          SubmissionStatus.APPROVED
-        ]
-      })
+      // REMOVED: submission-level status check - we check section-level status instead
       .getMany();
 
-    console.log(`[getAvailableIndicatorsForApprover] Found ${stateApproverSubmissions.length} submitted consolidated submissions from STATE_APPROVERs in state=${stateUt}`);
-    if (stateApproverSubmissions.length > 0) {
-      console.log(`[getAvailableIndicatorsForApprover] Submission IDs: ${stateApproverSubmissions.map(s => s.submissionId).join(', ')}`);
-      console.log(`[getAvailableIndicatorsForApprover] Submission statuses: ${stateApproverSubmissions.map(s => s.status).join(', ')}`);
-      console.log(`[getAvailableIndicatorsForApprover] Submission submittedBy: ${stateApproverSubmissions.map(s => s.submittedBy).join(', ')}`);
-      console.log(`[getAvailableIndicatorsForApprover] Submission user IDs: ${stateApproverSubmissions.map(s => s.user?.id).join(', ')}`);
-      console.log(`[getAvailableIndicatorsForApprover] Submission user roles: ${stateApproverSubmissions.map(s => s.user?.role).join(', ')}`);
-    } else {
-      // Debug: Let's also check what submissions exist for this state
-      const allSubmissionsInState = await this.submissionRepository.find({
-        where: [
-          { stateUt: stateUt },
-        ],
-        relations: ["user"],
-        take: 10 // Limit to first 10 for debugging
-      });
-      console.log(`[getAvailableIndicatorsForApprover] DEBUG: Found ${allSubmissionsInState.length} total submissions in state=${stateUt}`);
-      allSubmissionsInState.forEach(sub => {
-        console.log(`[getAvailableIndicatorsForApprover] DEBUG: Submission ${sub.submissionId} - status: ${sub.status}, user.role: ${sub.user?.role}, submittedBy: ${sub.submittedBy}, stateUt: ${sub.stateUt}`);
-      });
-    }
+    console.log(`[getAvailableIndicatorsForApprover] Found ${stateApproverSubmissions.length} submissions from STATE_APPROVERs in state ${stateUt} (including DRAFT)`);
 
     for (const submission of stateApproverSubmissions) {
-      // Only consider submissions from STATE_APPROVERs
-      if (submission.user?.role !== UserRole.STATE_APPROVER) {
-        console.log(`[getAvailableIndicatorsForApprover] Skipping submission ${submission.submissionId} - user role is ${submission.user?.role}, not STATE_APPROVER`);
-        continue;
-      }
-
-      console.log(`[getAvailableIndicatorsForApprover] Processing submission ${submission.submissionId} from STATE_APPROVER ${submission.user?.id}`);
+      console.log(`[getAvailableIndicatorsForApprover] Processing submission ${submission.submissionId} from STATE_APPROVER ${submission.user?.id}, Submission Status: ${submission.status}`);
       const formData = submission.formData || {};
       
-      // Extract indicators from formData
-      // Check each category (infraFinancing, infraDevelopment, pppDevelopment, infraEnablers)
-      const categoryKeys = ["infraFinancing", "infraDevelopment", "pppDevelopment", "infraEnablers"];
-      
-      categoryKeys.forEach((categoryKey) => {
-        if (formData[categoryKey] && typeof formData[categoryKey] === "object") {
-          const categoryData = formData[categoryKey];
-          console.log(`[getAvailableIndicatorsForApprover] Checking category ${categoryKey}, found ${Object.keys(categoryData).length} sections`);
-          
-          // Check each section within the category
-          Object.keys(categoryData).forEach((sectionKey) => {
-            // Convert section key to indicator code (e.g., "section1_1" -> "1.1")
-            if (sectionKey.startsWith("section")) {
-              const indicatorCode = sectionKey
-                .replace(/^section/, "")
-                .replace(/_/g, ".");
-              
-              // Validate the code format (should be like "1.1", "4.2", etc.)
-              if (/^\d+\.\d+$/.test(indicatorCode)) {
-                const sectionData = categoryData[sectionKey];
-                // Only include if section has meaningful data
-                if (sectionData && typeof sectionData === "object" && Object.keys(sectionData).length > 0) {
-                  submittedByStateApproverCodes.add(indicatorCode);
-                  console.log(`[getAvailableIndicatorsForApprover] Found submitted indicator: ${indicatorCode} from STATE_APPROVER submission ${submission.submissionId} in category ${categoryKey}`);
-                } else {
-                  console.log(`[getAvailableIndicatorsForApprover] Skipping indicator ${indicatorCode} - section has no meaningful data`);
-                }
-              } else {
-                console.log(`[getAvailableIndicatorsForApprover] Invalid indicator code format: ${indicatorCode} from sectionKey: ${sectionKey}`);
+      // Check all categories
+      const categories = [
+        "infraFinancing",
+        "infraDevelopment",
+        "pppDevelopment",
+        "infraEnablers",
+      ];
+
+      categories.forEach((category) => {
+        const categoryData = formData[category] || {};
+
+        Object.keys(categoryData).forEach((sectionKey) => {
+          if (sectionKey.startsWith("section")) {
+            const sectionData = categoryData[sectionKey];
+
+            // CHANGED: Check section-level status (like getSubmittedIndicatorsInState)
+            // If section has SUBMITTED_TO_STATE status (or other blocking statuses), exclude that indicator
+            if (
+              sectionData &&
+              typeof sectionData === "object" &&
+              blockingStatuses.includes(sectionData.status)
+            ) {
+              const indicatorCode = sectionToIndicatorMap[sectionKey];
+              if (indicatorCode) {
+                console.log(`[getAvailableIndicatorsForApprover] Found submitted indicator: ${indicatorCode} in ${category}.${sectionKey} with status: ${sectionData.status} (from STATE_APPROVER submission ${submission.submissionId})`);
+                submittedByStateApproverCodes.add(indicatorCode);
               }
             }
-          });
-        } else {
-          console.log(`[getAvailableIndicatorsForApprover] Category ${categoryKey} not found or not an object in submission ${submission.submissionId}`);
-        }
+          }
+        });
       });
     }
 
-    console.log(`[getAvailableIndicatorsForApprover] Submitted by STATE_APPROVER indicator codes: [${Array.from(submittedByStateApproverCodes).join(', ')}]`);
+    console.log(`[getAvailableIndicatorsForApprover] Submitted by STATE_APPROVER indicator codes (with SUBMITTED_TO_STATE status): [${Array.from(submittedByStateApproverCodes).join(', ')}]`);
 
     // Map acceptedCodes and submittedByStateApproverCodes to indicator IDs
     const codeToId = new Map<string, string>();
@@ -1106,5 +1090,148 @@ export class IndicatorService {
       )
       .orderBy("userCount", "DESC")
       .getRawMany();
+  }
+
+  /**
+   * Get all submitted indicators in a state
+   * Returns array of indicator codes that have been submitted by any user in the state
+   */
+  async getSubmittedIndicatorsInState(stateUt: string): Promise<string[]> {
+    const blockingStatuses = [
+      "SUBMITTED_TO_STATE",
+      "ACCEPTED",
+      // "SUBMITTED_TO_MOSPI_REVIEWER",
+      // "SUBMITTED_TO_MOSPI_APPROVER",
+      "APPROVED"
+    ];
+
+    const sectionToIndicatorMap: Record<string, string> = {
+      section1_1: "1.1",
+      section1_2: "1.2",
+      section1_3: "1.3",
+      section1_4: "1.4",
+      section1_5: "1.5",
+      section2_1: "2.1",
+      section2_2: "2.2",
+      section2_3: "2.3",
+      section2_4: "2.4",
+      section2_5: "2.5",
+      section3_1: "3.1",
+      section3_2: "3.2",
+      section3_3: "3.3",
+      section3_4: "3.4",
+      section4_1: "4.1",
+      section4_2: "4.2",
+      section4_3: "4.3",
+      section4_4: "4.4",
+      section4_5: "4.5",
+      section4_6: "4.6",
+    };
+
+    try {
+      console.log(`[IndicatorService] getSubmittedIndicatorsInState called for state: ${stateUt}`);
+      
+      // CHANGED: Get ALL submissions from BOTH NODAL_OFFICERs AND STATE_APPROVERs
+      // INCLUDING DRAFT status - we need to check DRAFT submissions too
+      // Only exclude REJECTED_FINAL
+      const submissions = await this.submissionRepository
+        .createQueryBuilder("submission")
+        .innerJoin("submission.user", "user")
+        .where("user.stateUt = :stateUt", { stateUt })
+        .andWhere("user.isActive = :isActive", { isActive: true })
+        .andWhere("user.role IN (:...roles)", { 
+          roles: [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER] 
+        })
+        .andWhere("submission.status != :rejectedFinalStatus", {
+          rejectedFinalStatus: SubmissionStatus.REJECTED_FINAL,
+        })
+        // REMOVED: .andWhere("submission.status != :draftStatus") - we want to include DRAFT
+        .getMany();
+
+      console.log(`[IndicatorService] Found ${submissions.length} submissions from NODAL_OFFICERs and STATE_APPROVERs in state ${stateUt} (including DRAFT)`);
+      
+      // Log breakdown by role
+      const nodalSubmissions = submissions.filter(s => s.user?.role === UserRole.NODAL_OFFICER);
+      const stateApproverSubmissions = submissions.filter(s => s.user?.role === UserRole.STATE_APPROVER);
+      console.log(`[IndicatorService] Breakdown: ${nodalSubmissions.length} from NODAL_OFFICERs, ${stateApproverSubmissions.length} from STATE_APPROVERs`);
+      
+      if (submissions.length === 0) {
+        console.log(`[IndicatorService] ⚠️ No submissions found for stateUt: ${stateUt}`);
+        console.log(`[IndicatorService] This could mean:`);
+        console.log(`[IndicatorService]   1. No submissions exist for this state`);
+        console.log(`[IndicatorService]   2. All submissions are REJECTED_FINAL`);
+        console.log(`[IndicatorService]   3. The stateUt value doesn't match what's in the database`);
+      }
+
+      const submittedIndicators = new Set<string>();
+
+      submissions.forEach((submission, index) => {
+        const formData = submission.formData || {};
+        const userRole = submission.user?.role || 'UNKNOWN';
+        console.log(`[IndicatorService] Processing submission ${index + 1}/${submissions.length}, ID: ${submission.id}, User Role: ${userRole}, Submission Status: ${submission.status}`);
+        console.log(`[IndicatorService] FormData keys:`, Object.keys(formData));
+
+        // Check all categories
+        const categories = [
+          "infraFinancing",
+          "infraDevelopment",
+          "pppDevelopment",
+          "infraEnablers",
+        ];
+
+        categories.forEach((category) => {
+          const categoryData = formData[category] || {};
+
+          Object.keys(categoryData).forEach((sectionKey) => {
+            if (sectionKey.startsWith("section")) {
+              const sectionData = categoryData[sectionKey];
+
+              // Check if section has SUBMITTED_TO_STATE status (or other blocking statuses)
+              // This is the key check - even in DRAFT submissions, if a section has status "SUBMITTED_TO_STATE",
+              // that indicator should be marked as submitted/unavailable
+              if (
+                sectionData &&
+                typeof sectionData === "object" &&
+                blockingStatuses.includes(sectionData.status)
+              ) {
+                const indicatorCode = sectionToIndicatorMap[sectionKey];
+                if (indicatorCode) {
+                  console.log(`[IndicatorService] Found submitted indicator: ${indicatorCode} in ${category}.${sectionKey} with status: ${sectionData.status} (from ${userRole} submission ${submission.id})`);
+                  submittedIndicators.add(indicatorCode);
+                }
+              } else if (sectionKey === "section1_1") {
+                // Debug specifically for section1_1
+                console.log(`[IndicatorService] Debug section1_1:`, {
+                  sectionKey,
+                  sectionData,
+                  isObject: typeof sectionData === "object",
+                  hasStatus: sectionData?.status,
+                  statusValue: sectionData?.status,
+                  inBlockingStatuses: blockingStatuses.includes(sectionData?.status),
+                  category,
+                  categoryDataKeys: Object.keys(categoryData),
+                  userRole,
+                  submissionId: submission.id,
+                  submissionStatus: submission.status,
+                });
+              }
+            }
+          });
+        });
+      });
+
+      const result = Array.from(submittedIndicators);
+      console.log(`[IndicatorService] Returning submitted indicators:`, result);
+      console.log(`[IndicatorService] Total indicators with SUBMITTED_TO_STATE status: ${result.length}`);
+      console.log(`[IndicatorService] Is 1.1 in result?`, result.includes("1.1"));
+      
+      return result;
+    } catch (error) {
+      console.error(
+        `Error fetching submitted indicators for state ${stateUt}:`,
+        error
+      );
+      return [];
+    }
   }
 }

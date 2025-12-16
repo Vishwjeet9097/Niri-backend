@@ -21,6 +21,7 @@ import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { Indicator } from "../../entities/indicator.entity";
 import { ScoringService } from "../scoring/scoring.service";
 import { StorageService } from "../storage/storage.service";
+import { AuditLog } from "../../entities/audit-log.entity";
 import {
   CreateSubmissionDto,
   UpdateSubmissionDto,
@@ -3373,4 +3374,294 @@ export class SubmissionService {
       },
     };
   }
+
+
+  /**
+   * MoSPI Approver sends submission back to State
+   */
+  async mospiApproverSendBack(
+    submissionId: string,
+    // comment: string | undefined,
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    this.logger.log(
+      `MoSPI Approver ${userId} sending back submission ${submissionId} to state`
+    );
+
+    // Find submission by internal id
+    const submission = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!submission) {
+      throw new NotFoundException(`Submission not found for id: ${submissionId}`);
+    }
+
+    // Only MoSPI Approver can use this endpoint (guard already enforces this)
+    if (userRole !== UserRole.MOSPI_APPROVER) {
+      throw new ForbiddenException("Only MoSPI Approver can send back to state");
+    }
+
+    // Validate current status (must be with MOSPI Approver)
+    if (submission.status !== SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER) {
+      throw new BadRequestException(
+        `Cannot send back submission in status ${submission.status}. Must be SUBMITTED_TO_MOSPI_APPROVER`
+      );
+    }
+
+    // Update submission: change status and owner role back to state
+    await this.submissionRepository.update(submissionId, {
+      status: SubmissionStatus.RETURNED_FROM_MOSPI,
+      currentOwnerRole: UserRole.STATE_APPROVER,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(
+      `Submission ${submissionId} sent back to state by MoSPI Approver successfully`
+    );
+
+    // Return updated submission
+    return await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+  }
+
+  /**
+   * TESTING ONLY: Cleanup method to delete test data
+   * Deletes:
+   * 1. Submissions made by NODAL_OFFICER, STATE_APPROVER, and MOSPI_REVIEWER
+   * 2. FinalScore records related to those submissions
+   * 3. UserIndicatorScope records for NODAL_OFFICER users
+   *
+   * WARNING: This is a destructive operation for testing purposes only!
+   */
+  async cleanupTestData(): Promise<{
+    success: boolean;
+    message: string;
+    deleted: {
+      submissions: number;
+      finalScores: number;
+      userIndicatorScopes: number;
+      auditLogs: number;
+    };
+  }> {
+    this.logger.warn("=== TEST DATA CLEANUP STARTED ===");
+    this.logger.warn(
+      "WARNING: This will delete test submissions and indicator assignments!"
+    );
+
+    return this.dataSource.transaction(async (manager) => {
+      // Step 1: Find all users with the specified roles
+      const targetRoles = [
+        UserRole.NODAL_OFFICER,
+        UserRole.STATE_APPROVER,
+        UserRole.MOSPI_REVIEWER,
+      ];
+
+      const users = await manager.find(User, {
+        where: { role: In(targetRoles) },
+        select: ["id", "role", "email"],
+      });
+
+      const userIds = users.map((u) => u.id);
+      const nodalOfficerIds = users
+        .filter((u) => u.role === UserRole.NODAL_OFFICER)
+        .map((u) => u.id);
+
+      this.logger.log(
+        `Found ${users.length} users with roles: ${targetRoles.join(", ")}`
+      );
+      this.logger.log(`Found ${nodalOfficerIds.length} NODAL_OFFICER users`);
+
+      // Step 2: Find all submissions by these users
+      const submissions = await manager.find(Submission, {
+        where: { submittedBy: In(userIds) },
+        select: ["id", "submissionId", "submittedBy", "attachedFiles"],
+      });
+
+      const submissionIds = submissions.map((s) => s.id);
+
+      this.logger.log(`Found ${submissions.length} submissions to delete`);
+
+      // Step 3: Delete FinalScore records related to these submissions
+      // This must be done BEFORE deleting submissions due to foreign key constraint (NO ACTION)
+      let deletedFinalScores = 0;
+      if (submissionIds.length > 0) {
+        const finalScores = await manager.find(FinalScore, {
+          where: { submissionId: In(submissionIds) },
+        });
+        deletedFinalScores = finalScores.length;
+        if (finalScores.length > 0) {
+          await manager.remove(FinalScore, finalScores);
+          this.logger.log(`Deleted ${finalScores.length} FinalScore records`);
+        }
+      }
+
+      // Step 4: Delete submissions
+      let deletedSubmissions = 0;
+      if (submissions.length > 0) {
+        // Also delete attached files if any
+        for (const submission of submissions) {
+          if (
+            submission.attachedFiles &&
+            Array.isArray(submission.attachedFiles) &&
+            submission.attachedFiles.length > 0
+          ) {
+            try {
+              // Extract file paths from attachedFiles
+              const filePaths = submission.attachedFiles
+                .map((file: any) => file.filePath || file.path)
+                .filter((path: string) => path); // Filter out null/undefined paths
+
+              if (filePaths.length > 0) {
+                await this.storageService.deleteSubmissionFiles(
+                  submission.submissionId,
+                  filePaths
+                );
+              }
+            } catch (error) {
+              this.logger.warn(
+                `Failed to delete files for submission ${submission.id}: ${error.message}`
+              );
+            }
+          }
+        }
+        await manager.remove(Submission, submissions);
+        deletedSubmissions = submissions.length;
+        this.logger.log(`Deleted ${submissions.length} submissions`);
+      }
+
+      // Step 5: Delete UserIndicatorScope records for NODAL_OFFICER users
+      let deletedScopes = 0;
+      if (nodalOfficerIds.length > 0) {
+        const userIndicatorScopes = await manager.find(UserIndicatorScope, {
+          where: { userId: In(nodalOfficerIds) },
+        });
+        deletedScopes = userIndicatorScopes.length;
+        if (userIndicatorScopes.length > 0) {
+          await manager.remove(UserIndicatorScope, userIndicatorScopes);
+          this.logger.log(
+            `Deleted ${userIndicatorScopes.length} UserIndicatorScope records`
+          );
+        }
+      }
+
+      // Step 6: Delete AuditLog records for these users and their submissions
+      let deletedAuditLogs = 0;
+      if (userIds.length > 0 || submissionIds.length > 0) {
+        // Delete audit logs for users
+        const userAuditLogs = await manager.find(AuditLog, {
+          where: { userId: In(userIds.map((id) => id.toString())) },
+        });
+
+        // Delete audit logs for submissions (if any)
+        const submissionAuditLogs = await manager.find(AuditLog, {
+          where: {
+            entityType: "Submission",
+            entityId: In(submissionIds.map((id) => id.toString())),
+          },
+        });
+
+        const allAuditLogs = [...userAuditLogs, ...submissionAuditLogs];
+        deletedAuditLogs = allAuditLogs.length;
+
+        if (allAuditLogs.length > 0) {
+          // Remove duplicates based on id
+          const uniqueAuditLogs = Array.from(
+            new Map(allAuditLogs.map((log) => [log.id, log])).values()
+          );
+          await manager.remove(AuditLog, uniqueAuditLogs);
+          this.logger.log(`Deleted ${uniqueAuditLogs.length} AuditLog records`);
+        }
+      }
+
+      this.logger.warn("=== TEST DATA CLEANUP COMPLETED ===");
+
+      return {
+        success: true,
+        message: "Test data cleanup completed successfully",
+        deleted: {
+          submissions: deletedSubmissions,
+          finalScores: deletedFinalScores,
+          userIndicatorScopes: deletedScopes,
+          auditLogs: deletedAuditLogs,
+        },
+      };
+    });
+  }
+// ...existing code...
+
+// ...existing code...
+  /**
+   * Revert submissions from RETURNED_FROM_MOSPI to SUBMITTED_TO_MOSPI_REVIEWER
+   * for a specific user
+   */
+  async revertFromMospiToReviewer(
+    userId: string,
+    requestingUserId: string,
+    requestingUserRole: UserRole
+  ): Promise<{ message: string; updatedCount: number; submissions: any[] }> {
+    this.logger.log(
+      `Reverting RETURNED_FROM_MOSPI submissions for userId=${userId} by ${requestingUserId}`
+    );
+
+    try {
+      // Find all submissions by this user with status RETURNED_FROM_MOSPI
+      const submissions = await this.submissionRepository.find({
+        where: {
+          submittedBy: userId,
+          status: SubmissionStatus.RETURNED_FROM_MOSPI,
+        },
+        relations: ["user", "finalScore"],
+      });
+
+      if (submissions.length === 0) {
+        return {
+          message: `No submissions found with status RETURNED_FROM_MOSPI for user ${userId}`,
+          updatedCount: 0,
+          submissions: [],
+        };
+      }
+
+      // Update each submission
+      const updatedSubmissions = [];
+      for (const submission of submissions) {
+        await this.submissionRepository.update(submission.id, {
+          status: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          currentOwnerRole: UserRole.MOSPI_REVIEWER,
+          updatedAt: new Date(),
+        });
+
+        updatedSubmissions.push({
+          submissionId: submission.submissionId,
+          id: submission.id,
+          previousStatus: SubmissionStatus.RETURNED_FROM_MOSPI,
+          newStatus: SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          newOwner: UserRole.MOSPI_REVIEWER,
+        });
+
+        this.logger.log(
+          `Updated submission ${submission.submissionId} from RETURNED_FROM_MOSPI to SUBMITTED_TO_MOSPI_REVIEWER`
+        );
+      }
+
+      return {
+        message: `Successfully reverted ${submissions.length} submission(s) to MOSPI Reviewer`,
+        updatedCount: submissions.length,
+        submissions: updatedSubmissions,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error reverting submissions for user ${userId}: ${error.message}`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+// ...existing code...
+
 }

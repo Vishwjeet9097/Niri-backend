@@ -11,7 +11,7 @@ import { Repository, Not, DataSource, In } from "typeorm";
 import { User, UserRole } from "../../entities/user.entity";
 import { Indicator } from "../../entities/indicator.entity";
 import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
-import { Submission } from "../../entities/submission.entity";
+import { Submission, SubmissionStatus } from "../../entities/submission.entity";
 import { FinalScore } from "../../entities/final-score.entity";
 import { AuditLog } from "../../entities/audit-log.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
@@ -1002,6 +1002,91 @@ export class UserService {
         this.logger.log(
           `Removing indicators from user ${userId}: [${removedCodes.join(", ")}]`
         );
+        
+        // Check if any indicators being removed have active submissions
+        const blockingStatuses = [
+          SubmissionStatus.SUBMITTED_TO_STATE,
+          SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+          SubmissionStatus.APPROVED,
+        ];
+
+        const sectionToIndicatorMap: Record<string, string> = {
+          section1_1: "1.1",
+          section1_2: "1.2",
+          section1_3: "1.3",
+          section1_4: "1.4",
+          section1_5: "1.5",
+          section2_1: "2.1",
+          section2_2: "2.2",
+          section2_3: "2.3",
+          section2_4: "2.4",
+          section2_5: "2.5",
+          section3_1: "3.1",
+          section3_2: "3.2",
+          section3_3: "3.3",
+          section3_4: "3.4",
+          section4_1: "4.1",
+          section4_2: "4.2",
+          section4_3: "4.3",
+          section4_4: "4.4",
+          section4_5: "4.5",
+          section4_6: "4.6",
+        };
+
+        // Check submissions in the state for these indicators
+        const submissions = await manager
+          .createQueryBuilder(Submission, "submission")
+          .innerJoin("submission.user", "user")
+          .where("user.stateUt = :userStateUt", { userStateUt: userStateUt || "" })
+          .andWhere("user.isActive = :isActive", { isActive: true })
+          .andWhere("submission.status IN (:...statuses)", { statuses: blockingStatuses })
+          .getMany();
+
+        const submittedIndicatorsInState = new Set<string>();
+
+        submissions.forEach((submission) => {
+          const formData = submission.formData || {};
+          const categories = [
+            "infraFinancing",
+            "infraDevelopment",
+            "pppDevelopment",
+            "infraEnablers",
+          ];
+
+          categories.forEach((category) => {
+            const categoryData = formData[category] || {};
+            Object.keys(categoryData).forEach((sectionKey) => {
+              if (sectionKey.startsWith("section")) {
+                const sectionData = categoryData[sectionKey];
+                if (
+                  sectionData &&
+                  typeof sectionData === "object" &&
+                  blockingStatuses.includes(sectionData.status)
+                ) {
+                  const indicatorCode = sectionToIndicatorMap[sectionKey];
+                  if (indicatorCode) {
+                    submittedIndicatorsInState.add(indicatorCode);
+                  }
+                }
+              }
+            });
+          });
+        });
+
+        // Check if any removed indicators are in the submitted list
+        const cannotRemove = removedCodes.filter((code) =>
+          submittedIndicatorsInState.has(code)
+        );
+
+        if (cannotRemove.length > 0) {
+          this.logger.warn(
+            `[updateUserIndicatorCodes] User ${userId} - Cannot remove submitted indicators: [${cannotRemove.join(", ")}]`
+          );
+          throw new ConflictException(
+            `Cannot remove indicators that have been submitted: ${cannotRemove.join(", ")}. These indicators cannot be reassigned to prevent duplicate submissions.`
+          );
+        }
       }
 
       // Rule: Each indicator can only be assigned to ONE user WITHIN THE SAME STATE
