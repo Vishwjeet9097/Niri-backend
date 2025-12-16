@@ -5,6 +5,7 @@ import {
   ConflictException,
   BadRequestException,
   Logger,
+  Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, DataSource, In } from "typeorm";
@@ -87,7 +88,9 @@ export class UserService {
         "user.createdAt",
       ])
       .where("user.isActive = :isActive", { isActive: true })
-      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN });
+      .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN })
+      .orderBy("user.firstName", "ASC")
+      .addOrderBy("user.lastName", "ASC");
 
     // Hide logged-in user from the list
     if (userId) {
@@ -458,7 +461,6 @@ export class UserService {
           `A State Approver already exists for ${stateUt}. Each state can have only one active State Approver.`
         );
       }
-
       console.log(`[STATE_APPROVER Validation] ✅ No duplicate found, proceeding with creation`);
     }
 
@@ -500,7 +502,6 @@ export class UserService {
             }
           }
         }
-
         console.log(`[MOSPI_REVIEWER Validation] ✅ No duplicate states found, proceeding with creation`);
       }
     }

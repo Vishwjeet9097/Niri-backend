@@ -72,4 +72,14 @@ async getNodalMetrics(@Request() req) {
   // req.user.id must be present (JWT middleware)
   return this.dashboardService.getNodalOfficerDashboardCounts(req.user.id);
 }
+
+@Get("mospi-metrics")
+@UseGuards(RolesGuard)
+@Roles(UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER)
+async getMospiMetrics(@Request() req) {
+  return this.dashboardService.getMospiDashboardCounts(
+    req.user.role,
+    req.user.stateUt
+  );
+}
 }
