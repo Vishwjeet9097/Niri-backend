@@ -5,6 +5,7 @@ export class ValidationService {
   /**
    * Calculate % Allocation to GSDP based on Capital Allocation and GSDP
    * Formula: (Capital Allocation for FY / GSDP for FY) * 100
+   * Returns integer if result is whole number, otherwise rounds to 2 decimal places
    */
   calculateAllocationToGSDP(capitalAllocation: number, gsdp: number): number {
     if (!capitalAllocation || !gsdp || gsdp === 0) {
@@ -12,12 +13,15 @@ export class ValidationService {
     }
 
     const percentage = (capitalAllocation / gsdp) * 100;
-    return Math.round(percentage * 100) / 100; // Round to 2 decimal places
+    const rounded = Math.round(percentage * 100) / 100;
+    // If the result is a whole number, return as integer, otherwise return with decimals (up to 2)
+    return rounded % 1 === 0 ? Math.round(rounded) : rounded;
   }
 
   /**
    * Calculate % Capex Utilization based on Actual Capex and State Capex Utilisation
    * Formula: (Actual Capex / State Capex Utilisation) * 100
+   * Returns integer if result is whole number, otherwise rounds to 2 decimal places
    */
   calculateCapexUtilization(
     actualCapex: number,
@@ -28,12 +32,15 @@ export class ValidationService {
     }
 
     const percentage = (actualCapex / stateCapexUtilisation) * 100;
-    return Math.round(percentage * 100) / 100; // Round to 2 decimal places
+    const rounded = Math.round(percentage * 100) / 100;
+    // If the result is a whole number, return as integer, otherwise return with decimals (up to 2)
+    return rounded % 1 === 0 ? Math.round(rounded) : rounded;
   }
 
   /**
    * Calculate % of Credit Rated ULBs
    * Formula: (Credit Rated ULBs / Total ULBs) * 100
+   * Returns integer if result is whole number, otherwise rounds to 2 decimal places
    */
   calculateCreditRatedULBs(creditRatedULBs: number, totalULBs: number): number {
     if (!creditRatedULBs || !totalULBs || totalULBs === 0) {
@@ -41,12 +48,15 @@ export class ValidationService {
     }
 
     const percentage = (creditRatedULBs / totalULBs) * 100;
-    return Math.round(percentage * 100) / 100; // Round to 2 decimal places
+    const rounded = Math.round(percentage * 100) / 100;
+    // If the result is a whole number, return as integer, otherwise return with decimals (up to 2)
+    return rounded % 1 === 0 ? Math.round(rounded) : rounded;
   }
 
   /**
    * Calculate % of ULBs Issuing Bonds
    * Formula: (ULBs Approved by MoSPI / Total ULBs Entered) * 100
+   * Returns integer if result is whole number, otherwise rounds to 2 decimal places
    */
   calculateULBsIssuingBonds(
     ulbsApprovedByMoSPI: number,
@@ -57,7 +67,9 @@ export class ValidationService {
     }
 
     const percentage = (ulbsApprovedByMoSPI / totalULBsEntered) * 100;
-    return Math.round(percentage * 100) / 100; // Round to 2 decimal places
+    const rounded = Math.round(percentage * 100) / 100;
+    // If the result is a whole number, return as integer, otherwise return with decimals (up to 2)
+    return rounded % 1 === 0 ? Math.round(rounded) : rounded;
   }
 
   /**
