@@ -2730,6 +2730,55 @@ export class SubmissionService {
    *  - { keyName: any }   (single-key object)
    */
 
+  /**
+   * Normalize numeric values: return integer if whole number, otherwise preserve up to 2 decimals
+   * This prevents unnecessary decimals (e.g., 100.00 becomes 100, but 100.52 stays 100.52)
+   */
+  private normalizeNumericValue(value: any): any {
+    if (value === null || value === undefined || value === "") {
+      return value;
+    }
+
+    // Convert string to number if it's a numeric string
+    const numValue = typeof value === "string" ? parseFloat(value) : value;
+
+    // If not a valid number, return as-is
+    if (isNaN(numValue)) {
+      return value;
+    }
+
+    // Round to 2 decimal places
+    const rounded = Math.round(numValue * 100) / 100;
+
+    // If the result is a whole number, return as integer, otherwise return with decimals (up to 2)
+    return rounded % 1 === 0 ? Math.round(rounded) : rounded;
+  }
+
+  /**
+   * Normalize numeric fields in arrays (for bondList, ffiArray, investmentReadyArray, etc.)
+   */
+  private normalizeArrayNumericFields(arr: any[], fieldNames: string[]): any[] {
+    if (!Array.isArray(arr)) {
+      return arr;
+    }
+
+    return arr.map((item) => {
+      if (typeof item !== "object" || item === null) {
+        return item;
+      }
+
+      const normalized = { ...item };
+      for (const fieldName of fieldNames) {
+        if (fieldName in normalized) {
+          normalized[fieldName] = this.normalizeNumericValue(
+            normalized[fieldName]
+          );
+        }
+      }
+      return normalized;
+    });
+  }
+
   async updateFormSectionFields(
     submissionId: string,
     category: string,
@@ -2902,11 +2951,106 @@ export class SubmissionService {
               }
             }
 
-            // If value is array and targetSection[key] is array, replace it
-            if (Array.isArray(item[key]) && Array.isArray(targetSection[key])) {
-              targetSection[key] = [...item[key]];
+            // Normalize numeric fields for specific indicators
+            let normalizedValue = item[key];
+
+            // Handle nested objects that may contain arrays or numeric fields
+            if (
+              normalizedValue &&
+              typeof normalizedValue === "object" &&
+              !Array.isArray(normalizedValue)
+            ) {
+              // Create a copy to avoid mutating the original
+              normalizedValue = { ...normalizedValue };
+
+              // Indicator 1.4: Value (INR - values is in CRORES) in bondList array
+              if (
+                "bondList" in normalizedValue &&
+                Array.isArray(normalizedValue.bondList)
+              ) {
+                normalizedValue.bondList = this.normalizeArrayNumericFields(
+                  normalizedValue.bondList,
+                  ["value"]
+                );
+              }
+
+              // Indicator 1.5: Total Funding (INR) in ffiArray
+              if (
+                "ffiArray" in normalizedValue &&
+                Array.isArray(normalizedValue.ffiArray)
+              ) {
+                normalizedValue.ffiArray = this.normalizeArrayNumericFields(
+                  normalizedValue.ffiArray,
+                  ["totalFunding"]
+                );
+              }
+
+              // Indicator 2.4: Project Size (INR - values is in CRORES) in investmentReadyArray
+              if (
+                "investmentReadyArray" in normalizedValue &&
+                Array.isArray(normalizedValue.investmentReadyArray)
+              ) {
+                normalizedValue.investmentReadyArray =
+                  this.normalizeArrayNumericFields(
+                    normalizedValue.investmentReadyArray,
+                    ["projectSize"]
+                  );
+              }
+
+              // Indicator 3.4: Total Project Cost (INR - values is in CRORES)
+              if ("totalTPC" in normalizedValue) {
+                normalizedValue.totalTPC = this.normalizeNumericValue(
+                  normalizedValue.totalTPC
+                );
+              }
+              if ("tpcOfPPPProjects" in normalizedValue) {
+                normalizedValue.tpcOfPPPProjects = this.normalizeNumericValue(
+                  normalizedValue.tpcOfPPPProjects
+                );
+              }
             } else {
-              targetSection[key] = item[key];
+              // Handle direct array fields
+              // Indicator 1.4: Value (INR - values is in CRORES) in bondList array
+              if (key === "bondList" && Array.isArray(normalizedValue)) {
+                normalizedValue = this.normalizeArrayNumericFields(
+                  normalizedValue,
+                  ["value"]
+                );
+              }
+
+              // Indicator 1.5: Total Funding (INR) in ffiArray
+              if (key === "ffiArray" && Array.isArray(normalizedValue)) {
+                normalizedValue = this.normalizeArrayNumericFields(
+                  normalizedValue,
+                  ["totalFunding"]
+                );
+              }
+
+              // Indicator 2.4: Project Size (INR - values is in CRORES) in investmentReadyArray
+              if (
+                key === "investmentReadyArray" &&
+                Array.isArray(normalizedValue)
+              ) {
+                normalizedValue = this.normalizeArrayNumericFields(
+                  normalizedValue,
+                  ["projectSize"]
+                );
+              }
+
+              // Indicator 3.4: Total Project Cost (INR - values is in CRORES)
+              if (key === "totalTPC" || key === "tpcOfPPPProjects") {
+                normalizedValue = this.normalizeNumericValue(normalizedValue);
+              }
+            }
+
+            // If value is array and targetSection[key] is array, replace it
+            if (
+              Array.isArray(normalizedValue) &&
+              Array.isArray(targetSection[key])
+            ) {
+              targetSection[key] = [...normalizedValue];
+            } else {
+              targetSection[key] = normalizedValue;
             }
           }
           continue;
@@ -3182,13 +3326,23 @@ export class SubmissionService {
         status = "NOT_STARTED";
       }
 
+      // Extract year: prioritize year from the record itself (section-level year)
+      // This is important because some indicators store year at the section level (e.g., section1_1.year = "2025-26")
+      const year = normalizeYear(
+        rec?.year ?? rec?.fiscalYear ?? pickSubmissionYear(submission)
+      );
+
+      // Extract score: marksObtained takes precedence over score
+      const score = rec?.marksObtained ?? rec?.score ?? null;
+
+      // Extract comment: remarks takes precedence over comment
+      const comment = rec?.remarks ?? rec?.comment ?? null;
+
       return {
         status: status as string,
-        score: rec?.marksObtained ?? rec?.score ?? null,
-        remarks: rec?.remarks ?? rec?.comment ?? null,
-        year: normalizeYear(
-          rec?.year ?? rec?.fiscalYear ?? pickSubmissionYear(submission)
-        ),
+        score,
+        comment,
+        year,
         updatedAt: rec?.updatedAt ?? submission?.updatedAt ?? null,
       };
     };
@@ -3273,21 +3427,43 @@ export class SubmissionService {
       });
 
       // Debug logging for first few indicators
-      if (ind.code === "1.1" || ind.code === "1.2" || ind.code === "2.1") {
+      if (
+        ind.code === "1.1" ||
+        ind.code === "1.2" ||
+        ind.code === "2.1" ||
+        DEBUG
+      ) {
         this.logger.log(
-          `[buildCumulativePreview] Indicator ${ind.code}: found ${candidates.length} candidate submissions`
+          `[buildCumulativePreview] Indicator ${ind.code} (${ind.name}): found ${candidates.length} candidate submissions`
         );
         if (candidates.length > 0) {
           const sampleCandidate = candidates[0];
           const samplePayload = findIndicatorPayload(sampleCandidate, ind);
-          this.logger.log(
-            `[buildCumulativePreview] Indicator ${ind.code}: sample payload keys: ${samplePayload && typeof samplePayload === "object" ? Object.keys(samplePayload).join(", ") : "not an object"}`
-          );
-          if (samplePayload && typeof samplePayload === "object") {
+          if (samplePayload) {
+            const payloadKeys =
+              typeof samplePayload === "object" && !Array.isArray(samplePayload)
+                ? Object.keys(samplePayload)
+                : ["(not an object)"];
             this.logger.log(
-              `[buildCumulativePreview] Indicator ${ind.code}: sample payload status: ${samplePayload.status || "no status field"}`
+              `[buildCumulativePreview] Indicator ${ind.code}: payload keys (${payloadKeys.length}): ${payloadKeys.slice(0, 10).join(", ")}${payloadKeys.length > 10 ? "..." : ""}`
+            );
+            if (
+              typeof samplePayload === "object" &&
+              !Array.isArray(samplePayload)
+            ) {
+              this.logger.log(
+                `[buildCumulativePreview] Indicator ${ind.code}: status=${samplePayload.status || "no status"}, hasData=${Object.keys(samplePayload).filter((k) => !["status", "comment", "remarks", "marksObtained", "score"].includes(k)).length > 0}`
+              );
+            }
+          } else {
+            this.logger.log(
+              `[buildCumulativePreview] Indicator ${ind.code}: no payload found in candidates`
             );
           }
+        } else {
+          this.logger.log(
+            `[buildCumulativePreview] Indicator ${ind.code}: no candidates found (category: ${ind.category}, sectionKey: ${codeToSectionKey(ind.code)})`
+          );
         }
       }
 
@@ -3337,14 +3513,19 @@ export class SubmissionService {
       data: any;
       status: string;
       score: number | null;
-      remarks: string | null;
+      comment: string | null;
       updatedAt: string | Date | null;
       year: string | null;
     };
 
     const grouped: Record<string, PreviewItem[]> = {};
+    const processedIndicatorIds = new Set<string>();
 
+    // Ensure ALL indicators are included, even if they have no submission data
     for (const ind of indicators) {
+      // Track that we're processing this indicator
+      processedIndicatorIds.add(ind.id);
+
       const best = bestByIndicator.get(ind.id) as any;
       const record = best ? findIndicatorPayload(best, ind) : null;
       const meta = pickIndicatorMeta(record, best);
@@ -3363,6 +3544,8 @@ export class SubmissionService {
             dataField = rec.data;
           } else {
             // Otherwise, use the record but exclude metadata fields
+            // These are moved to meta: status, score, marksObtained, remarks, comment, updatedAt, year, fiscalYear
+            // Everything else (arrays, objects, strings, numbers) should be preserved in data
             const {
               status,
               score,
@@ -3372,19 +3555,32 @@ export class SubmissionService {
               updatedAt,
               year,
               fiscalYear,
+              // Also exclude internal metadata fields that might exist
+              sectionKey,
+              parentKey,
+              path,
+              indicatorCode,
+              code,
+              name,
               ...dataOnly
             } = rec;
-            // Only include if there's actual data (not just metadata)
+            // Include all remaining fields as data (preserves arrays, objects, and all other fields)
+            // This ensures all database fields like ulbList, infraActArray, file objects, etc. are preserved
             if (Object.keys(dataOnly).length > 0) {
               dataField = dataOnly;
+            } else if (Array.isArray(rec)) {
+              // If it's an array, preserve it
+              dataField = rec;
             }
           }
-        } else {
+        } else if (rec != null) {
+          // For non-object values (strings, numbers, etc.), preserve them
           dataField = rec;
         }
       }
 
-      grouped[category].push({
+      // Always include the indicator, even if it has no data
+      const previewItem = {
         id: ind.id,
         code: ind.code,
         name: ind.name,
@@ -3394,10 +3590,31 @@ export class SubmissionService {
         data: dataField,
         status: meta.status,
         score: meta.score,
-        remarks: meta.remarks,
+        comment: meta.comment,
         updatedAt: meta.updatedAt,
         year: meta.year,
-      });
+      };
+
+      // Log data field structure for debugging (first few indicators or if DEBUG)
+      if (
+        (ind.code === "1.1" ||
+          ind.code === "1.2" ||
+          ind.code === "2.1" ||
+          DEBUG) &&
+        dataField
+      ) {
+        const dataKeys =
+          typeof dataField === "object" && !Array.isArray(dataField)
+            ? Object.keys(dataField)
+            : Array.isArray(dataField)
+              ? [`[Array with ${dataField.length} items]`]
+              : ["(scalar value)"];
+        this.logger.log(
+          `[buildCumulativePreview] Indicator ${ind.code}: data field contains ${dataKeys.length} keys: ${dataKeys.slice(0, 15).join(", ")}${dataKeys.length > 15 ? "..." : ""}`
+        );
+      }
+
+      grouped[category].push(previewItem);
 
       if (DEBUG) {
         Object.assign(dbg.perIndicator[ind.code], {
@@ -3405,9 +3622,70 @@ export class SubmissionService {
           status: meta.status,
           score: meta.score,
           year: meta.year,
+          dataKeys:
+            dataField &&
+            typeof dataField === "object" &&
+            !Array.isArray(dataField)
+              ? Object.keys(dataField).length
+              : dataField
+                ? 1
+                : 0,
         });
       }
     }
+
+    // Validation: Ensure all indicators were processed
+    const totalProcessed = processedIndicatorIds.size;
+    const totalInGrouped = Object.values(grouped).reduce(
+      (sum, arr) => sum + arr.length,
+      0
+    );
+
+    if (totalProcessed !== indicators.length) {
+      this.logger.warn(
+        `[buildCumulativePreview] Warning: Processed ${totalProcessed} indicators but expected ${indicators.length}`
+      );
+    }
+
+    if (totalInGrouped !== indicators.length) {
+      this.logger.warn(
+        `[buildCumulativePreview] Warning: Grouped ${totalInGrouped} indicators but expected ${indicators.length}`
+      );
+    }
+
+    this.logger.log(
+      `[buildCumulativePreview] Processed ${totalProcessed} indicators, grouped into ${Object.keys(grouped).length} categories: ${Object.keys(grouped).join(", ")}`
+    );
+    this.logger.log(
+      `[buildCumulativePreview] Indicators per category: ${Object.entries(
+        grouped
+      )
+        .map(([cat, items]) => `${cat}: ${items.length}`)
+        .join(", ")}`
+    );
+
+    // Sort indicators within each category by code for consistent ordering
+    for (const category in grouped) {
+      grouped[category].sort((a, b) => {
+        // Compare by code (e.g., "1.1" < "1.2" < "2.1")
+        const codeA = a.code || "";
+        const codeB = b.code || "";
+        return codeA.localeCompare(codeB, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
+    }
+
+    // Calculate summary statistics
+    const indicatorsWithData = Object.values(grouped)
+      .flat()
+      .filter((item) => item.data != null).length;
+    const indicatorsWithoutData = totalInGrouped - indicatorsWithData;
+
+    this.logger.log(
+      `[buildCumulativePreview] Summary: ${indicatorsWithData} indicators with data, ${indicatorsWithoutData} indicators without data`
+    );
 
     // ---------- 5) Return ----------
     return {
@@ -3417,8 +3695,11 @@ export class SubmissionService {
         stateUt,
         users: 0, // we’re not computing people anymore
         totalIndicators: indicators.length,
-        categories: Object.keys(grouped),
-        indicators: grouped,
+        indicatorsInResponse: totalInGrouped, // Should match totalIndicators
+        indicatorsWithData,
+        indicatorsWithoutData,
+        categories: Object.keys(grouped).sort(), // Sort categories alphabetically
+        indicators: grouped, // Grouped by category, sorted by code within each category
         ...(DEBUG ? { debug: dbg } : {}),
       },
     };
