@@ -950,14 +950,7 @@ export class SubmissionService {
         );
       }
 
-      // Step 5: Provide normalized (flattened) view so client can populate all sections
-      try {
-        (submission as any).normalizedFormData = this.buildNormalizedFormData(
-          submission.formData || {}
-        );
-      } catch (e) {
-        this.logger.warn(`Failed to build normalizedFormData: ${e.message}`);
-      }
+      // normalizedFormData removed - not needed in response
 
       this.logger.log(`Access granted for user role: ${userRole}`);
       this.logger.log(`=== FIND ONE SUBMISSION SUCCESS ===`);
@@ -1143,6 +1136,17 @@ export class SubmissionService {
       };
 
       const updateData: Partial<Submission> = {};
+      
+      // Extract attachedFiles from formData if it exists there (should be at top level, but handle both cases)
+      let attachedFilesFromFormData: any[] | undefined = undefined;
+      if (updateSubmissionDto.formData?.attachedFiles) {
+        attachedFilesFromFormData = updateSubmissionDto.formData.attachedFiles;
+        // Remove attachedFiles from formData - it should only be in the separate column
+        const { attachedFiles: _, ...formDataWithoutAttachedFiles } = updateSubmissionDto.formData;
+        updateSubmissionDto.formData = formDataWithoutAttachedFiles;
+        this.logger.log(`Extracted ${attachedFilesFromFormData.length} attachedFiles from formData`);
+      }
+      
       if (updateSubmissionDto.formData !== undefined) {
         const existingFormData = submission.formData || {};
         const incomingFormData = updateSubmissionDto.formData || {};
@@ -1164,6 +1168,56 @@ export class SubmissionService {
         }
       }
       // sectionStatus removed: no update needed
+
+      // Handle attachedFiles update - store in separate column, not in formData
+      // Use attachedFiles from top level OR extracted from formData
+      const incomingAttachedFiles = updateSubmissionDto.attachedFiles ?? attachedFilesFromFormData;
+      if (incomingAttachedFiles !== undefined) {
+        const existingAttachedFiles = submission.attachedFiles || [];
+        
+        // Normalize incoming attachedFiles
+        const normalizedAttachedFiles = incomingAttachedFiles.map((f: any) => {
+          const fileUrl = f.fileUrl ?? f.fileurl ?? "";
+          const uploadedAtRaw = f.uploadedAt ?? f.uploaded_at ?? null;
+          
+          return {
+            fileName: f.fileName ?? f.filename ?? "",
+            originalName: f.originalName ?? f.originalname ?? "",
+            filePath: f.filePath ?? f.filepath ?? "",
+            fileUrl: typeof fileUrl === "string" ? fileUrl : String(fileUrl || ""),
+            fileSize: typeof f.fileSize === "number" ? f.fileSize : Number(f.fileSize) || 0,
+            mimeType: f.mimeType ?? f.mimetype ?? "",
+            uploadedAt: uploadedAtRaw instanceof Date
+              ? uploadedAtRaw
+              : uploadedAtRaw
+                ? new Date(uploadedAtRaw)
+                : new Date(),
+          } as SubmissionFile;
+        });
+        
+        // Merge with existing files (replace by filePath to avoid duplicates)
+        const filePathMap = new Map<string, SubmissionFile>();
+        
+        // Add existing files to map
+        existingAttachedFiles.forEach((file: any) => {
+          if (file.filePath) {
+            filePathMap.set(file.filePath, file);
+          }
+        });
+        
+        // Add/update with incoming files
+        normalizedAttachedFiles.forEach((file: SubmissionFile) => {
+          if (file.filePath) {
+            filePathMap.set(file.filePath, file);
+          }
+        });
+        
+        updateData.attachedFiles = Array.from(filePathMap.values());
+        
+        this.logger.log(
+          `Updating attachedFiles: ${updateData.attachedFiles.length} files (${normalizedAttachedFiles.length} incoming, ${existingAttachedFiles.length} existing)`
+        );
+      }
 
       // If STATE_APPROVER is updating, ensure currentOwnerRole is set correctly
       // But don't automatically change status - allow STATE_APPROVER to work on DRAFT submissions

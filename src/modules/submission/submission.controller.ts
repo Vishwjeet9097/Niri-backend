@@ -150,7 +150,7 @@ export class SubmissionController {
             ? storedFile.uploadedAt.toISOString()
             : String(storedFile.uploadedAt || new Date().toISOString());
 
-        // Build full metadata object (store this in formData)
+        // Build full metadata object
         const fileMeta = {
           id: (storedFile as any).id ?? null,
           fileName: storedFile.fileName || file.originalname || "",
@@ -162,10 +162,15 @@ export class SubmissionController {
           uploadedAt: uploadedAtStr,
         };
 
-        // store full metadata into form JSON (not just the path)
-        current[lastKey] = fileMeta;
+        // Store minimal reference in formData (for UI reference - only filePath needed)
+        // Full metadata goes to attachedFiles column
+        current[lastKey] = {
+          id: fileMeta.id,
+          filePath: fileMeta.filePath,
+          fileName: fileMeta.fileName,
+        };
 
-        // also add to parsedSubmission.attachedFiles (keep your existing behavior)
+        // Add full metadata to attachedFiles array (stored in separate column)
         parsedSubmission.attachedFiles.push({
           fileName: fileMeta.fileName,
           originalName: fileMeta.originalName,
@@ -478,45 +483,43 @@ export class SubmissionController {
       delete (updateSubmissionDto as any).section_status;
     }
 
-    // Generalized file upload handling for any section, but only update if path exists
+    // File upload handling - Build structure dynamically for new indicators (same as create)
     if (files?.length) {
       for (const file of files) {
         const fieldPath = file.fieldname
-          .replace(/\[(\d+)\]/g, ".$1")
+          .replace(/\[(\d+)\]/g, ".$1") // handle arrays
           .split(".");
 
-        // Check if the full path exists in the original formData
-        let exists = true;
+        // Build nested structure if it doesn't exist (for new indicators)
         let current = updateSubmissionDto.formData;
         for (let i = 0; i < fieldPath.length - 1; i++) {
           const key = fieldPath[i];
-          if (!current[key] || typeof current[key] !== "object") {
-            exists = false;
-            break;
+          // If current[key] exists but is a string, convert it to an object
+          if (typeof current[key] === "string") {
+            current[key] = { existingFilePath: current[key] };
+          }
+          if (!current[key]) {
+            const nextKey = fieldPath[i + 1];
+            current[key] = /^\d+$/.test(nextKey) ? [] : {};
           }
           current = current[key];
         }
 
-        if (!exists) {
-          continue; // Skip updating if path does not exist
-        }
-
         const lastKey = fieldPath[fieldPath.length - 1];
-        // Only update if the lastKey exists
-        if (!(lastKey in current)) {
-          continue;
-        }
 
+        // Upload file to S3 via storageService.uploadFile()
         const storedFile = await this.submissionService.uploadFile(file, {
           submissionId: id,
           path: fieldPath.slice(1).join("/"),
         });
 
+        // Build normalized uploadedAt string
         const uploadedAtStr =
           storedFile.uploadedAt instanceof Date
             ? storedFile.uploadedAt.toISOString()
             : String(storedFile.uploadedAt || new Date().toISOString());
 
+        // Build full metadata object (store this in formData)
         const fileMeta = {
           id: (storedFile as any).id ?? null,
           fileName: storedFile.fileName || file.originalname || "",
@@ -528,7 +531,29 @@ export class SubmissionController {
           uploadedAt: uploadedAtStr,
         };
 
-        current[lastKey] = fileMeta;
+        // Store file metadata in formData (for UI reference - only filePath needed)
+        // Store minimal reference in formData, full metadata goes to attachedFiles
+        current[lastKey] = {
+          id: fileMeta.id,
+          filePath: fileMeta.filePath,
+          fileName: fileMeta.fileName,
+        };
+
+        // Initialize attachedFiles array if not present
+        if (!updateSubmissionDto.attachedFiles) {
+          updateSubmissionDto.attachedFiles = [];
+        }
+
+        // Add to attachedFiles array (store in separate column)
+        updateSubmissionDto.attachedFiles.push({
+          fileName: fileMeta.fileName,
+          originalName: fileMeta.originalName,
+          filePath: fileMeta.filePath,
+          fileUrl: fileMeta.fileUrl,
+          fileSize: fileMeta.fileSize,
+          mimeType: fileMeta.mimeType,
+          uploadedAt: fileMeta.uploadedAt,
+        });
       }
     }
 

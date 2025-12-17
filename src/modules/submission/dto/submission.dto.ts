@@ -44,6 +44,18 @@ export class UpdateSubmissionDto {
   formData?: Record<string, any>;
 
   @IsOptional()
+  @IsArray()
+  attachedFiles?: Array<{
+    fileName?: string;
+    originalName?: string;
+    filePath?: string;
+    fileUrl?: string;
+    fileSize?: number;
+    mimeType?: string;
+    uploadedAt?: string | Date;
+  }>;
+
+  @IsOptional()
   @IsObject()
   sectionStatus?: {
     totalIndicators: number;
