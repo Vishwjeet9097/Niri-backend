@@ -658,6 +658,23 @@ export class SubmissionController {
     );
   }
 
+  @Post("mospi-approver-send-back/:id")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.MOSPI_APPROVER)
+  @HttpCode(HttpStatus.OK)
+  async mospiApproverSendBack(
+    @Param("id") id: string,
+    @Body() body: { comment?: string },
+    @Request() req
+  ) {
+    return this.submissionService.mospiApproverSendBack(
+      id,
+      req.user.id,
+      req.user.role,
+      req.user.stateUt
+    );
+  }
+
   @Post("forward-to-mospi/:id")
   @UseGuards(RolesGuard)
   @Roles(UserRole.STATE_APPROVER)
