@@ -107,13 +107,21 @@ export class SubmissionController {
     parsedSubmission.formData = parsedSubmission.formData || {};
     parsedSubmission.attachedFiles = parsedSubmission.attachedFiles || [];
 
-    // Auto-generate submissionId if not provided
-    if (!parsedSubmission.submissionId) {
+    // Auto-generate submissionId if not provided, or if it's a UUID or invalid format
+    // UUIDs have format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars with hyphens)
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isUUID = parsedSubmission.submissionId && uuidPattern.test(parsedSubmission.submissionId);
+    const isValidFormat = parsedSubmission.submissionId && parsedSubmission.submissionId.startsWith('SUB-');
+    
+    if (!parsedSubmission.submissionId || isUUID || !isValidFormat) {
       const year = new Date().getFullYear();
       const randomNum = Math.floor(Math.random() * 1000000)
         .toString()
         .padStart(6, "0");
       parsedSubmission.submissionId = `SUB-${year}-${randomNum}`;
+      if (isUUID || !isValidFormat) {
+        console.log(`⚠️ Invalid submissionId detected (UUID or invalid format). Generated new submissionId: ${parsedSubmission.submissionId}`);
+      }
     }
 
     // Map files to nested fields
@@ -382,6 +390,14 @@ export class SubmissionController {
 
     updateSubmissionDto.formData = updateSubmissionDto.formData || {};
 
+    // Fetch submission to get the submissionId field (not the DB UUID id)
+    const existingSubmission = await this.submissionService.findOne(
+      id,
+      req.user.role,
+      req.user.stateUt
+    );
+    const submissionIdForFiles = existingSubmission.submissionId;
+
     // Handle file uploads if present
     if (files?.length) {
       for (const file of files) {
@@ -405,7 +421,7 @@ export class SubmissionController {
         const lastKey = fieldPath[fieldPath.length - 1];
 
         const storedFile = await this.submissionService.uploadFile(file, {
-          submissionId: id,
+          submissionId: submissionIdForFiles,
           path: fieldPath.slice(1).join("/"),
         });
 
@@ -475,6 +491,14 @@ export class SubmissionController {
     // Always ensure formData is initialized for file upload logic
     updateSubmissionDto.formData = updateSubmissionDto.formData || {};
 
+    // Fetch submission to get the submissionId field (not the DB UUID id)
+    const existingSubmission = await this.submissionService.findOne(
+      id,
+      req.user.role,
+      req.user.stateUt
+    );
+    const submissionIdForFiles = existingSubmission.submissionId;
+
     // Support section_status (snake_case) as alias for sectionStatus (camelCase)
     if ((updateSubmissionDto as any).section_status) {
       updateSubmissionDto.sectionStatus = (
@@ -509,7 +533,7 @@ export class SubmissionController {
 
         // Upload file to S3 via storageService.uploadFile()
         const storedFile = await this.submissionService.uploadFile(file, {
-          submissionId: id,
+          submissionId: submissionIdForFiles,
           path: fieldPath.slice(1).join("/"),
         });
 
@@ -785,9 +809,16 @@ export class SubmissionController {
     // खाली file ऑब्जेक्ट्स क्लीन करें
     this.cleanEmptyFileObjects(parsed.formData);
 
+    // Fetch submission to get the submissionId field (not the DB UUID id)
+    const existingSubmission = await this.submissionService.findOne(
+      id,
+      req.user.role,
+      req.user.stateUt
+    );
+    const submissionIdForFiles = existingSubmission.submissionId;
+
     // फ़ाइलों को nested फील्ड्स पर मैप करें (create जैसा)
     if (files?.length) {
-      const submissionIdForFiles = (parsed as any).submissionId || id;
       for (const file of files) {
         const fieldPath = file.fieldname
           .replace(/\[(\d+)\]/g, ".$1")

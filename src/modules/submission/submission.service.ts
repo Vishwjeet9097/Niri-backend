@@ -539,9 +539,11 @@ export class SubmissionService {
     file: Express.Multer.File,
     context: { submissionId: string; path: string }
   ) {
-    const uploadPath = `${context.submissionId}/${context.path}`;
-    const stored = await this.storageService.uploadFile(file, uploadPath);
-    return stored; // should contain { url, key, bucket } if your service is consistent
+    // Pass ONLY the submissionId to storageService
+    // The storageService will construct the path itself: submissions/{submissionId}/{uuid_filename}
+    // The 'path' parameter in context is not used here since storageService generates its own filename
+    const stored = await this.storageService.uploadFile(file, context.submissionId);
+    return stored;
   }
 
   async create(
