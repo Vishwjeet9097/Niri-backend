@@ -303,13 +303,13 @@ export class DashboardService {
           FROM jsonb_each(s.form_data)
           WHERE jsonb_typeof(value) = 'object'
         ) AS sections
-        WHERE u.role IN ($1)
-          AND u.state_ut = $2
-          AND s."stateUt" = $2
+        WHERE u.role IN ($1, $2)
+          AND u.state_ut = $3
+          AND s."stateUt" = $3
           AND s.status != 'DRAFT'
           AND section_key ~ '^section[0-9]+_[0-9]+$';
         `;
-      const params = [UserRole.NODAL_OFFICER, userStateUt];      
+      const params = [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt];      
       
       const totalIndicatorsReceivedQuery =
         await this.submissionRepository.query(sqlQuery, params);   
@@ -328,12 +328,12 @@ export class DashboardService {
           ) AS matches
           FROM submissions s
           JOIN users u ON s.submitted_by = u.id
-          WHERE u.role = $1
-            AND u.state_ut = $2
-            AND s."stateUt" = $2
+          WHERE u.role IN ($1, $2)
+            AND u.state_ut = $3
+            AND s."stateUt" = $3
         ) t;
         `,
-        [UserRole.NODAL_OFFICER, userStateUt]
+        [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt]
       );
       totalIndicatorsReceived = parseInt(fallbackQuery[0]?.count || "0");
     }
@@ -366,11 +366,11 @@ export class DashboardService {
         ) AS cnt
         FROM submissions s
         JOIN users u ON s.submitted_by = u.id
-        WHERE s."stateUt" = $1
-          AND u.role = $2
+       WHERE s."stateUt" = $1
+          AND u.role IN ($2, $3)  
       ) t;
       `,
-        [userStateUt, UserRole.NODAL_OFFICER]
+        [userStateUt, UserRole.NODAL_OFFICER,UserRole.STATE_APPROVER]
       );
       acceptedFromNodal = parseInt(acceptedCountQuery[0]?.count || "0");
     } catch {
@@ -381,12 +381,12 @@ export class DashboardService {
           SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"ACCEPTED"', 'g')
         ) AS matches
         FROM submissions s
-        JOIN users u ON s.submitted_by = u.id
+        JOIN users u ON s.submitted_by = u.id         
         WHERE s."stateUt" = $1
-          AND u.role = $2
+          AND u.role IN ($2, $3)  
       ) t;
       `,
-        [userStateUt, UserRole.NODAL_OFFICER]
+        [userStateUt, UserRole.NODAL_OFFICER,UserRole.STATE_APPROVER]
       );
       acceptedFromNodal = parseInt(fallback[0]?.count || "0");
     }
@@ -448,6 +448,8 @@ export class DashboardService {
     // ✅ 8. Get Total Active Indicators
     const totalIndicators = await this.getTotalActiveIndicators();
 
+    const returnDataFromNoal =  totalIndicators -  pendingSubmission; 
+
     // ✅ 9. Return final structured response
     return {
       totalIndicators,
@@ -456,7 +458,7 @@ export class DashboardService {
         totalIndicatorsReceived,
         acceptedFromNodal,
         pendingSubmission,
-        returnedToNodal,
+        returnedToNodal:returnDataFromNoal
       },
       mospi: {
         submittedToMoSPI,
