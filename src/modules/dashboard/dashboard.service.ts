@@ -501,7 +501,7 @@ export class DashboardService {
   CASE 
     WHEN EXISTS (
       SELECT 1 FROM submissions s 
-      WHERE s.submitted_by = $1 AND s.status != 'DRAFT'
+      WHERE s.submitted_by = $1  
     )
     THEN $2
     ELSE 0
@@ -613,7 +613,7 @@ export class DashboardService {
     const underReview = Math.max(totalSubmitted - approved - reverted, 0);
 
     // 6️⃣ Pending = assigned - submitted
-    const pendingSubmission = Math.max(totalAssigned - totalSubmitted, 0);
+    const pendingSubmission = Math.max(totalAssigned - (totalSubmitted-reverted), 0);
 
     this.logger.log(
       `[NodalDashboard] Final => totalAssigned=${totalAssigned}, totalSubmitted=${totalSubmitted}, approved=${approved}, reverted=${reverted}, underReview=${underReview}, pendingSubmission=${pendingSubmission}`
