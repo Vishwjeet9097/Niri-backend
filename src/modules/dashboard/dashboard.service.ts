@@ -448,8 +448,7 @@ export class DashboardService {
     // ✅ 8. Get Total Active Indicators
     const totalIndicators = await this.getTotalActiveIndicators();
 
-    const returnDataFromNoal =  totalIndicators -  pendingSubmission; 
-
+ 
     // ✅ 9. Return final structured response
     return {
       totalIndicators,
@@ -458,7 +457,7 @@ export class DashboardService {
         totalIndicatorsReceived,
         acceptedFromNodal,
         pendingSubmission,
-        returnedToNodal:returnDataFromNoal
+        returnedToNodal
       },
       mospi: {
         submittedToMoSPI,
