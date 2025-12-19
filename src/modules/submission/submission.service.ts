@@ -2574,6 +2574,628 @@ export class SubmissionService {
     }
   }
 
+  /**
+   * MoSPI Approver sends submission back to State
+   */
+  async mospiApproverSendBack(
+    submissionId: string,
+    // comment: string | undefined,
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    this.logger.log(
+      `MoSPI Approver ${userId} sending back submission ${submissionId} to state`
+    );
+
+    // Find submission by internal id
+    const submission = await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+
+    if (!submission) {
+      throw new NotFoundException(`Submission not found for id: ${submissionId}`);
+    }
+
+    // Only MoSPI Approver can use this endpoint (guard already enforces this)
+    if (userRole !== UserRole.MOSPI_APPROVER) {
+      throw new ForbiddenException("Only MoSPI Approver can send back to state");
+    }
+
+    // Validate current status (must be with MOSPI Approver)
+    if (submission.status !== SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER) {
+      throw new BadRequestException(
+        `Cannot send back submission in status ${submission.status}. Must be SUBMITTED_TO_MOSPI_APPROVER`
+      );
+    }
+
+    // Update submission: change status and owner role back to state
+    await this.submissionRepository.update(submissionId, {
+      status: SubmissionStatus.RETURNED_FROM_MOSPI,
+      currentOwnerRole: UserRole.STATE_APPROVER,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(
+      `Submission ${submissionId} sent back to state by MoSPI Approver successfully`
+    );
+
+    // Return updated submission
+    return await this.submissionRepository.findOne({
+      where: { id: submissionId },
+      relations: ["user", "finalScore"],
+    });
+  }
+
+  async buildCumulativePreview(params: {
+    stateUt: string;
+    year?: string;
+    userRole: UserRole;
+    userStateUt?: string;
+    debug?: string; // optional ?debug=1
+  }) {
+    const { stateUt, year, userRole, userStateUt, debug } = params;
+    const DEBUG = debug === "1";
+
+    // ---------- Access control ----------
+    if (
+      userRole !== UserRole.ADMIN &&
+      userRole !== UserRole.MOSPI_REVIEWER &&
+      userRole !== UserRole.MOSPI_APPROVER &&
+      userRole !== UserRole.STATE_APPROVER &&
+      userRole !== UserRole.NODAL_OFFICER
+    )
+      throw new ForbiddenException("Access denied");
+
+    // Normalize state comparison (case-insensitive and trim whitespace)
+    const normalizedStateUt = stateUt?.trim().toLowerCase();
+    const normalizedUserStateUt = userStateUt?.trim().toLowerCase();
+
+    if (
+      userRole === UserRole.STATE_APPROVER &&
+      normalizedUserStateUt &&
+      normalizedUserStateUt !== normalizedStateUt
+    ) {
+      this.logger.warn(
+        `STATE_APPROVER access denied: userStateUt="${userStateUt}" !== stateUt="${stateUt}"`
+      );
+      throw new ForbiddenException("You can only preview your own state");
+    }
+
+    // ---------- Helpers ----------
+    const categoryToParentKey = (category?: string) => {
+      switch ((category || "").toLowerCase()) {
+        case "infrastructure financing":
+          return "infraFinancing";
+        case "infrastructure development":
+          return "infraDevelopment";
+        case "ppp development":
+          return "pppDevelopment";
+        case "infrastructure enablers":
+          return "infraEnablers";
+        default:
+          return "";
+      }
+    };
+    const codeToSectionKey = (code: string) =>
+      `section${String(code).replace(".", "_")}`;
+    const deepGet = (obj: any, path: string): any =>
+      path
+        .split(".")
+        .reduce((a, k) => (a && typeof a === "object" ? a[k] : undefined), obj);
+
+    const normalizeYear = (y: any): string | null => {
+      if (!y) return null;
+      return String(y).trim(); // keep "2025-26" as-is
+    };
+
+    const pickSubmissionYear = (s: any): string | null => {
+      if (s?.metadata?.fiscalYear) return normalizeYear(s.metadata.fiscalYear);
+      if (s?.formData?.meta?.year) return normalizeYear(s.formData.meta.year);
+      if (typeof s?.fiscalYear === "string") return normalizeYear(s.fiscalYear);
+      if (typeof s?.year === "string") return normalizeYear(s.year);
+      if (typeof s?.formData?.year === "string")
+        return normalizeYear(s.formData.year);
+      return null;
+    };
+
+    const pickScalarRecord = (rec: any) =>
+      Array.isArray(rec) ? (rec.length ? rec[0] : null) : rec;
+
+    // Find the record for a specific indicator inside a submission
+    const findIndicatorPayload = (submission: any, ind: Indicator) => {
+      const statuses: any[] | undefined = submission?.statuses;
+      const formData = submission?.formData;
+
+      // A) statuses[] (preferred)
+      if (Array.isArray(statuses) && statuses.length) {
+        const sectionKey = codeToSectionKey(ind.code); // e.g. "section1_1"
+        const parentKey = categoryToParentKey(ind.category); // e.g. "infraFinancing"
+        const wantPath = parentKey
+          ? `${parentKey}.${sectionKey}`.toLowerCase()
+          : null;
+
+        if (wantPath) {
+          const exact = statuses.find(
+            (s) =>
+              typeof s?.path === "string" && s.path.toLowerCase() === wantPath
+          );
+          if (exact) return exact;
+        }
+        const bySection = statuses.find(
+          (s) =>
+            (s?.sectionKey || "").toLowerCase() === sectionKey.toLowerCase()
+        );
+        if (bySection) return bySection;
+
+        const loose = statuses.find(
+          (s) =>
+            s?.indicatorCode === ind.code ||
+            s?.code === ind.code ||
+            s?.name === ind.name
+        );
+        if (loose) return loose;
+      }
+
+      // B) legacy formData fallbacks
+      if (formData && typeof formData === "object") {
+        // Direct lookups by code/id/name
+        if (formData[ind.code] != null) return formData[ind.code];
+        if (formData[ind.id] != null) return formData[ind.id];
+        if (formData[ind.name] != null) return formData[ind.name];
+
+        const sectionKey = codeToSectionKey(ind.code);
+        const parents = [
+          "infraFinancing",
+          "infraDevelopment",
+          "pppDevelopment",
+          "infraEnablers",
+          "infrastructureFinancing",
+          "infrastructureDevelopment",
+          "infrastructureEnablers",
+        ];
+
+        // Try each parent category
+        for (const p of parents) {
+          const node = deepGet(formData, `${p}.${sectionKey}`);
+          // Check if node exists and is not null/undefined
+          // Empty objects {} and empty arrays [] are valid - they indicate the section exists
+          if (node != null) {
+            // Return the full node to preserve status field
+            // The status is stored on the node itself (e.g., formData.infraFinancing.section1_1.status)
+            return node;
+          }
+        }
+
+        // Try alternative container paths
+        const containerPaths = [
+          `sections.${ind.sectionId}.${sectionKey}`,
+          `sections.${ind.sectionId}.indicators.${ind.code}`,
+          `responses.${ind.code}`,
+          `payload.${ind.code}`,
+          `data.${ind.code}`,
+        ];
+        for (const path of containerPaths) {
+          const node = deepGet(formData, path);
+          if (node != null) {
+            // Return the full node to preserve status field
+            return node;
+          }
+        }
+      }
+      return null;
+    };
+
+    const pickIndicatorMeta = (recordIn: any, submission: any) => {
+      const rec = pickScalarRecord(recordIn);
+
+      // Extract status: check record first, then submission status, then default to NOT_STARTED
+      // The status might be on the record itself (from formData section) or on the submission
+      let status = rec?.status;
+      if (!status && submission?.formData) {
+        // Try to find status in formData structure if not directly on record
+        // This handles cases where status is stored separately from data
+        const formData = submission.formData;
+        if (rec && typeof rec === "object") {
+          // Check if record has a code or sectionKey to locate it in formData
+          const sectionKey =
+            rec.sectionKey || (rec.code ? codeToSectionKey(rec.code) : null);
+          const parentKey = rec.parentKey || categoryToParentKey(rec.category);
+          if (sectionKey && parentKey) {
+            const node = deepGet(formData, `${parentKey}.${sectionKey}`);
+            if (node?.status) {
+              status = node.status;
+            }
+          }
+        }
+      }
+      if (!status) {
+        status = submission?.status;
+      }
+      if (!status) {
+        status = "NOT_STARTED";
+      }
+
+      // Extract year: prioritize year from the record itself (section-level year)
+      // This is important because some indicators store year at the section level (e.g., section1_1.year = "2025-26")
+      const year = normalizeYear(
+        rec?.year ?? rec?.fiscalYear ?? pickSubmissionYear(submission)
+      );
+
+      // Extract score: marksObtained takes precedence over score
+      const score = rec?.marksObtained ?? rec?.score ?? null;
+
+      // Extract comment: remarks takes precedence over comment
+      const comment = rec?.remarks ?? rec?.comment ?? null;
+
+      return {
+        status: status as string,
+        score,
+        comment,
+        year,
+        updatedAt: rec?.updatedAt ?? submission?.updatedAt ?? null,
+      };
+    };
+
+    // ---------- 1) Indicators ----------
+    const indicators: Indicator[] = await this.indicatorRepository.find({
+      where: { isActive: true } as any,
+      order: { sectionId: "ASC", code: "ASC" as any },
+    });
+
+    // ---------- 2) Submissions for state ----------
+    let allSubsRaw: Submission[] = [];
+    try {
+      // Try case-insensitive comparison for stateUt
+      allSubsRaw = await this.submissionRepository
+        .createQueryBuilder("s")
+        .leftJoinAndSelect("s.statuses", "statuses")
+        .where("LOWER(s.stateUt) = LOWER(:stateUt)", { stateUt })
+        .getMany();
+    } catch (err) {
+      this.logger.warn(`Failed to query with join, falling back: ${err}`);
+      // Fallback: get all submissions and filter in-memory (case-insensitive)
+      const allSubs = await this.submissionRepository.find({
+        loadRelationIds: false,
+      });
+      allSubsRaw = allSubs.filter(
+        (s) => s.stateUt && s.stateUt.toLowerCase() === stateUt.toLowerCase()
+      );
+    }
+
+    this.logger.log(
+      `[buildCumulativePreview] Found ${allSubsRaw.length} submissions for stateUt=${stateUt}`
+    );
+    if (allSubsRaw.length > 0) {
+      this.logger.log(
+        `[buildCumulativePreview] Sample submission IDs: ${allSubsRaw
+          .slice(0, 3)
+          .map((s) => s.submissionId)
+          .join(", ")}`
+      );
+      // Log sample formData structure
+      const sample = allSubsRaw[0];
+      if (sample?.formData) {
+        const formDataKeys = Object.keys(sample.formData);
+        this.logger.log(
+          `[buildCumulativePreview] Sample formData keys: ${formDataKeys.join(", ")}`
+        );
+        if (formDataKeys.length > 0) {
+          const firstKey = formDataKeys[0];
+          const firstCategory = sample.formData[firstKey];
+          if (firstCategory && typeof firstCategory === "object") {
+            const sectionKeys = Object.keys(firstCategory).slice(0, 3);
+            this.logger.log(
+              `[buildCumulativePreview] Sample ${firstKey} sections: ${sectionKeys.join(", ")}`
+            );
+          }
+        }
+      }
+    }
+
+    // Year filter in-memory (entity likely has no "year" column)
+    const subs = year
+      ? allSubsRaw.filter((s) => (pickSubmissionYear(s) ?? "") === String(year))
+      : allSubsRaw;
+
+    if (year && subs.length !== allSubsRaw.length) {
+      this.logger.log(
+        `[buildCumulativePreview] Filtered to ${subs.length} submissions for year=${year}`
+      );
+    }
+
+    // ---------- 3) Choose best submission per indicator ----------
+    const bestByIndicator = new Map<string, Submission | null>();
+    const dbg: any = DEBUG
+      ? { totals: { submissions: subs.length }, perIndicator: {} }
+      : undefined;
+
+    for (const ind of indicators) {
+      const candidates = subs.filter((s) => {
+        const payload = findIndicatorPayload(s, ind);
+        return payload != null;
+      });
+
+      // Debug logging for first few indicators
+      if (
+        ind.code === "1.1" ||
+        ind.code === "1.2" ||
+        ind.code === "2.1" ||
+        DEBUG
+      ) {
+        this.logger.log(
+          `[buildCumulativePreview] Indicator ${ind.code} (${ind.name}): found ${candidates.length} candidate submissions`
+        );
+        if (candidates.length > 0) {
+          const sampleCandidate = candidates[0];
+          const samplePayload = findIndicatorPayload(sampleCandidate, ind);
+          if (samplePayload) {
+            const payloadKeys =
+              typeof samplePayload === "object" && !Array.isArray(samplePayload)
+                ? Object.keys(samplePayload)
+                : ["(not an object)"];
+            this.logger.log(
+              `[buildCumulativePreview] Indicator ${ind.code}: payload keys (${payloadKeys.length}): ${payloadKeys.slice(0, 10).join(", ")}${payloadKeys.length > 10 ? "..." : ""}`
+            );
+            if (
+              typeof samplePayload === "object" &&
+              !Array.isArray(samplePayload)
+            ) {
+              this.logger.log(
+                `[buildCumulativePreview] Indicator ${ind.code}: status=${samplePayload.status || "no status"}, hasData=${Object.keys(samplePayload).filter((k) => !["status", "comment", "remarks", "marksObtained", "score"].includes(k)).length > 0}`
+              );
+            }
+          } else {
+            this.logger.log(
+              `[buildCumulativePreview] Indicator ${ind.code}: no payload found in candidates`
+            );
+          }
+        } else {
+          this.logger.log(
+            `[buildCumulativePreview] Indicator ${ind.code}: no candidates found (category: ${ind.category}, sectionKey: ${codeToSectionKey(ind.code)})`
+          );
+        }
+      }
+
+      const accepted = candidates.find((s) => {
+        const rec = pickScalarRecord(findIndicatorPayload(s, ind));
+        const st = String(
+          rec?.status || (s as any)?.status || ""
+        ).toUpperCase();
+        return (
+          st === "ACCEPTED" ||
+          st === "APPROVED" ||
+          st === "ACCEPTED_BY_STATE_APPROVER"
+        );
+      });
+
+      const best =
+        accepted ??
+        (candidates.length
+          ? candidates.sort(
+              (a, b) =>
+                new Date(
+                  (b as any).updatedAt || (b as any).createdAt || 0
+                ).getTime() -
+                new Date(
+                  (a as any).updatedAt || (a as any).createdAt || 0
+                ).getTime()
+            )[0]
+          : null);
+
+      bestByIndicator.set(ind.id, best);
+
+      if (DEBUG)
+        dbg.perIndicator[ind.code] = {
+          candidates: candidates.length,
+          pickedAccepted: !!accepted,
+        };
+    }
+
+    // ---------- 4) Build grouped response ----------
+    type PreviewItem = {
+      id: string;
+      code: string;
+      name: string;
+      category?: string;
+      sectionId?: string;
+      maxScore?: number | string;
+      data: any;
+      status: string;
+      score: number | null;
+      comment: string | null;
+      updatedAt: string | Date | null;
+      year: string | null;
+    };
+
+    const grouped: Record<string, PreviewItem[]> = {};
+    const processedIndicatorIds = new Set<string>();
+
+    // Ensure ALL indicators are included, even if they have no submission data
+    for (const ind of indicators) {
+      // Track that we're processing this indicator
+      processedIndicatorIds.add(ind.id);
+
+      const best = bestByIndicator.get(ind.id) as any;
+      const record = best ? findIndicatorPayload(best, ind) : null;
+      const meta = pickIndicatorMeta(record, best);
+
+      const category = ind.category || "Uncategorized";
+      if (!grouped[category]) grouped[category] = [];
+
+      // Extract data from record - if record has a 'data' property, use that, otherwise use the record itself
+      // But exclude status, score, remarks, etc. from the data field (those are in meta)
+      let dataField = null;
+      if (record) {
+        const rec = pickScalarRecord(record);
+        if (rec && typeof rec === "object") {
+          // If record has a 'data' property, use that
+          if ("data" in rec && rec.data != null) {
+            dataField = rec.data;
+          } else {
+            // Otherwise, use the record but exclude metadata fields
+            // These are moved to meta: status, score, marksObtained, remarks, comment, updatedAt, year, fiscalYear
+            // Everything else (arrays, objects, strings, numbers) should be preserved in data
+            const {
+              status,
+              score,
+              marksObtained,
+              remarks,
+              comment,
+              updatedAt,
+              year,
+              fiscalYear,
+              // Also exclude internal metadata fields that might exist
+              sectionKey,
+              parentKey,
+              path,
+              indicatorCode,
+              code,
+              name,
+              ...dataOnly
+            } = rec;
+            // Include all remaining fields as data (preserves arrays, objects, and all other fields)
+            // This ensures all database fields like ulbList, infraActArray, file objects, etc. are preserved
+            if (Object.keys(dataOnly).length > 0) {
+              dataField = dataOnly;
+            } else if (Array.isArray(rec)) {
+              // If it's an array, preserve it
+              dataField = rec;
+            }
+          }
+        } else if (rec != null) {
+          // For non-object values (strings, numbers, etc.), preserve them
+          dataField = rec;
+        }
+      }
+
+      // Always include the indicator, even if it has no data
+      const previewItem = {
+        id: ind.id,
+        code: ind.code,
+        name: ind.name,
+        category: ind.category,
+        sectionId: ind.sectionId,
+        maxScore: ind.maxScore,
+        data: dataField,
+        status: meta.status,
+        score: meta.score,
+        comment: meta.comment,
+        updatedAt: meta.updatedAt,
+        year: meta.year,
+      };
+
+      // Log data field structure for debugging (first few indicators or if DEBUG)
+      if (
+        (ind.code === "1.1" ||
+          ind.code === "1.2" ||
+          ind.code === "2.1" ||
+          DEBUG) &&
+        dataField
+      ) {
+        const dataKeys =
+          typeof dataField === "object" && !Array.isArray(dataField)
+            ? Object.keys(dataField)
+            : Array.isArray(dataField)
+              ? [`[Array with ${dataField.length} items]`]
+              : ["(scalar value)"];
+        this.logger.log(
+          `[buildCumulativePreview] Indicator ${ind.code}: data field contains ${dataKeys.length} keys: ${dataKeys.slice(0, 15).join(", ")}${dataKeys.length > 15 ? "..." : ""}`
+        );
+      }
+
+      grouped[category].push(previewItem);
+
+      if (DEBUG) {
+        Object.assign(dbg.perIndicator[ind.code], {
+          foundPayload: !!record,
+          status: meta.status,
+          score: meta.score,
+          year: meta.year,
+          dataKeys:
+            dataField &&
+            typeof dataField === "object" &&
+            !Array.isArray(dataField)
+              ? Object.keys(dataField).length
+              : dataField
+                ? 1
+                : 0,
+        });
+      }
+    }
+
+    // Validation: Ensure all indicators were processed
+    const totalProcessed = processedIndicatorIds.size;
+    const totalInGrouped = Object.values(grouped).reduce(
+      (sum, arr) => sum + arr.length,
+      0
+    );
+
+    if (totalProcessed !== indicators.length) {
+      this.logger.warn(
+        `[buildCumulativePreview] Warning: Processed ${totalProcessed} indicators but expected ${indicators.length}`
+      );
+    }
+
+    if (totalInGrouped !== indicators.length) {
+      this.logger.warn(
+        `[buildCumulativePreview] Warning: Grouped ${totalInGrouped} indicators but expected ${indicators.length}`
+      );
+    }
+
+    this.logger.log(
+      `[buildCumulativePreview] Processed ${totalProcessed} indicators, grouped into ${Object.keys(grouped).length} categories: ${Object.keys(grouped).join(", ")}`
+    );
+    this.logger.log(
+      `[buildCumulativePreview] Indicators per category: ${Object.entries(
+        grouped
+      )
+        .map(([cat, items]) => `${cat}: ${items.length}`)
+        .join(", ")}`
+    );
+
+    // Sort indicators within each category by code for consistent ordering
+    for (const category in grouped) {
+      grouped[category].sort((a, b) => {
+        // Compare by code (e.g., "1.1" < "1.2" < "2.1")
+        const codeA = a.code || "";
+        const codeB = b.code || "";
+        return codeA.localeCompare(codeB, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
+    }
+
+    // Calculate summary statistics
+    const indicatorsWithData = Object.values(grouped)
+      .flat()
+      .filter((item) => item.data != null).length;
+    const indicatorsWithoutData = totalInGrouped - indicatorsWithData;
+
+    this.logger.log(
+      `[buildCumulativePreview] Summary: ${indicatorsWithData} indicators with data, ${indicatorsWithoutData} indicators without data`
+    );
+
+    // ---------- 5) Return ----------
+    return {
+      status: true,
+      message: `Cumulative preview for ${stateUt}`,
+      data: {
+        stateUt,
+        users: 0, // we're not computing people anymore
+        totalIndicators: indicators.length,
+        indicatorsInResponse: totalInGrouped, // Should match totalIndicators
+        indicatorsWithData,
+        indicatorsWithoutData,
+        categories: Object.keys(grouped).sort(), // Sort categories alphabetically
+        indicators: grouped, // Grouped by category, sorted by code within each category
+        ...(DEBUG ? { debug: dbg } : {}),
+      },
+    };
+  }
+
   // Validate status transition
   private validateStatusTransition(
     currentStatus: SubmissionStatus,
