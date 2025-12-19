@@ -983,17 +983,18 @@ export class SubmissionController {
       section?: string;
       status?: boolean;
       mospi_status?: string;
+      nodalOfficerId?: string; // Add this parameter
     },
     @Request() req
   ) {
-    const { submissionId, category, section, status, mospi_status } = body;
-
+    const { submissionId, category, section, status, mospi_status, nodalOfficerId } = body;
+  
     if (!submissionId || !category || !section || typeof status !== "boolean") {
       throw new BadRequestException(
         "Missing required fields: submissionId, category, section, accepted"
       );
     }
-
+  
     let fields: any = [];
     // Create fields array with status
     if (req.user.role === UserRole.STATE_APPROVER) {
@@ -1001,8 +1002,8 @@ export class SubmissionController {
     } else {
       fields = [{ mospi_status: mospi_status }];
     }
-
-    // Reuse existing service method
+  
+    // Reuse existing service method, pass nodalOfficerId
     return this.submissionService.updateFormSectionFields(
       submissionId,
       category,
@@ -1010,9 +1011,11 @@ export class SubmissionController {
       fields,
       req.user.id,
       req.user.role,
-      req.user.stateUt
+      req.user.stateUt,
+      nodalOfficerId // Pass nodalOfficerId
     );
   }
+  
 
   // --- cumulative preview for a state ---
   @Get("state/:stateUt/cumulative-preview")
