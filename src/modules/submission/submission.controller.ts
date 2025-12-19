@@ -1041,4 +1041,20 @@ export class SubmissionController {
       userStateUt: req.user.stateUt,
     });
   }
+
+  @Post("clean-mospi-status/:id")
+@UseGuards(RolesGuard)
+@Roles(UserRole.STATE_APPROVER)
+@HttpCode(HttpStatus.OK)
+async cleanMospiStatus(
+  @Param("id") id: string,
+  @Request() req
+): Promise<any> {
+  return this.submissionService.cleanMospiStatusFromSubmission(
+    id,
+    req.user.id,
+    req.user.role,
+    req.user.stateUt
+  );
+}
 }

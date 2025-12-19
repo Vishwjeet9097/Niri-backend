@@ -4892,6 +4892,143 @@ export class SubmissionService {
       throw error;
     }
   }
-// ...existing code...
+/**
+ * Clean mospi_status from all categories in formData
+ * Recursively removes mospi_status from:
+ * - infraFinancing
+ * - infraDevelopment (including nested arrays like infraActArray, specializedEntityArray)
+ * - pppDevelopment (including nested arrays)
+ * - infraEnablers (including nested arrays)
+ */
+async cleanMospiStatusFromSubmission(
+  id: string,
+  userId: string,
+  userRole: UserRole,
+  userStateUt: string
+): Promise<Submission> {
+  try {
+    this.logger.log(`=== CLEAN MOSPI STATUS START ===`);
+    this.logger.log(
+      `ID: ${id}, UserId: ${userId}, UserRole: ${userRole}, StateUt: ${userStateUt}`
+    );
+
+    // Step 1: Find submission
+    const submission = await this.findOne(id, userRole, userStateUt);
+    this.logger.log(`Found submission with status: ${submission.status}`);
+
+    // Step 2: Deep clone formData to avoid mutating the entity
+    const formData = submission.formData
+      ? JSON.parse(JSON.stringify(submission.formData))
+      : {};
+
+    this.logger.log(
+      `Starting cleanup of mospi_status from formData. Categories: ${Object.keys(formData).join(", ")}`
+    );
+
+    // Step 3: Recursively remove mospi_status from all categories
+    const categories = [
+      "infraFinancing",
+      "infraDevelopment",
+      "pppDevelopment",
+      "infraEnablers",
+    ];
+
+    let totalRemoved = 0;
+
+    // Helper function to recursively remove mospi_status
+    const removeMospiStatus = (obj: any, path: string = ""): number => {
+      if (!obj || typeof obj !== "object") {
+        return 0;
+      }
+
+      let removed = 0;
+
+      // If it's an array, process each item
+      if (Array.isArray(obj)) {
+        obj.forEach((item, index) => {
+          if (item && typeof item === "object") {
+            // Remove mospi_status from array item if present
+            if ("mospi_status" in item) {
+              delete item.mospi_status;
+              removed++;
+              this.logger.log(
+                `🗑️ Removed mospi_status from ${path}[${index}]`
+              );
+            }
+            // Recursively process nested objects in array items
+            removed += removeMospiStatus(item, `${path}[${index}]`);
+          }
+        });
+      } else {
+        // If it's an object, remove mospi_status if present
+        if ("mospi_status" in obj) {
+          delete obj.mospi_status;
+          removed++;
+          this.logger.log(`🗑️ Removed mospi_status from ${path || "root"}`);
+        }
+
+        // Recursively process all properties
+        for (const key in obj) {
+          if (obj[key] && typeof obj[key] === "object") {
+            removed += removeMospiStatus(
+              obj[key],
+              path ? `${path}.${key}` : key
+            );
+          }
+        }
+      }
+
+      return removed;
+    };
+
+    // Process each category
+    for (const category of categories) {
+      if (formData[category] && typeof formData[category] === "object") {
+        this.logger.log(
+          `🔍 Processing category: ${category} with ${Object.keys(formData[category]).length} sections`
+        );
+
+        const categoryRemoved = removeMospiStatus(
+          formData[category],
+          category
+        );
+        totalRemoved += categoryRemoved;
+
+        this.logger.log(
+          `✅ Category ${category}: Removed ${categoryRemoved} mospi_status field(s)`
+        );
+      } else {
+        this.logger.log(
+          `⚠️ Category ${category}: Not found or invalid type`
+        );
+      }
+    }
+
+    this.logger.log(
+      `✅ Cleanup completed. Total removed: ${totalRemoved} mospi_status field(s)`
+    );
+
+    // Step 4: Update submission with cleaned formData
+    await this.submissionRepository.update(id, {
+      formData: formData,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(`Submission updated successfully with cleaned formData`);
+
+    // Step 5: Return updated submission
+    const updatedSubmission = await this.findOne(id, userRole, userStateUt);
+    this.logger.log(`=== CLEAN MOSPI STATUS SUCCESS ===`);
+
+    return updatedSubmission;
+  } catch (error) {
+    this.logger.error(`=== CLEAN MOSPI STATUS ERROR ===`);
+    this.logger.error(
+      `Error cleaning mospi_status from submission ${id}: ${error.message}`
+    );
+    this.logger.error(`Stack trace: ${error.stack}`);
+    throw error;
+  }
+}
 
 }
