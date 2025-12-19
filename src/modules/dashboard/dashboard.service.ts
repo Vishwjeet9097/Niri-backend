@@ -496,18 +496,20 @@ export class DashboardService {
       const totalSubmittedQuery = await this.submissionRepository.query(
         `   
 
-      SELECT 
-  CASE 
-    WHEN EXISTS (
-      SELECT 1 FROM submissions s 
-      WHERE s.submitted_by = $1  
-    )
-    THEN $2
-    ELSE 0
-  END AS count;
+      SELECT COUNT(DISTINCT section_key) AS count
+        FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
+        CROSS JOIN LATERAL (
+          SELECT jsonb_object_keys(value) AS section_key
+          FROM jsonb_each(s.form_data)
+          WHERE jsonb_typeof(value) = 'object'
+        ) AS sections
+        WHERE u.role IN ($1)
+           AND s."submitted_by" = $2 
+          AND section_key ~ '^section[0-9]+_[0-9]+$';
        
       `,
-        [userId, totalAssigned]
+        [UserRole.NODAL_OFFICER, userId]
       );
       totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
     } catch (err) {
