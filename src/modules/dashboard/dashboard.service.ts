@@ -305,8 +305,7 @@ export class DashboardService {
         ) AS sections
         WHERE u.role IN ($1, $2)
           AND u.state_ut = $3
-          AND s."stateUt" = $3
-          AND s.status != 'DRAFT'
+          AND s."stateUt" = $3 
           AND section_key ~ '^section[0-9]+_[0-9]+$';
         `;
       const params = [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt];      
