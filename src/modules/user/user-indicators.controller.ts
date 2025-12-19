@@ -31,7 +31,8 @@ export class UserIndicatorsController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.NODAL_OFFICER
   )
   async getUserIndicators(@Param("userId") userId: string, @Request() req) {
     const userIndicatorScopes =

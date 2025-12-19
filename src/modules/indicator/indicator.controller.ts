@@ -288,7 +288,7 @@ async stateStatuses(
    */
   @Get("submitted-in-state/:stateUt")
   @UseGuards(RolesGuard)
-  @Roles(UserRole.STATE_APPROVER, UserRole.ADMIN)
+  @Roles(UserRole.STATE_APPROVER, UserRole.ADMIN, UserRole.NODAL_OFFICER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER)
   async getSubmittedIndicatorsInState(@Param("stateUt") stateUt: string) {
     try {
       const submittedIndicators =
