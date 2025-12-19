@@ -199,18 +199,23 @@ export class UlbService {
   }
 
   async findByStateName(stateName: string): Promise<{ total: number, data: UlbMaster[] }> {
+    // Perform case-insensitive search for state_name
     const [data, total] = await this.ulbMasterRepository.findAndCount({
-      where: { 
-        state_name: stateName,
-        status: UlbStatus.ACTIVE
+      where: {
+        status: UlbStatus.ACTIVE,
       },
       select: ['id', 'state_name', 'city_name', 'ulb_name', 'ulb_type'],
-      order: {        
+      order: {
         ulb_name: 'ASC',
-        city_name: 'ASC'
+        city_name: 'ASC',
       },
     });
-    return { total, data };
+    // Filter in JS if DB is not configured for ILIKE/LOWER
+    const normalizedStateName = stateName.trim().toLowerCase();
+    const filteredData = data.filter(
+      (ulb) => ulb.state_name && ulb.state_name.trim().toLowerCase() === normalizedStateName
+    );
+    return { total: filteredData.length, data: filteredData };
   }
 
   async findByCityName(cityName: string): Promise<{ total: number, data: UlbMaster[] }> {
