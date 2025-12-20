@@ -935,23 +935,151 @@ export class SubmissionController {
   @Post("update-indicator")
   // @UseGuards(RolesGuard)
   // @Roles(UserRole.STATE_APPROVER)
+  @UseInterceptors(AnyFilesInterceptor())
   @HttpCode(HttpStatus.OK)
   async updateFormSection(
-    @Body()
-    body: {
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body("payload") payload?: string,
+    @Body() body?: {
       submissionId?: string;
       category?: string;
       section?: string;
       fields?: any[];
     },
-    @Request() req
+    @Request() req?: any
   ) {
-    const { submissionId, category, section, fields } = body;
+    let submissionId: string;
+    let category: string;
+    let section: string;
+    let fields: any[];
+
+    // Handle FormData (multipart) case
+    if (payload) {
+      try {
+        const parsed = JSON.parse(payload);
+        submissionId = parsed.submissionId;
+        category = parsed.category;
+        section = parsed.section;
+        fields = parsed.fields || [];
+      } catch (e) {
+        throw new BadRequestException("Invalid payload JSON format in FormData");
+      }
+    }
+    // Handle regular JSON body case
+    else if (body && body.submissionId) {
+      submissionId = body.submissionId;
+      category = body.category || "";
+      section = body.section || "";
+      fields = body.fields || [];
+    } else {
+      throw new BadRequestException(
+        "Missing required fields: submission_id, category, section, fields[]"
+      );
+    }
 
     if (!submissionId || !category || !section || !Array.isArray(fields)) {
       throw new BadRequestException(
         "Missing required fields: submission_id, category, section, fields[]"
       );
+    }
+
+    // Handle file uploads if present
+    if (files?.length) {
+      // Get submissionId for file uploads (use the submissionId from payload)
+      const submissionIdForFiles = submissionId;
+
+      for (const file of files) {
+        // Parse fieldname to navigate the fields structure
+        // Example: "fields[0].section2_1.infraActArray[0].files[0].file"
+        const fieldPath = file.fieldname
+          .replace(/\[(\d+)\]/g, ".$1")
+          .split(".");
+
+        // Remove "fields" prefix if present
+        if (fieldPath[0] === "fields") {
+          fieldPath.shift();
+        }
+
+        // Navigate to the target location in fields array
+        let current: any = fields;
+        for (let i = 0; i < fieldPath.length - 1; i++) {
+          const key = fieldPath[i];
+          const numKey = parseInt(key, 10);
+
+          if (!isNaN(numKey)) {
+            // Array index
+            if (!Array.isArray(current)) {
+              throw new BadRequestException(
+                `Invalid field path: expected array at ${key}`
+              );
+            }
+            if (!current[numKey]) {
+              current[numKey] = {};
+            }
+            current = current[numKey];
+          } else {
+            // Object key
+            if (typeof current !== "object" || current === null) {
+              current = {};
+            }
+            if (!current[key]) {
+              // Check if next key is a number (array index)
+              const nextKey = fieldPath[i + 1];
+              const nextNumKey = parseInt(nextKey, 10);
+              current[key] = !isNaN(nextNumKey) ? [] : {};
+            }
+            current = current[key];
+          }
+        }
+
+        // Upload file to S3
+        // Skip first element (field index) and last element (file key) for path
+        const pathForUpload = fieldPath.length > 2 
+          ? fieldPath.slice(2, -1).join("/") 
+          : fieldPath.slice(1, -1).join("/");
+        
+        const storedFile = await this.submissionService.uploadFile(file, {
+          submissionId: submissionIdForFiles,
+          path: pathForUpload,
+        });
+
+        const uploadedAtStr =
+          storedFile.uploadedAt instanceof Date
+            ? storedFile.uploadedAt.toISOString()
+            : String(storedFile.uploadedAt || new Date().toISOString());
+
+        // Create file metadata object
+        const fileMeta = {
+          id: (storedFile as any).id ?? null,
+          fileName: storedFile.fileName || file.originalname || "",
+          originalName: storedFile.originalName || file.originalname || "",
+          filePath: storedFile.filePath || "",
+          fileUrl: storedFile.fileUrl ?? "",
+          fileSize: storedFile.fileSize ?? file.size ?? 0,
+          mimeType: storedFile.mimeType || file.mimetype || "",
+          uploadedAt: uploadedAtStr,
+        };
+
+        // Set the file metadata at the final key
+        const lastKey = fieldPath[fieldPath.length - 1];
+        if (typeof current === "object" && current !== null) {
+          // If lastKey is "file" and current is a FileUpload object, replace the entire object
+          if (lastKey === "file" && current.file !== undefined) {
+            // Replace File object with metadata (merge to preserve other properties if any)
+            Object.keys(current).forEach(key => {
+              if (key !== 'file') {
+                fileMeta[key] = current[key];
+              }
+            });
+            // Replace the entire FileUpload object with file metadata
+            Object.assign(current, fileMeta);
+            delete current.file; // Remove the File object reference
+          } else {
+            // Set as new file metadata at the specified key
+            current[lastKey] = fileMeta;
+          }
+        }
+      }
     }
 
     // Delegate to service
@@ -960,9 +1088,9 @@ export class SubmissionController {
       category,
       section,
       fields,
-      req.user.id,
-      req.user.role,
-      req.user.stateUt
+      req?.user?.id,
+      req?.user?.role,
+      req?.user?.stateUt
     );
   }
   // ...existing code...
