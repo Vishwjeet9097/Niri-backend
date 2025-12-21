@@ -4,9 +4,10 @@ import { Submission } from '../../entities/submission.entity';
 import { DashboardService } from './dashboard.service';
 import { DashboardController } from './dashboard.controller';
 import { Indicator } from '@/entities/indicator.entity';
+import { CommonModule } from '../common/common.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Submission, Indicator])],
+  imports: [TypeOrmModule.forFeature([Submission, Indicator]), CommonModule],
   controllers: [DashboardController],
   providers: [DashboardService],
   exports: [DashboardService],
