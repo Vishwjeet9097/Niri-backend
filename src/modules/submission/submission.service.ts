@@ -542,7 +542,10 @@ export class SubmissionService {
     // Pass ONLY the submissionId to storageService
     // The storageService will construct the path itself: submissions/{submissionId}/{uuid_filename}
     // The 'path' parameter in context is not used here since storageService generates its own filename
-    const stored = await this.storageService.uploadFile(file, context.submissionId);
+    const stored = await this.storageService.uploadFile(
+      file,
+      context.submissionId
+    );
     return stored;
   }
 
@@ -1051,11 +1054,11 @@ export class SubmissionService {
       this.logger.log(
         `UpdateSubmissionDto: ${JSON.stringify(updateSubmissionDto)}`
       );
-  
+
       // Step 1: Find submission
       const submission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(`Found submission with status: ${submission.status}`);
-  
+
       // Step 2: Validate user role and ownership
       if (userRole === UserRole.NODAL_OFFICER) {
         // NODAL_OFFICER can only update their own submissions in DRAFT status
@@ -1109,12 +1112,12 @@ export class SubmissionService {
           "Only Nodal Officers and State Approvers can update submissions"
         );
       }
-  
+
       // Step 4: Merge and update submission form data (preserve existing sections)
       this.logger.log(
         `Updating submission with data: ${JSON.stringify(updateSubmissionDto)}`
       );
-  
+
       // Deep merge helper to preserve prior nested section data
       const deepMerge = (base: any, incoming: any): any => {
         if (incoming === undefined) return base;
@@ -1136,19 +1139,22 @@ export class SubmissionService {
         }
         return merged;
       };
-  
+
       const updateData: Partial<Submission> = {};
-      
+
       // Extract attachedFiles from formData if it exists there (should be at top level, but handle both cases)
       let attachedFilesFromFormData: any[] | undefined = undefined;
       if (updateSubmissionDto.formData?.attachedFiles) {
         attachedFilesFromFormData = updateSubmissionDto.formData.attachedFiles;
         // Remove attachedFiles from formData - it should only be in the separate column
-        const { attachedFiles: _, ...formDataWithoutAttachedFiles } = updateSubmissionDto.formData;
+        const { attachedFiles: _, ...formDataWithoutAttachedFiles } =
+          updateSubmissionDto.formData;
         updateSubmissionDto.formData = formDataWithoutAttachedFiles;
-        this.logger.log(`Extracted ${attachedFilesFromFormData.length} attachedFiles from formData`);
+        this.logger.log(
+          `Extracted ${attachedFilesFromFormData.length} attachedFiles from formData`
+        );
       }
-      
+
       if (updateSubmissionDto.formData !== undefined) {
         const existingFormData = submission.formData || {};
         const incomingFormData = updateSubmissionDto.formData || {};
@@ -1173,49 +1179,55 @@ export class SubmissionService {
 
       // Handle attachedFiles update - store in separate column, not in formData
       // Use attachedFiles from top level OR extracted from formData
-      const incomingAttachedFiles = updateSubmissionDto.attachedFiles ?? attachedFilesFromFormData;
+      const incomingAttachedFiles =
+        updateSubmissionDto.attachedFiles ?? attachedFilesFromFormData;
       if (incomingAttachedFiles !== undefined) {
         const existingAttachedFiles = submission.attachedFiles || [];
-        
+
         // Normalize incoming attachedFiles
         const normalizedAttachedFiles = incomingAttachedFiles.map((f: any) => {
           const fileUrl = f.fileUrl ?? f.fileurl ?? "";
           const uploadedAtRaw = f.uploadedAt ?? f.uploaded_at ?? null;
-          
+
           return {
             fileName: f.fileName ?? f.filename ?? "",
             originalName: f.originalName ?? f.originalname ?? "",
             filePath: f.filePath ?? f.filepath ?? "",
-            fileUrl: typeof fileUrl === "string" ? fileUrl : String(fileUrl || ""),
-            fileSize: typeof f.fileSize === "number" ? f.fileSize : Number(f.fileSize) || 0,
+            fileUrl:
+              typeof fileUrl === "string" ? fileUrl : String(fileUrl || ""),
+            fileSize:
+              typeof f.fileSize === "number"
+                ? f.fileSize
+                : Number(f.fileSize) || 0,
             mimeType: f.mimeType ?? f.mimetype ?? "",
-            uploadedAt: uploadedAtRaw instanceof Date
-              ? uploadedAtRaw
-              : uploadedAtRaw
-                ? new Date(uploadedAtRaw)
-                : new Date(),
+            uploadedAt:
+              uploadedAtRaw instanceof Date
+                ? uploadedAtRaw
+                : uploadedAtRaw
+                  ? new Date(uploadedAtRaw)
+                  : new Date(),
           } as SubmissionFile;
         });
-        
+
         // Merge with existing files (replace by filePath to avoid duplicates)
         const filePathMap = new Map<string, SubmissionFile>();
-        
+
         // Add existing files to map
         existingAttachedFiles.forEach((file: any) => {
           if (file.filePath) {
             filePathMap.set(file.filePath, file);
           }
         });
-        
+
         // Add/update with incoming files
         normalizedAttachedFiles.forEach((file: SubmissionFile) => {
           if (file.filePath) {
             filePathMap.set(file.filePath, file);
           }
         });
-        
+
         updateData.attachedFiles = Array.from(filePathMap.values());
-        
+
         this.logger.log(
           `Updating attachedFiles: ${updateData.attachedFiles.length} files (${normalizedAttachedFiles.length} incoming, ${existingAttachedFiles.length} existing)`
         );
@@ -1232,26 +1244,28 @@ export class SubmissionService {
           );
         }
       }
-  
+
       await this.submissionRepository.update(id, updateData);
-  
+
       // Step 5: Return updated submission
       const updatedSubmission = await this.findOne(id, userRole, userStateUt);
       this.logger.log(
         `Submission updated successfully: ${updatedSubmission.id}`
       );
-  
+
       // NEW: Sync STATE_APPROVER's submission when NODAL_OFFICER resubmits an indicator
       // This ensures the STATE_APPROVER's submission (returned from MOSPI) stays in sync
       if (userRole === UserRole.NODAL_OFFICER && updatedSubmission) {
         this.logger.log(
           `🔄 Checking if NODAL_OFFICER submission has RESUBMITTED indicators to sync`
         );
-  
+
         const updatedFormData = updatedSubmission.formData || {};
-  
+
         // Check all categories in the updated submission
-        for (const [category, categoryData] of Object.entries(updatedFormData)) {
+        for (const [category, categoryData] of Object.entries(
+          updatedFormData
+        )) {
           if (categoryData && typeof categoryData === "object") {
             // Check all sections in this category for RESUBMITTED status
             for (const [sectionKey, sectionData] of Object.entries(
@@ -1265,7 +1279,7 @@ export class SubmissionService {
                 const nodalOfficerId = Array.isArray(section)
                   ? section[0]?.nodalOfficerId
                   : section?.nodalOfficerId;
-  
+
                 // If this indicator has RESUBMITTED status and belongs to the current NODAL_OFFICER
                 if (
                   sectionStatus === "RESUBMITTED" &&
@@ -1276,7 +1290,7 @@ export class SubmissionService {
                   this.logger.log(
                     `🔄 NODAL_OFFICER resubmitted indicator ${sectionKey} - syncing with STATE_APPROVER's submission`
                   );
-  
+
                   // Find STATE_APPROVER submissions that:
                   // 1. Have status RETURNED_FROM_MOSPI
                   // 2. Are in the same state
@@ -1291,11 +1305,11 @@ export class SubmissionService {
                       relations: ["user"],
                       order: { updatedAt: "DESC" },
                     });
-  
+
                   this.logger.log(
                     `🔍 Found ${stateApproverSubmissions.length} STATE_APPROVER submission(s) with RETURNED_FROM_MOSPI status`
                   );
-  
+
                   // Find the submission that contains this specific indicator
                   let targetStateApproverSubmission = null;
                   for (const sub of stateApproverSubmissions) {
@@ -1307,27 +1321,29 @@ export class SubmissionService {
                       const subSectionNodalId = Array.isArray(subSectionData)
                         ? subSectionData[0]?.nodalOfficerId
                         : subSectionData?.nodalOfficerId;
-  
+
                       if (subSectionNodalId === nodalOfficerId) {
                         targetStateApproverSubmission = sub;
                         break;
                       }
                     }
                   }
-  
+
                   if (targetStateApproverSubmission) {
                     this.logger.log(
                       `✅ Found STATE_APPROVER submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) for indicator ${sectionKey}`
                     );
-  
+
                     // Update the STATE_APPROVER's submission with RESUBMITTED status
                     const stateApproverFormData: any =
                       targetStateApproverSubmission.formData
                         ? JSON.parse(
-                            JSON.stringify(targetStateApproverSubmission.formData)
+                            JSON.stringify(
+                              targetStateApproverSubmission.formData
+                            )
                           )
                         : {};
-  
+
                     // Ensure category and section exist
                     if (
                       !stateApproverFormData[category] ||
@@ -1342,25 +1358,30 @@ export class SubmissionService {
                     ) {
                       stateApproverFormData[category][sectionKey] = {};
                     }
-  
+
                     const targetStateApproverSection =
                       stateApproverFormData[category][sectionKey];
-  
+
                     // Copy the updated data from NODAL_OFFICER's submission
-                    const updatedSectionData = (categoryData as any)[sectionKey];
+                    const updatedSectionData = (categoryData as any)[
+                      sectionKey
+                    ];
                     if (updatedSectionData) {
                       // Merge the updated data while ensuring status is RESUBMITTED
-                      Object.assign(targetStateApproverSection, updatedSectionData);
+                      Object.assign(
+                        targetStateApproverSection,
+                        updatedSectionData
+                      );
                       targetStateApproverSection.status = "RESUBMITTED"; // Ensure status is RESUBMITTED
                     } else {
                       // If no updated data, just update the status
                       targetStateApproverSection.status = "RESUBMITTED";
                     }
-  
+
                     this.logger.log(
                       `📝 Syncing indicator ${sectionKey} to RESUBMITTED in STATE_APPROVER submission`
                     );
-  
+
                     // Update the STATE_APPROVER's submission
                     await this.submissionRepository.update(
                       targetStateApproverSubmission.id,
@@ -1369,7 +1390,7 @@ export class SubmissionService {
                         updatedAt: new Date(),
                       }
                     );
-  
+
                     this.logger.log(
                       `✅ Synced STATE_APPROVER submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) - indicator ${sectionKey} set to RESUBMITTED`
                     );
@@ -1384,9 +1405,9 @@ export class SubmissionService {
           }
         }
       }
-  
+
       this.logger.log(`=== UPDATE SUBMISSION SUCCESS ===`);
-  
+
       return updatedSubmission;
     } catch (error) {
       this.logger.error(`=== UPDATE SUBMISSION ERROR ===`);
@@ -1395,7 +1416,6 @@ export class SubmissionService {
       throw error;
     }
   }
-  
 
   async addComment(
     id: string,
@@ -2797,12 +2817,16 @@ export class SubmissionService {
     });
 
     if (!submission) {
-      throw new NotFoundException(`Submission not found for id: ${submissionId}`);
+      throw new NotFoundException(
+        `Submission not found for id: ${submissionId}`
+      );
     }
 
     // Only MoSPI Approver can use this endpoint (guard already enforces this)
     if (userRole !== UserRole.MOSPI_APPROVER) {
-      throw new ForbiddenException("Only MoSPI Approver can send back to state");
+      throw new ForbiddenException(
+        "Only MoSPI Approver can send back to state"
+      );
     }
 
     // Validate current status (must be with MOSPI Approver)
@@ -3620,35 +3644,35 @@ export class SubmissionService {
     this.logger.log(
       `Received ${fields?.length || 0} field(s) to update. Fields structure: ${JSON.stringify(fields, null, 2)}`
     );
-  
+
     if (!submissionId || !category || !section || !Array.isArray(fields)) {
       throw new BadRequestException(
         "submissionId, category, section and fields[] are required"
       );
     }
-  
+
     if (nodalOfficerId) {
       this.logger.log(
         `📤 Sending back indicator to NODAL_OFFICER: ${nodalOfficerId}`
       );
     }
-  
+
     // Use submissionRepository and submissionId (external ID) for all lookups/updates
     const submission = await this.submissionRepository.findOne({
       where: { id: submissionId },
       relations: ["user", "finalScore"],
     });
-  
+
     if (!submission) {
       throw new NotFoundException(
         `Submission not found for submissionId: ${submissionId}`
       );
     }
-  
+
     // CRITICAL: Store the original submission status BEFORE any updates
     // This is needed for sync logic that checks the original status
     const originalSubmissionStatus = submission.status;
-  
+
     // Access checks (performed using repository result)
     // Nodal officer must belong to same state and must be owner
     if (userRole === UserRole.NODAL_OFFICER) {
@@ -3663,7 +3687,7 @@ export class SubmissionService {
         );
       }
     }
-  
+
     // State approver must belong to same state
     // MOSPI_APPROVER and MOSPI_REVIEWER can access submissions from any state
     if (
@@ -3674,25 +3698,22 @@ export class SubmissionService {
         "Access denied: submission not in your state"
       );
     }
-  
+
     // Check if STATE_APPROVER is accepting or reverting an indicator
     const isAccepting = fields.some((f) => f.status === "ACCEPTED");
     const isReverting = fields.some((f) => f.status === "REVERTED");
-  
+
     // Store target NODAL_OFFICER submission for accept sync (will be used after main update)
     let targetNodalSubmissionForAccept: Submission | null = null;
     let sectionNodalIdForAccept: string | undefined = undefined;
-  
+
     // NEW: Prepare for syncing when STATE_APPROVER accepts an indicator
     // We'll do the actual sync after the main submission is updated
-    if (
-      userRole === UserRole.STATE_APPROVER &&
-      isAccepting
-    ) {
+    if (userRole === UserRole.STATE_APPROVER && isAccepting) {
       this.logger.log(
         `✅ STATE_APPROVER accepting indicator ${section} - will sync with NODAL_OFFICER's submission after update`
       );
-  
+
       // Extract nodalOfficerId from the section data
       const sectionData = submission.formData?.[category]?.[section];
       sectionNodalIdForAccept = sectionData
@@ -3700,7 +3721,7 @@ export class SubmissionService {
           ? sectionData[0]?.nodalOfficerId
           : sectionData?.nodalOfficerId
         : undefined;
-  
+
       if (sectionNodalIdForAccept) {
         // Find the NODAL_OFFICER's submission that contains this indicator
         const nodalOfficerSubmissions = await this.submissionRepository.find({
@@ -3716,11 +3737,11 @@ export class SubmissionService {
           relations: ["user"],
           order: { updatedAt: "DESC" },
         });
-  
+
         this.logger.log(
           `🔍 Found ${nodalOfficerSubmissions.length} NODAL_OFFICER submission(s) for nodalOfficerId ${sectionNodalIdForAccept}`
         );
-  
+
         // Find the submission that has this specific section with matching nodalOfficerId
         for (const sub of nodalOfficerSubmissions) {
           const formData = sub.formData || {};
@@ -3730,14 +3751,14 @@ export class SubmissionService {
             const subSectionNodalId = Array.isArray(subSectionData)
               ? subSectionData[0]?.nodalOfficerId
               : subSectionData?.nodalOfficerId;
-  
+
             if (subSectionNodalId === sectionNodalIdForAccept) {
               targetNodalSubmissionForAccept = sub;
               break;
             }
           }
         }
-  
+
         if (targetNodalSubmissionForAccept) {
           this.logger.log(
             `✅ Found NODAL_OFFICER submission ${targetNodalSubmissionForAccept.id} (${targetNodalSubmissionForAccept.submissionId}) for indicator ${section} - will sync after main update`
@@ -3753,7 +3774,7 @@ export class SubmissionService {
         );
       }
     }
-  
+
     // NEW: Handle sending back to NODAL_OFFICER when STATE_APPROVER sends back
     if (
       userRole === UserRole.STATE_APPROVER &&
@@ -3763,29 +3784,29 @@ export class SubmissionService {
       this.logger.log(
         `🔄 STATE_APPROVER sending back indicator ${section} to NODAL_OFFICER ${nodalOfficerId}`
       );
-  
+
       // CRITICAL FIX: Check if the current submission belongs to the NODAL_OFFICER
       // If so, update it directly and preserve the original status
       if (submission.submittedBy === nodalOfficerId) {
         this.logger.log(
           `✅ Current submission belongs to NODAL_OFFICER ${nodalOfficerId} - will update this submission directly`
         );
-  
+
         // CRITICAL: Store the ORIGINAL status IMMEDIATELY before any updates
         const originalNodalSubmissionStatus = submission.status;
-  
+
         this.logger.log(
           `🔍 ORIGINAL NODAL_OFFICER submission status: ${originalNodalSubmissionStatus}`
         );
         this.logger.log(
           `🔍 STATE_APPROVER submission status: ${submission.status}`
         );
-  
+
         // Update the NODAL_OFFICER's submission with REVERTED status
         const nodalFormData: any = submission.formData
           ? JSON.parse(JSON.stringify(submission.formData))
           : {};
-  
+
         // Ensure category and section exist
         if (
           !nodalFormData[category] ||
@@ -3799,18 +3820,18 @@ export class SubmissionService {
         ) {
           nodalFormData[category][section] = {};
         }
-  
+
         const targetNodalSection = nodalFormData[category][section];
-  
+
         // Update status to REVERTED
         targetNodalSection.status = "REVERTED";
-  
+
         // Determine the status to set based on the ORIGINAL NODAL_OFFICER's submission status
         // If the NODAL_OFFICER's submission was originally DRAFT, keep it as DRAFT
         // If the STATE_APPROVER's submission is RETURNED_FROM_MOSPI, set NODAL_OFFICER's to RETURNED_FROM_STATE
         // Otherwise, default to RETURNED_FROM_STATE
         let newStatusForNodalOfficer: SubmissionStatus;
-  
+
         // First, check the ORIGINAL NODAL_OFFICER's submission status
         if (originalNodalSubmissionStatus === SubmissionStatus.DRAFT) {
           newStatusForNodalOfficer = SubmissionStatus.DRAFT;
@@ -3830,11 +3851,11 @@ export class SubmissionService {
             `📝 ORIGINAL NODAL_OFFICER submission status was ${originalNodalSubmissionStatus}, defaulting to RETURNED_FROM_STATE`
           );
         }
-  
+
         this.logger.log(
           `📝 Final status to set for NODAL_OFFICER submission: ${newStatusForNodalOfficer}`
         );
-  
+
         // Update current_owner_role to NODAL_OFFICER and status based on original submission status
         await this.submissionRepository.update(submission.id, {
           formData: nodalFormData,
@@ -3842,7 +3863,7 @@ export class SubmissionService {
           status: newStatusForNodalOfficer,
           updatedAt: new Date(),
         });
-  
+
         this.logger.log(
           `✅ Updated NODAL_OFFICER submission ${submission.id} (${submission.submissionId}) - indicator ${section} set to REVERTED, status set to ${newStatusForNodalOfficer}`
         );
@@ -3866,7 +3887,7 @@ export class SubmissionService {
           relations: ["user"],
           order: { updatedAt: "DESC" },
         });
-  
+
         this.logger.log(
           `🔍 Found ${nodalOfficerSubmissions.length} NODAL_OFFICER submission(s) for nodalOfficerId ${nodalOfficerId}`
         );
@@ -3875,7 +3896,7 @@ export class SubmissionService {
             `🔍 Submission ${index + 1}: id=${sub.id}, submissionId=${sub.submissionId}, status=${sub.status}`
           );
         });
-  
+
         // Find the submission that has this specific section with matching nodalOfficerId
         let targetNodalSubmission = null;
         for (const sub of nodalOfficerSubmissions) {
@@ -3887,23 +3908,23 @@ export class SubmissionService {
             const sectionNodalId = Array.isArray(sectionData)
               ? sectionData[0]?.nodalOfficerId
               : sectionData?.nodalOfficerId;
-  
+
             if (sectionNodalId === nodalOfficerId) {
               targetNodalSubmission = sub;
               break;
             }
           }
         }
-  
+
         if (targetNodalSubmission) {
           this.logger.log(
             `✅ Found NODAL_OFFICER submission ${targetNodalSubmission.id} (${targetNodalSubmission.submissionId}) for indicator ${section}`
           );
-  
+
           // CRITICAL: Store the ORIGINAL status IMMEDIATELY after finding the submission
           // This must be done BEFORE any updates to preserve the original state
           const originalNodalSubmissionStatus = targetNodalSubmission.status;
-  
+
           this.logger.log(
             `🔍 ORIGINAL NODAL_OFFICER submission status: ${originalNodalSubmissionStatus}`
           );
@@ -3911,12 +3932,12 @@ export class SubmissionService {
             `🔍 STATE_APPROVER submission status: ${submission.status}`
           );
           this.logger.log(`🔍 STATE_APPROVER submission id: ${submission.id}`);
-  
+
           // Update the NODAL_OFFICER's submission with REVERTED status
           const nodalFormData: any = targetNodalSubmission.formData
             ? JSON.parse(JSON.stringify(targetNodalSubmission.formData))
             : {};
-  
+
           // Ensure category and section exist
           if (
             !nodalFormData[category] ||
@@ -3930,25 +3951,27 @@ export class SubmissionService {
           ) {
             nodalFormData[category][section] = {};
           }
-  
+
           const targetNodalSection = nodalFormData[category][section];
-  
+
           // Update status to REVERTED
           targetNodalSection.status = "REVERTED";
-  
+
           // Determine the status to set based on the ORIGINAL NODAL_OFFICER's submission status
           // If the NODAL_OFFICER's submission was originally DRAFT, keep it as DRAFT
           // If the STATE_APPROVER's submission is RETURNED_FROM_MOSPI, set NODAL_OFFICER's to RETURNED_FROM_STATE
           // Otherwise, default to RETURNED_FROM_STATE
           let newStatusForNodalOfficer: SubmissionStatus;
-  
+
           // First, check the ORIGINAL NODAL_OFFICER's submission status
           if (originalNodalSubmissionStatus === SubmissionStatus.DRAFT) {
             newStatusForNodalOfficer = SubmissionStatus.DRAFT;
             this.logger.log(
               `📝 ORIGINAL NODAL_OFFICER submission status was DRAFT, keeping status as DRAFT`
             );
-          } else if (submission.status === SubmissionStatus.RETURNED_FROM_MOSPI) {
+          } else if (
+            submission.status === SubmissionStatus.RETURNED_FROM_MOSPI
+          ) {
             // If STATE_APPROVER's submission is RETURNED_FROM_MOSPI, set NODAL_OFFICER's to RETURNED_FROM_STATE
             newStatusForNodalOfficer = SubmissionStatus.RETURNED_FROM_STATE;
             this.logger.log(
@@ -3961,14 +3984,14 @@ export class SubmissionService {
               `📝 ORIGINAL NODAL_OFFICER submission status was ${originalNodalSubmissionStatus}, defaulting to RETURNED_FROM_STATE`
             );
           }
-  
+
           this.logger.log(
             `📝 Final status to set for NODAL_OFFICER submission: ${newStatusForNodalOfficer}`
           );
           this.logger.log(
             `📝 About to update NODAL_OFFICER submission ${targetNodalSubmission.id} with status ${newStatusForNodalOfficer}`
           );
-  
+
           // Update current_owner_role to NODAL_OFFICER and status based on original submission status
           await this.submissionRepository.update(targetNodalSubmission.id, {
             formData: nodalFormData,
@@ -3976,7 +3999,7 @@ export class SubmissionService {
             status: newStatusForNodalOfficer,
             updatedAt: new Date(),
           });
-  
+
           this.logger.log(
             `✅ Updated NODAL_OFFICER submission ${targetNodalSubmission.id} (${targetNodalSubmission.submissionId}) - indicator ${section} set to REVERTED, status set to ${newStatusForNodalOfficer}`
           );
@@ -3988,7 +4011,7 @@ export class SubmissionService {
         }
       }
     }
-  
+
     // Restrict edits once MOSPI processing or final approval/rejection has progressed
     // However, allow MOSPI_REVIEWER to update indicators when status is SUBMITTED_TO_MOSPI_REVIEWER
     // And allow MOSPI_APPROVER to update indicators when status is SUBMITTED_TO_MOSPI_APPROVER
@@ -3999,7 +4022,7 @@ export class SubmissionService {
       SubmissionStatus.APPROVED,
       SubmissionStatus.REJECTED_FINAL,
     ];
-  
+
     // Allow roles to update indicators in their respective statuses
     const canUpdateInCurrentStatus =
       (userRole === UserRole.STATE_APPROVER &&
@@ -4010,7 +4033,7 @@ export class SubmissionService {
         submission.status === SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER) ||
       (userRole === UserRole.MOSPI_APPROVER &&
         submission.status === SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER);
-  
+
     if (
       immutableStatuses.includes(submission.status) &&
       !canUpdateInCurrentStatus
@@ -4019,12 +4042,12 @@ export class SubmissionService {
         `Cannot modify submission in status ${submission.status}`
       );
     }
-  
+
     // Work on a shallow copy of formData to avoid mutating the entity before update
     const newFormData: any = submission.formData
       ? JSON.parse(JSON.stringify(submission.formData))
       : {};
-  
+
     // Ensure category and section exist
     if (!newFormData[category] || typeof newFormData[category] !== "object") {
       newFormData[category] = {};
@@ -4035,24 +4058,24 @@ export class SubmissionService {
     ) {
       newFormData[category][section] = {};
     }
-  
+
     const targetSection = newFormData[category][section];
-  
+
     this.logger.log(
       `Target section before update: ${JSON.stringify(targetSection, null, 2)}`
     );
-  
+
     // Normalize section to extract indicator code for validation
     const sectionMatch = section.match(/^section(\d+(_\d+)*)$/);
     const currentIndicatorCode = sectionMatch
       ? sectionMatch[1].replace(/_/g, ".")
       : null;
-  
+
     // Helper to check if a key represents another indicator section
     const isOtherIndicatorSection = (key: string): boolean => {
       const sectionPattern = /^section(\d+(_\d+)*)$/;
       const codePattern = /^\d+(\.\d+)+$/;
-  
+
       if (sectionPattern.test(key)) {
         const match = key.match(sectionPattern);
         if (match && currentIndicatorCode) {
@@ -4065,7 +4088,7 @@ export class SubmissionService {
       }
       return false;
     };
-  
+
     // Apply each provided field update (only update explicit keys)
     for (const item of fields) {
       if (item && typeof item === "object") {
@@ -4082,7 +4105,7 @@ export class SubmissionService {
               );
               continue;
             }
-  
+
             // If value is an object, check for nested section data from other indicators
             if (
               item[key] &&
@@ -4093,7 +4116,7 @@ export class SubmissionService {
               const hasOtherSectionData = nestedKeys.some((nestedKey) =>
                 isOtherIndicatorSection(nestedKey)
               );
-  
+
               if (hasOtherSectionData) {
                 this.logger.warn(
                   `⚠️ Skipping nested field '${key}' - it contains data for other indicators. ` +
@@ -4102,10 +4125,10 @@ export class SubmissionService {
                 continue;
               }
             }
-  
+
             // Normalize numeric fields for specific indicators
             let normalizedValue = item[key];
-  
+
             // Handle nested objects that may contain arrays or numeric fields
             if (
               normalizedValue &&
@@ -4114,7 +4137,7 @@ export class SubmissionService {
             ) {
               // Create a copy to avoid mutating the original
               normalizedValue = { ...normalizedValue };
-  
+
               // Indicator 1.4: Value (INR - values is in CRORES) in bondList array
               if (
                 "bondList" in normalizedValue &&
@@ -4125,7 +4148,7 @@ export class SubmissionService {
                   ["value"]
                 );
               }
-  
+
               // Indicator 1.5: Total Funding (INR) in ffiArray
               if (
                 "ffiArray" in normalizedValue &&
@@ -4136,7 +4159,7 @@ export class SubmissionService {
                   ["totalFunding"]
                 );
               }
-  
+
               // Indicator 2.4: Project Size (INR - values is in CRORES) in investmentReadyArray
               if (
                 "investmentReadyArray" in normalizedValue &&
@@ -4148,7 +4171,7 @@ export class SubmissionService {
                     ["projectSize"]
                   );
               }
-  
+
               // Indicator 3.4: Total Project Cost (INR - values is in CRORES)
               if ("totalTPC" in normalizedValue) {
                 normalizedValue.totalTPC = this.normalizeNumericValue(
@@ -4169,7 +4192,7 @@ export class SubmissionService {
                   ["value"]
                 );
               }
-  
+
               // Indicator 1.5: Total Funding (INR) in ffiArray
               if (key === "ffiArray" && Array.isArray(normalizedValue)) {
                 normalizedValue = this.normalizeArrayNumericFields(
@@ -4177,7 +4200,7 @@ export class SubmissionService {
                   ["totalFunding"]
                 );
               }
-  
+
               // Indicator 2.4: Project Size (INR - values is in CRORES) in investmentReadyArray
               if (
                 key === "investmentReadyArray" &&
@@ -4188,13 +4211,13 @@ export class SubmissionService {
                   ["projectSize"]
                 );
               }
-  
+
               // Indicator 3.4: Total Project Cost (INR - values is in CRORES)
               if (key === "totalTPC" || key === "tpcOfPPPProjects") {
                 normalizedValue = this.normalizeNumericValue(normalizedValue);
               }
             }
-  
+
             // If value is array and targetSection[key] is array, replace it
             if (
               Array.isArray(normalizedValue) &&
@@ -4213,7 +4236,7 @@ export class SubmissionService {
         "Each field must be an object with one or more key-value pairs"
       );
     }
-  
+
     // After processing all fields, set status to SUBMITTED_TO_STATE if not explicitly provided
     // Check if status was explicitly provided in the fields array
     let statusWasProvided = false;
@@ -4223,7 +4246,7 @@ export class SubmissionService {
         break;
       }
     }
-  
+
     // If status was not explicitly provided in the fields, set it to SUBMITTED_TO_STATE
     // This ensures that when a user saves/submits an indicator, it gets marked as submitted to state
     if (!statusWasProvided) {
@@ -4236,7 +4259,7 @@ export class SubmissionService {
         `Status was explicitly provided in fields, keeping: ${targetSection.status} for ${category}.${section}`
       );
     }
-  
+
     // Accept multiple category formats: '1.1', 'section1_1', indicator UUID (will be normalized)
     const rawCategory = category?.trim();
     let sectionKey: string;
@@ -4251,13 +4274,13 @@ export class SubmissionService {
     this.logger.log(
       `🔎 Normalizing category='${rawCategory}' -> sectionKey='${sectionKey}'`
     );
-  
+
     // sectionStatus removed: no normalization, progress tracking, or persistence
     await this.submissionRepository.update(submission.id, {
       formData: newFormData,
       updatedAt: new Date(),
     });
-  
+
     this.logger.log(
       `Updated formData category=${category} section=${section} for submissionId=${submissionId}`
     );
@@ -4267,20 +4290,20 @@ export class SubmissionService {
     this.logger.log(
       `All sections in category ${category}: ${JSON.stringify(Object.keys(newFormData[category] || {}))}`
     );
-  
+
     // Return fresh submission loaded via repository (using submissionId)
     const refreshed = await this.submissionRepository.findOne({
       where: { id: submissionId },
       relations: ["user", "finalScore"],
     });
-  
+
     if (!refreshed) {
       // unlikely, but handle defensively
       throw new NotFoundException(
         `Submission not found after update: ${submissionId}`
       );
     }
-  
+
     // NEW: Sync NODAL_OFFICER's submission when STATE_APPROVER accepts an indicator
     // This must be done AFTER the main submission is updated to get the latest data
     if (
@@ -4291,12 +4314,12 @@ export class SubmissionService {
       this.logger.log(
         `🔄 Syncing ACCEPTED status to NODAL_OFFICER submission ${targetNodalSubmissionForAccept.id}`
       );
-  
+
       // Update the NODAL_OFFICER's submission with ACCEPTED status and updated data
       const nodalFormData: any = targetNodalSubmissionForAccept.formData
         ? JSON.parse(JSON.stringify(targetNodalSubmissionForAccept.formData))
         : {};
-  
+
       // Ensure category and section exist
       if (
         !nodalFormData[category] ||
@@ -4310,9 +4333,9 @@ export class SubmissionService {
       ) {
         nodalFormData[category][section] = {};
       }
-  
+
       const targetNodalSection = nodalFormData[category][section];
-  
+
       // Copy the updated data from STATE_APPROVER's refreshed submission
       const updatedSectionData = refreshed.formData?.[category]?.[section];
       if (updatedSectionData) {
@@ -4323,30 +4346,36 @@ export class SubmissionService {
         // If no updated data, just update the status
         targetNodalSection.status = "ACCEPTED";
       }
-  
+
       this.logger.log(
         `📝 Syncing indicator ${section} to ACCEPTED in NODAL_OFFICER submission with updated data`
       );
-  
+
       // Update the NODAL_OFFICER's submission
-      await this.submissionRepository.update(targetNodalSubmissionForAccept.id, {
-        formData: nodalFormData,
-        updatedAt: new Date(),
-      });
-  
+      await this.submissionRepository.update(
+        targetNodalSubmissionForAccept.id,
+        {
+          formData: nodalFormData,
+          updatedAt: new Date(),
+        }
+      );
+
       this.logger.log(
         `✅ Synced NODAL_OFFICER submission ${targetNodalSubmissionForAccept.id} (${targetNodalSubmissionForAccept.submissionId}) - indicator ${section} set to ACCEPTED`
       );
-  
+
       // NEW: Always sync to RETURNED_FROM_MOSPI submission when accepting (if it exists)
       // This ensures that when STATE_APPROVER accepts from ANY form (DRAFT, SUBMITTED_TO_STATE, etc.),
       // it also reflects in the form that came from MOSPI (RETURNED_FROM_MOSPI)
       // Only skip if we're already accepting from RETURNED_FROM_MOSPI (to avoid duplicate sync)
-      if (originalSubmissionStatus !== SubmissionStatus.RETURNED_FROM_MOSPI && sectionNodalIdForAccept) {
+      if (
+        originalSubmissionStatus !== SubmissionStatus.RETURNED_FROM_MOSPI &&
+        sectionNodalIdForAccept
+      ) {
         this.logger.log(
           `🔄 STATE_APPROVER accepting from ${originalSubmissionStatus} submission - also syncing to RETURNED_FROM_MOSPI submission`
         );
-  
+
         // Find STATE_APPROVER submissions that:
         // 1. Have status RETURNED_FROM_MOSPI
         // 2. Are in the same state
@@ -4360,11 +4389,11 @@ export class SubmissionService {
           relations: ["user"],
           order: { updatedAt: "DESC" },
         });
-  
+
         this.logger.log(
           `🔍 Found ${stateApproverSubmissions.length} STATE_APPROVER submission(s) with RETURNED_FROM_MOSPI status`
         );
-  
+
         // Find the submission that contains this specific indicator
         let targetStateApproverSubmission = null;
         for (const sub of stateApproverSubmissions) {
@@ -4376,24 +4405,27 @@ export class SubmissionService {
             const subSectionNodalId = Array.isArray(subSectionData)
               ? subSectionData[0]?.nodalOfficerId
               : subSectionData?.nodalOfficerId;
-  
+
             if (subSectionNodalId === sectionNodalIdForAccept) {
               targetStateApproverSubmission = sub;
               break;
             }
           }
         }
-  
+
         if (targetStateApproverSubmission) {
           this.logger.log(
             `✅ Found STATE_APPROVER RETURNED_FROM_MOSPI submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) for indicator ${section}`
           );
-  
+
           // Update the STATE_APPROVER's RETURNED_FROM_MOSPI submission with ACCEPTED status
-          const stateApproverFormData: any = targetStateApproverSubmission.formData
-            ? JSON.parse(JSON.stringify(targetStateApproverSubmission.formData))
-            : {};
-  
+          const stateApproverFormData: any =
+            targetStateApproverSubmission.formData
+              ? JSON.parse(
+                  JSON.stringify(targetStateApproverSubmission.formData)
+                )
+              : {};
+
           // Ensure category and section exist
           if (
             !stateApproverFormData[category] ||
@@ -4407,9 +4439,10 @@ export class SubmissionService {
           ) {
             stateApproverFormData[category][section] = {};
           }
-  
-          const targetStateApproverSection = stateApproverFormData[category][section];
-  
+
+          const targetStateApproverSection =
+            stateApproverFormData[category][section];
+
           // Copy the updated data from STATE_APPROVER's refreshed submission
           if (updatedSectionData) {
             // Merge the updated data while ensuring status is ACCEPTED
@@ -4419,17 +4452,20 @@ export class SubmissionService {
             // If no updated data, just update the status
             targetStateApproverSection.status = "ACCEPTED";
           }
-  
+
           this.logger.log(
             `📝 Syncing indicator ${section} to ACCEPTED in STATE_APPROVER RETURNED_FROM_MOSPI submission`
           );
-  
+
           // Update the STATE_APPROVER's RETURNED_FROM_MOSPI submission
-          await this.submissionRepository.update(targetStateApproverSubmission.id, {
-            formData: stateApproverFormData,
-            updatedAt: new Date(),
-          });
-  
+          await this.submissionRepository.update(
+            targetStateApproverSubmission.id,
+            {
+              formData: stateApproverFormData,
+              updatedAt: new Date(),
+            }
+          );
+
           this.logger.log(
             `✅ Synced STATE_APPROVER RETURNED_FROM_MOSPI submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) - indicator ${section} set to ACCEPTED`
           );
@@ -4438,12 +4474,14 @@ export class SubmissionService {
             `⚠️ Could not find STATE_APPROVER RETURNED_FROM_MOSPI submission for indicator ${section} with nodalOfficerId ${sectionNodalIdForAccept}. Searched ${stateApproverSubmissions.length} submission(s).`
           );
         }
-      } else if (originalSubmissionStatus === SubmissionStatus.RETURNED_FROM_MOSPI) {
+      } else if (
+        originalSubmissionStatus === SubmissionStatus.RETURNED_FROM_MOSPI
+      ) {
         this.logger.log(
           `ℹ️ Accepting from RETURNED_FROM_MOSPI submission - skipping RETURNED_FROM_MOSPI sync (already updating that form)`
         );
       }
-  
+
       // NEW: Also sync to SUBMITTED_TO_STATE submission if accepting from RETURNED_FROM_MOSPI
       // This ensures bidirectional sync - when STATE_APPROVER accepts from RETURNED_FROM_MOSPI,
       // it also reflects in the SUBMITTED_TO_STATE submission
@@ -4454,7 +4492,7 @@ export class SubmissionService {
         this.logger.log(
           `🔄 STATE_APPROVER accepting from RETURNED_FROM_MOSPI submission - also syncing to SUBMITTED_TO_STATE submission`
         );
-  
+
         // Find STATE_APPROVER submissions that:
         // 1. Have status SUBMITTED_TO_STATE
         // 2. Are in the same state
@@ -4468,11 +4506,11 @@ export class SubmissionService {
           relations: ["user"],
           order: { updatedAt: "DESC" },
         });
-  
+
         this.logger.log(
           `🔍 Found ${stateApproverSubmissions.length} STATE_APPROVER submission(s) with SUBMITTED_TO_STATE status`
         );
-  
+
         // Find the submission that contains this specific indicator
         let targetStateApproverSubmission = null;
         for (const sub of stateApproverSubmissions) {
@@ -4484,24 +4522,27 @@ export class SubmissionService {
             const subSectionNodalId = Array.isArray(subSectionData)
               ? subSectionData[0]?.nodalOfficerId
               : subSectionData?.nodalOfficerId;
-  
+
             if (subSectionNodalId === sectionNodalIdForAccept) {
               targetStateApproverSubmission = sub;
               break;
             }
           }
         }
-  
+
         if (targetStateApproverSubmission) {
           this.logger.log(
             `✅ Found STATE_APPROVER SUBMITTED_TO_STATE submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) for indicator ${section}`
           );
-  
+
           // Update the STATE_APPROVER's SUBMITTED_TO_STATE submission with ACCEPTED status
-          const stateApproverFormData: any = targetStateApproverSubmission.formData
-            ? JSON.parse(JSON.stringify(targetStateApproverSubmission.formData))
-            : {};
-  
+          const stateApproverFormData: any =
+            targetStateApproverSubmission.formData
+              ? JSON.parse(
+                  JSON.stringify(targetStateApproverSubmission.formData)
+                )
+              : {};
+
           // Ensure category and section exist
           if (
             !stateApproverFormData[category] ||
@@ -4515,9 +4556,10 @@ export class SubmissionService {
           ) {
             stateApproverFormData[category][section] = {};
           }
-  
-          const targetStateApproverSection = stateApproverFormData[category][section];
-  
+
+          const targetStateApproverSection =
+            stateApproverFormData[category][section];
+
           // Copy the updated data from STATE_APPROVER's refreshed submission
           if (updatedSectionData) {
             // Merge the updated data while ensuring status is ACCEPTED
@@ -4527,17 +4569,20 @@ export class SubmissionService {
             // If no updated data, just update the status
             targetStateApproverSection.status = "ACCEPTED";
           }
-  
+
           this.logger.log(
             `📝 Syncing indicator ${section} to ACCEPTED in STATE_APPROVER SUBMITTED_TO_STATE submission`
           );
-  
+
           // Update the STATE_APPROVER's SUBMITTED_TO_STATE submission
-          await this.submissionRepository.update(targetStateApproverSubmission.id, {
-            formData: stateApproverFormData,
-            updatedAt: new Date(),
-          });
-  
+          await this.submissionRepository.update(
+            targetStateApproverSubmission.id,
+            {
+              formData: stateApproverFormData,
+              updatedAt: new Date(),
+            }
+          );
+
           this.logger.log(
             `✅ Synced STATE_APPROVER SUBMITTED_TO_STATE submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) - indicator ${section} set to ACCEPTED`
           );
@@ -4548,7 +4593,7 @@ export class SubmissionService {
         }
       }
     }
-  
+
     // NEW: Sync STATE_APPROVER's submission when NODAL_OFFICER resubmits an indicator
     // This ensures the STATE_APPROVER's submission (returned from MOSPI) stays in sync
     if (
@@ -4558,7 +4603,7 @@ export class SubmissionService {
       this.logger.log(
         `🔄 NODAL_OFFICER resubmitted indicator ${section} - syncing with STATE_APPROVER's submission`
       );
-  
+
       // Find STATE_APPROVER submissions that:
       // 1. Have status RETURNED_FROM_MOSPI
       // 2. Are in the same state
@@ -4572,11 +4617,11 @@ export class SubmissionService {
         relations: ["user"],
         order: { updatedAt: "DESC" },
       });
-  
+
       this.logger.log(
         `🔍 Found ${stateApproverSubmissions.length} STATE_APPROVER submission(s) with RETURNED_FROM_MOSPI status`
       );
-  
+
       // Find the submission that contains this specific indicator
       let targetStateApproverSubmission = null;
       for (const sub of stateApproverSubmissions) {
@@ -4588,24 +4633,25 @@ export class SubmissionService {
           const sectionNodalId = Array.isArray(sectionData)
             ? sectionData[0]?.nodalOfficerId
             : sectionData?.nodalOfficerId;
-  
+
           if (sectionNodalId === userId) {
             targetStateApproverSubmission = sub;
             break;
           }
         }
       }
-  
+
       if (targetStateApproverSubmission) {
         this.logger.log(
           `✅ Found STATE_APPROVER submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) for indicator ${section}`
         );
-  
+
         // Update the STATE_APPROVER's submission with RESUBMITTED status
-        const stateApproverFormData: any = targetStateApproverSubmission.formData
-          ? JSON.parse(JSON.stringify(targetStateApproverSubmission.formData))
-          : {};
-  
+        const stateApproverFormData: any =
+          targetStateApproverSubmission.formData
+            ? JSON.parse(JSON.stringify(targetStateApproverSubmission.formData))
+            : {};
+
         // Ensure category and section exist
         if (
           !stateApproverFormData[category] ||
@@ -4619,9 +4665,10 @@ export class SubmissionService {
         ) {
           stateApproverFormData[category][section] = {};
         }
-  
-        const targetStateApproverSection = stateApproverFormData[category][section];
-  
+
+        const targetStateApproverSection =
+          stateApproverFormData[category][section];
+
         // Copy the updated data from NODAL_OFFICER's submission
         const updatedSectionData = newFormData[category]?.[section];
         if (updatedSectionData) {
@@ -4632,17 +4679,20 @@ export class SubmissionService {
           // If no updated data, just update the status
           targetStateApproverSection.status = "RESUBMITTED";
         }
-  
+
         this.logger.log(
           `📝 Syncing indicator ${section} to RESUBMITTED in STATE_APPROVER submission`
         );
-  
+
         // Update the STATE_APPROVER's submission
-        await this.submissionRepository.update(targetStateApproverSubmission.id, {
-          formData: stateApproverFormData,
-          updatedAt: new Date(),
-        });
-  
+        await this.submissionRepository.update(
+          targetStateApproverSubmission.id,
+          {
+            formData: stateApproverFormData,
+            updatedAt: new Date(),
+          }
+        );
+
         this.logger.log(
           `✅ Synced STATE_APPROVER submission ${targetStateApproverSubmission.id} (${targetStateApproverSubmission.submissionId}) - indicator ${section} set to RESUBMITTED`
         );
@@ -4652,13 +4702,11 @@ export class SubmissionService {
         );
       }
     }
-  
+
     // sectionStatus removed: no progress tracking or redirect info
-  
+
     return refreshed;
   }
-  
-  
 
   /**
    * TESTING ONLY: Cleanup method to delete test data
@@ -4823,9 +4871,9 @@ export class SubmissionService {
       };
     });
   }
-// ...existing code...
+  // ...existing code...
 
-// ...existing code...
+  // ...existing code...
   /**
    * Revert submissions from RETURNED_FROM_MOSPI to SUBMITTED_TO_MOSPI_REVIEWER
    * for a specific user
@@ -4892,143 +4940,159 @@ export class SubmissionService {
       throw error;
     }
   }
-/**
- * Clean mospi_status from all categories in formData
- * Recursively removes mospi_status from:
- * - infraFinancing
- * - infraDevelopment (including nested arrays like infraActArray, specializedEntityArray)
- * - pppDevelopment (including nested arrays)
- * - infraEnablers (including nested arrays)
- */
-async cleanMospiStatusFromSubmission(
-  id: string,
-  userId: string,
-  userRole: UserRole,
-  userStateUt: string
-): Promise<Submission> {
-  try {
-    this.logger.log(`=== CLEAN MOSPI STATUS START ===`);
-    this.logger.log(
-      `ID: ${id}, UserId: ${userId}, UserRole: ${userRole}, StateUt: ${userStateUt}`
-    );
+  /**
+   * Clean mospi_status from all categories in formData
+   * Recursively removes mospi_status ONLY when value is "REVERTED"
+   * Preserves mospi_status when value is "ACCEPTED"
+   * Applies to:
+   * - infraFinancing
+   * - infraDevelopment (including nested arrays like infraActArray, specializedEntityArray)
+   * - pppDevelopment (including nested arrays)
+   * - infraEnablers (including nested arrays)
+   */
+  async cleanMospiStatusFromSubmission(
+    id: string,
+    userId: string,
+    userRole: UserRole,
+    userStateUt: string
+  ): Promise<Submission> {
+    try {
+      this.logger.log(`=== CLEAN MOSPI STATUS START ===`);
+      this.logger.log(
+        `ID: ${id}, UserId: ${userId}, UserRole: ${userRole}, StateUt: ${userStateUt}`
+      );
 
-    // Step 1: Find submission
-    const submission = await this.findOne(id, userRole, userStateUt);
-    this.logger.log(`Found submission with status: ${submission.status}`);
+      // Step 1: Find submission
+      const submission = await this.findOne(id, userRole, userStateUt);
+      this.logger.log(`Found submission with status: ${submission.status}`);
 
-    // Step 2: Deep clone formData to avoid mutating the entity
-    const formData = submission.formData
-      ? JSON.parse(JSON.stringify(submission.formData))
-      : {};
+      // Step 2: Deep clone formData to avoid mutating the entity
+      const formData = submission.formData
+        ? JSON.parse(JSON.stringify(submission.formData))
+        : {};
 
-    this.logger.log(
-      `Starting cleanup of mospi_status from formData. Categories: ${Object.keys(formData).join(", ")}`
-    );
+      this.logger.log(
+        `Starting cleanup of mospi_status (REVERTED only) from formData. Categories: ${Object.keys(formData).join(", ")}`
+      );
 
-    // Step 3: Recursively remove mospi_status from all categories
-    const categories = [
-      "infraFinancing",
-      "infraDevelopment",
-      "pppDevelopment",
-      "infraEnablers",
-    ];
+      // Step 3: Recursively remove mospi_status from all categories (only when REVERTED)
+      const categories = [
+        "infraFinancing",
+        "infraDevelopment",
+        "pppDevelopment",
+        "infraEnablers",
+      ];
 
-    let totalRemoved = 0;
+      let totalRemoved = 0;
+      let totalPreserved = 0;
 
-    // Helper function to recursively remove mospi_status
-    const removeMospiStatus = (obj: any, path: string = ""): number => {
-      if (!obj || typeof obj !== "object") {
-        return 0;
-      }
+      // Helper function to recursively remove mospi_status ONLY when value is "REVERTED"
+      const removeMospiStatus = (obj: any, path: string = ""): number => {
+        if (!obj || typeof obj !== "object") {
+          return 0;
+        }
 
-      let removed = 0;
+        let removed = 0;
 
-      // If it's an array, process each item
-      if (Array.isArray(obj)) {
-        obj.forEach((item, index) => {
-          if (item && typeof item === "object") {
-            // Remove mospi_status from array item if present
-            if ("mospi_status" in item) {
-              delete item.mospi_status;
+        // If it's an array, process each item
+        if (Array.isArray(obj)) {
+          obj.forEach((item, index) => {
+            if (item && typeof item === "object") {
+              // Check if mospi_status exists and only remove if value is "REVERTED"
+              if ("mospi_status" in item) {
+                if (item.mospi_status === "REVERTED") {
+                  delete item.mospi_status;
+                  removed++;
+                  this.logger.log(
+                    `🗑️ Removed mospi_status (REVERTED) from ${path}[${index}]`
+                  );
+                } else if (item.mospi_status === "ACCEPTED") {
+                  totalPreserved++;
+                  this.logger.log(
+                    `✅ Preserved mospi_status (ACCEPTED) from ${path}[${index}]`
+                  );
+                }
+              }
+              // Recursively process nested objects in array items
+              removed += removeMospiStatus(item, `${path}[${index}]`);
+            }
+          });
+        } else {
+          // If it's an object, remove mospi_status ONLY if value is "REVERTED"
+          if ("mospi_status" in obj) {
+            if (obj.mospi_status === "REVERTED") {
+              delete obj.mospi_status;
               removed++;
               this.logger.log(
-                `🗑️ Removed mospi_status from ${path}[${index}]`
+                `🗑️ Removed mospi_status (REVERTED) from ${path || "root"}`
+              );
+            } else if (obj.mospi_status === "ACCEPTED") {
+              totalPreserved++;
+              this.logger.log(
+                `✅ Preserved mospi_status (ACCEPTED) from ${path || "root"}`
               );
             }
-            // Recursively process nested objects in array items
-            removed += removeMospiStatus(item, `${path}[${index}]`);
           }
-        });
-      } else {
-        // If it's an object, remove mospi_status if present
-        if ("mospi_status" in obj) {
-          delete obj.mospi_status;
-          removed++;
-          this.logger.log(`🗑️ Removed mospi_status from ${path || "root"}`);
+
+          // Recursively process all properties
+          for (const key in obj) {
+            if (obj[key] && typeof obj[key] === "object") {
+              removed += removeMospiStatus(
+                obj[key],
+                path ? `${path}.${key}` : key
+              );
+            }
+          }
         }
 
-        // Recursively process all properties
-        for (const key in obj) {
-          if (obj[key] && typeof obj[key] === "object") {
-            removed += removeMospiStatus(
-              obj[key],
-              path ? `${path}.${key}` : key
-            );
-          }
+        return removed;
+      };
+
+      // Process each category
+      for (const category of categories) {
+        if (formData[category] && typeof formData[category] === "object") {
+          this.logger.log(
+            `🔍 Processing category: ${category} with ${Object.keys(formData[category]).length} sections`
+          );
+
+          const categoryRemoved = removeMospiStatus(
+            formData[category],
+            category
+          );
+          totalRemoved += categoryRemoved;
+
+          this.logger.log(
+            `✅ Category ${category}: Removed ${categoryRemoved} mospi_status field(s) with REVERTED status`
+          );
+        } else {
+          this.logger.log(`⚠️ Category ${category}: Not found or invalid type`);
         }
       }
 
-      return removed;
-    };
+      this.logger.log(
+        `✅ Cleanup completed. Total removed: ${totalRemoved} mospi_status field(s) with REVERTED status. Total preserved: ${totalPreserved} mospi_status field(s) with ACCEPTED status`
+      );
 
-    // Process each category
-    for (const category of categories) {
-      if (formData[category] && typeof formData[category] === "object") {
-        this.logger.log(
-          `🔍 Processing category: ${category} with ${Object.keys(formData[category]).length} sections`
-        );
+      // Step 4: Update submission with cleaned formData
+      await this.submissionRepository.update(id, {
+        formData: formData,
+        updatedAt: new Date(),
+      });
 
-        const categoryRemoved = removeMospiStatus(
-          formData[category],
-          category
-        );
-        totalRemoved += categoryRemoved;
+      this.logger.log(`Submission updated successfully with cleaned formData`);
 
-        this.logger.log(
-          `✅ Category ${category}: Removed ${categoryRemoved} mospi_status field(s)`
-        );
-      } else {
-        this.logger.log(
-          `⚠️ Category ${category}: Not found or invalid type`
-        );
-      }
+      // Step 5: Return updated submission
+      const updatedSubmission = await this.findOne(id, userRole, userStateUt);
+      this.logger.log(`=== CLEAN MOSPI STATUS SUCCESS ===`);
+
+      return updatedSubmission;
+    } catch (error) {
+      this.logger.error(`=== CLEAN MOSPI STATUS ERROR ===`);
+      this.logger.error(
+        `Error cleaning mospi_status from submission ${id}: ${error.message}`
+      );
+      this.logger.error(`Stack trace: ${error.stack}`);
+      throw error;
     }
-
-    this.logger.log(
-      `✅ Cleanup completed. Total removed: ${totalRemoved} mospi_status field(s)`
-    );
-
-    // Step 4: Update submission with cleaned formData
-    await this.submissionRepository.update(id, {
-      formData: formData,
-      updatedAt: new Date(),
-    });
-
-    this.logger.log(`Submission updated successfully with cleaned formData`);
-
-    // Step 5: Return updated submission
-    const updatedSubmission = await this.findOne(id, userRole, userStateUt);
-    this.logger.log(`=== CLEAN MOSPI STATUS SUCCESS ===`);
-
-    return updatedSubmission;
-  } catch (error) {
-    this.logger.error(`=== CLEAN MOSPI STATUS ERROR ===`);
-    this.logger.error(
-      `Error cleaning mospi_status from submission ${id}: ${error.message}`
-    );
-    this.logger.error(`Stack trace: ${error.stack}`);
-    throw error;
   }
-}
-
 }
