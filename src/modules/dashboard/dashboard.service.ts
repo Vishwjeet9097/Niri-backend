@@ -1,9 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { Submission, SubmissionStatus } from "../../entities/submission.entity";
 import { UserRole } from "../../entities/user.entity";
 import { Indicator } from "../../entities/indicator.entity";
+import { IndicatorStatusService } from "../common/indicator-status.service";
 
 export interface DashboardSummary {
   pendingSubmissions: number;
@@ -38,7 +39,8 @@ export class DashboardService {
     @InjectRepository(Submission)
     private submissionRepository: Repository<Submission>,
     @InjectRepository(Indicator)
-    private indicatorRepository: Repository<Indicator>
+    private indicatorRepository: Repository<Indicator>,
+    private indicatorStatusService: IndicatorStatusService
   ) {}
 
   async getDashboardSummary(
@@ -343,6 +345,7 @@ export class DashboardService {
       .select("submission.status", "status")
       .addSelect("COUNT(*)", "count")
       .where("submission.stateUt = :stateUt", { stateUt: userStateUt })
+      .andWhere("submission.status != :draftStatus", { draftStatus: SubmissionStatus.DRAFT })
       .groupBy("submission.status")
       .getRawMany();
 
@@ -353,43 +356,10 @@ export class DashboardService {
 
     // ✅ 4. Count Accepted indicators (from JSON) - ONLY from NODAL_OFFICER submissions
     let acceptedFromNodal = 0;
-    try {
-      const acceptedCountQuery = await this.submissionRepository.query(
-        `
-      SELECT COALESCE(SUM(cnt), 0) AS count FROM (
-        SELECT (
-          SELECT COUNT(*) FROM jsonb_array_elements_text(
-            jsonb_path_query_array(s.form_data, '$.**.status')
-          ) AS st(val)
-          WHERE st.val = 'ACCEPTED'
-        ) AS cnt
-        FROM submissions s
-        JOIN users u ON s.submitted_by = u.id
-       WHERE s."stateUt" = $1
-          AND u.role IN ($2, $3)  
-      ) t;
-      `,
-        [userStateUt, UserRole.NODAL_OFFICER,UserRole.STATE_APPROVER]
-      );
-      acceptedFromNodal = parseInt(acceptedCountQuery[0]?.count || "0");
-    } catch {
-      const fallback = await this.submissionRepository.query(
-        `
-      SELECT COALESCE(SUM(matches), 0) AS count FROM (
-        SELECT (
-          SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"ACCEPTED"', 'g')
-        ) AS matches
-        FROM submissions s
-        JOIN users u ON s.submitted_by = u.id         
-        WHERE s."stateUt" = $1
-          AND u.role IN ($2, $3)  
-      ) t;
-      `,
-        [userStateUt, UserRole.NODAL_OFFICER,UserRole.STATE_APPROVER]
-      );
-      acceptedFromNodal = parseInt(fallback[0]?.count || "0");
-    }
-
+    // Use the reusable service method for accepted indicator codes
+    const acceptedCodes = await this.indicatorStatusService.getAcceptedIndicatorCodesForState(userStateUt);
+    acceptedFromNodal = acceptedCodes.size;
+ 
     // ✅ 5. Count Reverted indicators (from JSON) - ONLY from NODAL_OFFICER submissions
     let returnedToNodal = 0;
     try {
@@ -447,22 +417,25 @@ export class DashboardService {
     // ✅ 8. Get Total Active Indicators
     const totalIndicators = await this.getTotalActiveIndicators();
 
- 
+    // ✅ 8. MoSPI indicator status counts from latest submission JSON
+    const mospiStatusCounts = await this.indicatorStatusService.getMospiSubmissionStatusByState(userStateUt);
+     
+    const mospi = {
+      submittedToMoSPI: Array.from(mospiStatusCounts.submittedToMoSPI).length,
+      returnedFromMoSPI: Array.from(mospiStatusCounts.returnedFromMoSPI).length,
+      approvedByMoSPI: Array.from(mospiStatusCounts.approvedByMoSPI).length,
+    };
     // ✅ 9. Return final structured response
     return {
       totalIndicators,
-      nodal: {
+      nodal: { 
         totalAssigned: totalAssignedCount,
         totalIndicatorsReceived,
         acceptedFromNodal,
         pendingSubmission,
         returnedToNodal
       },
-      mospi: {
-        submittedToMoSPI,
-        returnedFromMoSPI,
-        approvedByMoSPI,
-      },
+      mospi,
     };
   }
 
