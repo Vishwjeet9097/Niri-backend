@@ -200,7 +200,7 @@ export class UlbService {
 
   async findByStateName(stateName: string): Promise<{ total: number, data: UlbMaster[] }> {
     // Perform case-insensitive search for state_name
-    const [data, total] = await this.ulbMasterRepository.findAndCount({
+    const [data] = await this.ulbMasterRepository.findAndCount({
       where: {
         status: UlbStatus.ACTIVE,
       },
@@ -215,7 +215,17 @@ export class UlbService {
     const filteredData = data.filter(
       (ulb) => ulb.state_name && ulb.state_name.trim().toLowerCase() === normalizedStateName
     );
-    return { total: filteredData.length, data: filteredData };
+
+    // Ensure uniqueness by city_name, ulb_name, ulb_type
+    const uniqueMap = new Map<string, UlbMaster>();
+    for (const ulb of filteredData) {
+      const key = `${ulb.city_name?.trim().toLowerCase() || ''}|${ulb.ulb_name?.trim().toLowerCase() || ''}|${ulb.ulb_type?.trim().toLowerCase() || ''}`;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, ulb);
+      }
+    }
+    const uniqueData = Array.from(uniqueMap.values());
+    return { total: uniqueData.length, data: uniqueData };
   }
 
   async findByCityName(cityName: string): Promise<{ total: number, data: UlbMaster[] }> {
