@@ -199,7 +199,7 @@ export class UserService {
 
     // Check if contact number already exists when updating (excluding current user)
     if (updateUserDto.contactNumber) {
-      const normalizedContactNumber = updateUserDto.contactNumber.replace(/\s/g, ""); // Remove spaces
+      const normalizedContactNumber = typeof updateUserDto.contactNumber === "string" && updateUserDto.contactNumber ? updateUserDto.contactNumber.replace(/\s/g, "") : updateUserDto.contactNumber; // Remove spaces safely
       const existingUserWithContact = await this.userRepository.findOne({
         where: { contactNumber: normalizedContactNumber },
       });
@@ -258,7 +258,7 @@ export class UserService {
 
     // Normalize contact number if provided (remove spaces)
     if (updateData.contactNumber) {
-      updateData.contactNumber = updateData.contactNumber.replace(/\s/g, "");
+      updateData.contactNumber = typeof updateData.contactNumber === "string" && updateData.contactNumber ? updateData.contactNumber.replace(/\s/g, "") : updateData.contactNumber;
     }
 
     // Normalize stateUt if provided (trim whitespace to prevent inconsistencies)
@@ -393,13 +393,14 @@ export class UserService {
       throw new ConflictException("User with this email already exists");
     }
 
-    // Check if contact number already exists
+    // Check if contact number already exists (excluding current user if updating)
     if (contactNumber) {
-      const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+      const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
       const existingUserWithContact = await this.userRepository.findOne({
         where: { contactNumber: normalizedContactNumber },
       });
 
+      // In createUser, any match is a conflict (no user should exist with this contact)
       if (existingUserWithContact) {
         throw new ConflictException(
           "A user with this contact number already exists. Each user must have a unique contact number."
@@ -531,7 +532,7 @@ export class UserService {
       // Check if contact number already exists INSIDE transaction
       // This prevents race conditions when multiple requests come simultaneously
       if (contactNumber) {
-        const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+        const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
         const existingUserWithContact = await manager.findOne(User, {
           where: { contactNumber: normalizedContactNumber },
         });
@@ -628,8 +629,8 @@ export class UserService {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 12);
 
-      // Normalize contact number (remove spaces)
-      const normalizedContactNumber = contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
+      // Normalize contact number (remove spaces) with type safety
+      const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
 
       // Normalize stateUt (trim whitespace to prevent inconsistencies)
       // For MOSPI_REVIEWER, normalize each state in comma-separated list
@@ -1413,9 +1414,9 @@ export class UserService {
     contactNumber: string,
     excludeUserId?: string
   ): Promise<boolean> {
-    // Normalize contact number (remove spaces)
-    const normalizedContact = contactNumber.replace(/\s/g, "");
-    
+    // Normalize contact number (remove spaces) with type safety
+    const normalizedContact = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
+     
     const whereCondition: any = { contactNumber: normalizedContact };
 
     if (excludeUserId) {

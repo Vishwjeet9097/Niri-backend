@@ -55,7 +55,7 @@ export class AuthService {
 
     // Check if contact number already exists
     if (contactNumber) {
-      const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+      const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
       const existingUserWithContact = await this.userRepository.findOne({
         where: { contactNumber: normalizedContactNumber },
       });
@@ -168,7 +168,7 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Normalize contact number (remove spaces)
-    const normalizedContactNumber = contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber;
+    const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
 
     // Normalize stateUt (trim whitespace to prevent inconsistencies)
     // For MOSPI_REVIEWER, normalize each state in comma-separated list
