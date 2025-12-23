@@ -200,11 +200,21 @@ export class UserService {
     // Check if contact number already exists when updating (excluding current user)
     if (updateUserDto.contactNumber) {
       const normalizedContactNumber = updateUserDto.contactNumber.replace(/\s/g, ""); // Remove spaces
+      
+      // Only check if any OTHER user (not the current user) has this contact number
       const existingUserWithContact = await this.userRepository.findOne({
-        where: { contactNumber: normalizedContactNumber },
+        where: { 
+          contactNumber: normalizedContactNumber,
+          id: Not(id) // Exclude current user from the search
+        },
       });
 
-      if (existingUserWithContact && existingUserWithContact.id !== id) {
+      console.log("existingUserWithContact in update", existingUserWithContact);
+
+      
+
+      // Only throw error if another user (not the current user) has this contact number
+      if (existingUserWithContact) {
         throw new ConflictException(
           "A user with this contact number already exists. Each user must have a unique contact number."
         );
@@ -1416,8 +1426,22 @@ export class UserService {
     // Normalize contact number (remove spaces)
     const normalizedContact = contactNumber.replace(/\s/g, "");
     
+    // If excludeUserId is provided, first check if this contact already belongs to that user
+    console.log("excludeUserId in checkContactAvailability", excludeUserId);
+    if (excludeUserId) {
+      const currentUser = await this.userRepository.findOne({
+        where: { id: excludeUserId, contactNumber: normalizedContact },
+      });
+      
+      // If the contact number already belongs to this user, it's available (return true)
+      if (currentUser) {
+        return true;
+      }
+    }
+    
+    // Check if any other user has this contact number
     const whereCondition: any = { contactNumber: normalizedContact };
-
+    
     if (excludeUserId) {
       whereCondition.id = Not(excludeUserId);
     }
@@ -1426,6 +1450,7 @@ export class UserService {
       where: whereCondition,
     });
     
-    return !existingUser; // Return true if available (no user found)
+    // Return true if available (no other user found with this contact)
+    return !existingUser;
   }
 }

@@ -409,6 +409,8 @@ export class UserController {
     @Param("contactNumber") contactNumber: string,
     @Query("excludeUserId") excludeUserId?: string
   ) {
+
+    console.log("excludeUserId in checkContactAvailability", excludeUserId);
     const isAvailable = await this.userService.checkContactAvailability(
       contactNumber,
       excludeUserId
