@@ -20,6 +20,7 @@ import { IndicatorModule } from "./modules/indicator/indicator.module";
 import { AuditMiddleware } from "./middleware/audit.middleware";
 import { NotificationModule } from "./modules/notification/notification.module";
 import { UlbModule } from "./modules/ulb/ulb.module";
+import { MinistryModule } from "./modules/ministry/ministry.module";
 
 @Module({
   imports: [
@@ -46,7 +47,8 @@ import { UlbModule } from "./modules/ulb/ulb.module";
     ValidationModule,
     IndicatorModule,
     NotificationModule,
-    UlbModule
+    UlbModule,
+    MinistryModule
   ],
   controllers: [AppController],
   providers: [AppService],
