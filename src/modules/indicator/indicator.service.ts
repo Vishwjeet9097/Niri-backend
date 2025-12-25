@@ -379,7 +379,7 @@ export class IndicatorService {
   }
 
   async getAvailableIndicatorsForApprover(
-      // Debug: Log code-to-id mapping and sets for troubleshooting
+    // Debug: Log code-to-id mapping and sets for troubleshooting
     stateUt: string,
     approverUserId?: string
   ) {
@@ -420,28 +420,41 @@ export class IndicatorService {
       .createQueryBuilder("scope")
       .innerJoin("scope.user", "user")
       .where("user.stateUt = :stateUt", { stateUt })
-      .andWhere("user.id != :approverUserId", { approverUserId: approverUserId || "" })
+      .andWhere("user.id != :approverUserId", {
+        approverUserId: approverUserId || "",
+      })
       .andWhere("user.isActive = :isActive", { isActive: true })
-      .andWhere("user.role = :stateApproverRole", { stateApproverRole: UserRole.STATE_APPROVER })
+      .andWhere("user.role = :stateApproverRole", {
+        stateApproverRole: UserRole.STATE_APPROVER,
+      })
       .select(["scope.indicatorId"])
       .getMany();
 
     // 2.5️⃣ Find indicatorIds assigned to NODAL_OFFICERs in the same state
     // STATE_APPROVERs should only see UNASSIGNED indicators (not assigned to anyone)
     // Use case-insensitive comparison for stateUt to handle formatting differences
-    const scopesAssignedToNodalOfficers = await this.userIndicatorScopeRepository
-      .createQueryBuilder("scope")
-      .innerJoin("scope.user", "user")
-      .where("LOWER(TRIM(user.stateUt)) = LOWER(TRIM(:stateUt))", { stateUt })
-      .andWhere("user.isActive = :isActive", { isActive: true })
-      .andWhere("user.role = :nodalOfficerRole", { nodalOfficerRole: UserRole.NODAL_OFFICER })
-      .select(["scope.indicatorId", "scope.userId"])
-      .getMany();
-    
-    console.log(`[getAvailableIndicatorsForApprover] Found ${scopesAssignedToNodalOfficers.length} indicator scopes assigned to NODAL_OFFICERs in state=${stateUt}`);
+    const scopesAssignedToNodalOfficers =
+      await this.userIndicatorScopeRepository
+        .createQueryBuilder("scope")
+        .innerJoin("scope.user", "user")
+        .where("LOWER(TRIM(user.stateUt)) = LOWER(TRIM(:stateUt))", { stateUt })
+        .andWhere("user.isActive = :isActive", { isActive: true })
+        .andWhere("user.role = :nodalOfficerRole", {
+          nodalOfficerRole: UserRole.NODAL_OFFICER,
+        })
+        .select(["scope.indicatorId", "scope.userId"])
+        .getMany();
+
+    console.log(
+      `[getAvailableIndicatorsForApprover] Found ${scopesAssignedToNodalOfficers.length} indicator scopes assigned to NODAL_OFFICERs in state=${stateUt}`
+    );
     if (scopesAssignedToNodalOfficers.length > 0) {
-      const userIds = Array.from(new Set(scopesAssignedToNodalOfficers.map(s => s.userId)));
-      console.log(`[getAvailableIndicatorsForApprover] These scopes belong to ${userIds.length} NODAL_OFFICER(s): ${userIds.join(', ')}`);
+      const userIds = Array.from(
+        new Set(scopesAssignedToNodalOfficers.map((s) => s.userId))
+      );
+      console.log(
+        `[getAvailableIndicatorsForApprover] These scopes belong to ${userIds.length} NODAL_OFFICER(s): ${userIds.join(", ")}`
+      );
     }
 
     // 3️⃣ Convert to Sets for filtering
@@ -449,17 +462,24 @@ export class IndicatorService {
     const assignedToOtherStateApprovers = new Set(
       scopesInState.map((s) => s.indicatorId.toString())
     );
-    
+
     // This contains indicators assigned to NODAL_OFFICERs
     const assignedToNodalOfficers = new Set(
       scopesAssignedToNodalOfficers.map((s) => s.indicatorId.toString())
     );
 
-    console.log(`[getAvailableIndicatorsForApprover] Found ${scopesInState.length} indicators assigned to other STATE_APPROVERs in state=${stateUt}`);
-    console.log(`[getAvailableIndicatorsForApprover] Found ${scopesAssignedToNodalOfficers.length} indicators assigned to NODAL_OFFICERs in state=${stateUt}`);
-    console.log(`[getAvailableIndicatorsForApprover] Excluded indicator IDs (assigned to other STATE_APPROVERs): [${Array.from(assignedToOtherStateApprovers).join(', ')}]`);
-    console.log(`[getAvailableIndicatorsForApprover] Excluded indicator IDs (assigned to NODAL_OFFICERs): [${Array.from(assignedToNodalOfficers).join(', ')}]`);
-
+    console.log(
+      `[getAvailableIndicatorsForApprover] Found ${scopesInState.length} indicators assigned to other STATE_APPROVERs in state=${stateUt}`
+    );
+    console.log(
+      `[getAvailableIndicatorsForApprover] Found ${scopesAssignedToNodalOfficers.length} indicators assigned to NODAL_OFFICERs in state=${stateUt}`
+    );
+    console.log(
+      `[getAvailableIndicatorsForApprover] Excluded indicator IDs (assigned to other STATE_APPROVERs): [${Array.from(assignedToOtherStateApprovers).join(", ")}]`
+    );
+    console.log(
+      `[getAvailableIndicatorsForApprover] Excluded indicator IDs (assigned to NODAL_OFFICERs): [${Array.from(assignedToNodalOfficers).join(", ")}]`
+    );
 
     // 3.5️⃣ Exclude indicators already ACCEPTED by any state approver in this state
     // IMPORTANT: Only consider indicators accepted from NODAL_OFFICER submissions, NOT from STATE_APPROVER's own submissions
@@ -467,20 +487,28 @@ export class IndicatorService {
     // Find accepted indicator codes from submissions
     const acceptedCodes = new Set<string>();
     const submissions = await this.submissionRepository.find({
-      where: { stateUt, currentOwnerRole: UserRole.STATE_APPROVER, status: SubmissionStatus.SUBMITTED_TO_STATE },
+      where: {
+        stateUt,
+        currentOwnerRole: UserRole.STATE_APPROVER,
+        status: SubmissionStatus.SUBMITTED_TO_STATE,
+      },
       relations: ["user"], // Add relation to check submittedBy role
     });
-    
-    console.log(`[getAvailableIndicatorsForApprover] Checking ${submissions.length} submissions for accepted indicators in state=${stateUt}`);
-    
+
+    console.log(
+      `[getAvailableIndicatorsForApprover] Checking ${submissions.length} submissions for accepted indicators in state=${stateUt}`
+    );
+
     for (const submission of submissions) {
       // Only consider submissions from NODAL_OFFICERs, not from STATE_APPROVERs
       // STATE_APPROVERs should be able to see and work with their own submitted indicators
       if (submission.user?.role !== UserRole.NODAL_OFFICER) {
-        console.log(`[getAvailableIndicatorsForApprover] Skipping submission ${submission.submissionId} - submitted by ${submission.user?.role} (not NODAL_OFFICER)`);
+        console.log(
+          `[getAvailableIndicatorsForApprover] Skipping submission ${submission.submissionId} - submitted by ${submission.user?.role} (not NODAL_OFFICER)`
+        );
         continue;
       }
-      
+
       // Get the NODAL_OFFICER's currently assigned indicators
       // Only exclude accepted indicators if they're still assigned to this NODAL_OFFICER
       const nodalOfficerId = submission.user.id;
@@ -490,56 +518,68 @@ export class IndicatorService {
       });
       const currentlyAssignedCodes = new Set(
         nodalOfficerScopes
-          .map(scope => scope.indicator?.code)
+          .map((scope) => scope.indicator?.code)
           .filter(Boolean) as string[]
       );
-      
+
       const formData = submission.formData || {};
-      Object.entries(formData).forEach(([parentKey, parentData]: [string, any]) => {
-        if (typeof parentData !== "object" || parentData === null) return;
-        Object.entries(parentData).forEach(([sectionKey, data]: [string, any]) => {
-          if (data && typeof data === "object" && data.status === "ACCEPTED") {
-            let code = sectionKey;
-            if (code.startsWith("section")) {
-              // Handle section format: section4_2 -> 4.2, section1_1 -> 1.1
-              // Remove "section" prefix and replace ALL underscores with dots
-              code = code.replace(/^section/, "").replace(/_/g, ".");
-            }
-            
-            // Validate the code format (should be like "1.1", "4.2", etc.)
-            if (/^\d+\.\d+$/.test(code)) {
-              // Only exclude if the indicator is still assigned to this NODAL_OFFICER
-              // If it was removed, it should become available again for STATE_APPROVER
-              if (currentlyAssignedCodes.has(code)) {
-                acceptedCodes.add(code);
-                console.log(`[getAvailableIndicatorsForApprover] Found accepted indicator: ${code} from sectionKey: ${sectionKey} in submission: ${submission.submissionId} (from NODAL_OFFICER, still assigned)`);
-              } else {
-                console.log(`[getAvailableIndicatorsForApprover] Skipping accepted indicator: ${code} from sectionKey: ${sectionKey} in submission: ${submission.submissionId} - no longer assigned to NODAL_OFFICER, will be available`);
+      Object.entries(formData).forEach(
+        ([parentKey, parentData]: [string, any]) => {
+          if (typeof parentData !== "object" || parentData === null) return;
+          Object.entries(parentData).forEach(
+            ([sectionKey, data]: [string, any]) => {
+              if (
+                data &&
+                typeof data === "object" &&
+                data.status === "ACCEPTED"
+              ) {
+                let code = sectionKey;
+                if (code.startsWith("section")) {
+                  // Handle section format: section4_2 -> 4.2, section1_1 -> 1.1
+                  // Remove "section" prefix and replace ALL underscores with dots
+                  code = code.replace(/^section/, "").replace(/_/g, ".");
+                }
+
+                // Validate the code format (should be like "1.1", "4.2", etc.)
+                if (/^\d+\.\d+$/.test(code)) {
+                  // Only exclude if the indicator is still assigned to this NODAL_OFFICER
+                  // If it was removed, it should become available again for STATE_APPROVER
+                  if (currentlyAssignedCodes.has(code)) {
+                    acceptedCodes.add(code);
+                    console.log(
+                      `[getAvailableIndicatorsForApprover] Found accepted indicator: ${code} from sectionKey: ${sectionKey} in submission: ${submission.submissionId} (from NODAL_OFFICER, still assigned)`
+                    );
+                  } else {
+                    console.log(
+                      `[getAvailableIndicatorsForApprover] Skipping accepted indicator: ${code} from sectionKey: ${sectionKey} in submission: ${submission.submissionId} - no longer assigned to NODAL_OFFICER, will be available`
+                    );
+                  }
+                } else {
+                  console.warn(
+                    `[getAvailableIndicatorsForApprover] Invalid indicator code format: ${code} from sectionKey: ${sectionKey} in submission: ${submission.submissionId}`
+                  );
+                }
               }
-            } else {
-              console.warn(`[getAvailableIndicatorsForApprover] Invalid indicator code format: ${code} from sectionKey: ${sectionKey} in submission: ${submission.submissionId}`);
             }
-          }
-        });
-      });
+          );
+        }
+      );
     }
 
-    console.log(`[getAvailableIndicatorsForApprover] Accepted indicator codes: [${Array.from(acceptedCodes).join(', ')}]`);
+    console.log(
+      `[getAvailableIndicatorsForApprover] Accepted indicator codes: [${Array.from(acceptedCodes).join(", ")}]`
+    );
 
     // 3.6️⃣ Exclude indicators from STATE_APPROVER's submissions that have been submitted
     // CHANGED: Check section-level status (like getSubmittedIndicatorsInState) instead of submission-level status
     // If a section has status "SUBMITTED_TO_STATE", that indicator should not be available
     const submittedByStateApproverCodes = new Set<string>();
-    
+
     // Use same blocking statuses as getSubmittedIndicatorsInState
     // These are section-level statuses that indicate an indicator has been submitted
     // Note: At section level, status is "SUBMITTED_TO_STATE" when state approver submits
     // SUBMITTED_TO_MOSPI_REVIEWER/APPROVER are submission-level statuses, not section-level
-    const blockingStatuses = [
-      "SUBMITTED_TO_STATE",
-      "ACCEPTED",
-      "APPROVED"
-    ];
+    const blockingStatuses = ["SUBMITTED_TO_STATE", "ACCEPTED", "APPROVED"];
 
     const sectionToIndicatorMap: Record<string, string> = {
       section1_1: "1.1",
@@ -556,14 +596,13 @@ export class IndicatorService {
       section3_2: "3.2",
       section3_3: "3.3",
       section3_4: "3.4",
-      section4_1: "4.1",
-      section4_2: "4.2",
-      section4_3: "4.3",
-      section4_4: "4.4",
-      section4_5: "4.5",
-      section4_6: "4.6",
+      section4_2: "4.1",
+      section4_3: "4.2",
+      section4_4: "4.3",
+      section4_5: "4.4",
+      section4_6: "4.5",
     };
-    
+
     // CHANGED: Get ALL submissions from STATE_APPROVERs (INCLUDING DRAFT)
     // Only exclude REJECTED_FINAL - we need to check DRAFT submissions too
     const stateApproverSubmissions = await this.submissionRepository
@@ -571,19 +610,25 @@ export class IndicatorService {
       .innerJoinAndSelect("submission.user", "user")
       .where("user.stateUt = :stateUt", { stateUt })
       .andWhere("user.isActive = :isActive", { isActive: true })
-      .andWhere("user.role = :stateApproverRole", { stateApproverRole: UserRole.STATE_APPROVER })
+      .andWhere("user.role = :stateApproverRole", {
+        stateApproverRole: UserRole.STATE_APPROVER,
+      })
       .andWhere("submission.status != :rejectedFinalStatus", {
         rejectedFinalStatus: SubmissionStatus.REJECTED_FINAL,
       })
       // REMOVED: submission-level status check - we check section-level status instead
       .getMany();
 
-    console.log(`[getAvailableIndicatorsForApprover] Found ${stateApproverSubmissions.length} submissions from STATE_APPROVERs in state ${stateUt} (including DRAFT)`);
+    console.log(
+      `[getAvailableIndicatorsForApprover] Found ${stateApproverSubmissions.length} submissions from STATE_APPROVERs in state ${stateUt} (including DRAFT)`
+    );
 
     for (const submission of stateApproverSubmissions) {
-      console.log(`[getAvailableIndicatorsForApprover] Processing submission ${submission.submissionId} from STATE_APPROVER ${submission.user?.id}, Submission Status: ${submission.status}`);
+      console.log(
+        `[getAvailableIndicatorsForApprover] Processing submission ${submission.submissionId} from STATE_APPROVER ${submission.user?.id}, Submission Status: ${submission.status}`
+      );
       const formData = submission.formData || {};
-      
+
       // Check all categories
       const categories = [
         "infraFinancing",
@@ -608,7 +653,9 @@ export class IndicatorService {
             ) {
               const indicatorCode = sectionToIndicatorMap[sectionKey];
               if (indicatorCode) {
-                console.log(`[getAvailableIndicatorsForApprover] Found submitted indicator: ${indicatorCode} in ${category}.${sectionKey} with status: ${sectionData.status} (from STATE_APPROVER submission ${submission.submissionId})`);
+                console.log(
+                  `[getAvailableIndicatorsForApprover] Found submitted indicator: ${indicatorCode} in ${category}.${sectionKey} with status: ${sectionData.status} (from STATE_APPROVER submission ${submission.submissionId})`
+                );
                 submittedByStateApproverCodes.add(indicatorCode);
               }
             }
@@ -617,43 +664,57 @@ export class IndicatorService {
       });
     }
 
-    console.log(`[getAvailableIndicatorsForApprover] Submitted by STATE_APPROVER indicator codes (with SUBMITTED_TO_STATE status): [${Array.from(submittedByStateApproverCodes).join(', ')}]`);
+    console.log(
+      `[getAvailableIndicatorsForApprover] Submitted by STATE_APPROVER indicator codes (with SUBMITTED_TO_STATE status): [${Array.from(submittedByStateApproverCodes).join(", ")}]`
+    );
 
     // Map acceptedCodes and submittedByStateApproverCodes to indicator IDs
     const codeToId = new Map<string, string>();
-    allIndicators.forEach(ind => {
+    allIndicators.forEach((ind) => {
       codeToId.set(ind.code, ind.id.toString());
     });
     const acceptedIds = new Set<string>();
-    acceptedCodes.forEach(code => {
+    acceptedCodes.forEach((code) => {
       const id = codeToId.get(code);
       if (id) {
         acceptedIds.add(id);
-        console.log(`[getAvailableIndicatorsForApprover] Mapped accepted code ${code} to indicator ID: ${id}`);
+        console.log(
+          `[getAvailableIndicatorsForApprover] Mapped accepted code ${code} to indicator ID: ${id}`
+        );
       } else {
-        console.warn(`[getAvailableIndicatorsForApprover] Could not find indicator ID for accepted code: ${code}`);
+        console.warn(
+          `[getAvailableIndicatorsForApprover] Could not find indicator ID for accepted code: ${code}`
+        );
       }
     });
 
     const submittedByStateApproverIds = new Set<string>();
-    submittedByStateApproverCodes.forEach(code => {
+    submittedByStateApproverCodes.forEach((code) => {
       const id = codeToId.get(code);
       if (id) {
         submittedByStateApproverIds.add(id);
-        console.log(`[getAvailableIndicatorsForApprover] Mapped submitted code ${code} to indicator ID: ${id}`);
+        console.log(
+          `[getAvailableIndicatorsForApprover] Mapped submitted code ${code} to indicator ID: ${id}`
+        );
       } else {
-        console.warn(`[getAvailableIndicatorsForApprover] Could not find indicator ID for submitted code: ${code}`);
+        console.warn(
+          `[getAvailableIndicatorsForApprover] Could not find indicator ID for submitted code: ${code}`
+        );
       }
     });
 
     // Check if indicator 4.2 is being excluded and why (for debugging)
-    const indicator42 = allIndicators.find(ind => ind.code === "4.2");
+    const indicator42 = allIndicators.find((ind) => ind.code === "4.2");
     if (indicator42) {
       const indicator42Id = indicator42.id.toString();
-      const isAssignedToOtherStateApprover = assignedToOtherStateApprovers.has(indicator42Id);
+      const isAssignedToOtherStateApprover =
+        assignedToOtherStateApprovers.has(indicator42Id);
       const isAccepted = acceptedIds.has(indicator42Id);
-      const isSubmittedByStateApprover = submittedByStateApproverIds.has(indicator42Id);
-      console.log(`[getAvailableIndicatorsForApprover] Indicator 4.2 status: id=${indicator42Id}, assignedToOtherStateApprover=${isAssignedToOtherStateApprover}, accepted=${isAccepted}, submittedByStateApprover=${isSubmittedByStateApprover}, willBeExcluded=${isAssignedToOtherStateApprover || isAccepted || isSubmittedByStateApprover}`);
+      const isSubmittedByStateApprover =
+        submittedByStateApproverIds.has(indicator42Id);
+      console.log(
+        `[getAvailableIndicatorsForApprover] Indicator 4.2 status: id=${indicator42Id}, assignedToOtherStateApprover=${isAssignedToOtherStateApprover}, accepted=${isAccepted}, submittedByStateApprover=${isSubmittedByStateApprover}, willBeExcluded=${isAssignedToOtherStateApprover || isAccepted || isSubmittedByStateApprover}`
+      );
     }
 
     // Merge assignedToOtherStateApprovers, assignedToNodalOfficers, acceptedIds, and submittedByStateApproverIds
@@ -662,14 +723,24 @@ export class IndicatorService {
       ...assignedToOtherStateApprovers,
       ...assignedToNodalOfficers,
       ...acceptedIds,
-      ...submittedByStateApproverIds
+      ...submittedByStateApproverIds,
     ]);
 
-    console.log(`[getAvailableIndicatorsForApprover] Total excluded indicator IDs: [${Array.from(excludedIds).join(', ')}]`);
-    console.log(`[getAvailableIndicatorsForApprover] Excluded indicator codes: [${Array.from(excludedIds).map(id => {
-      const indicator = allIndicators.find(ind => ind.id.toString() === id);
-      return indicator ? indicator.code : id;
-    }).join(', ')}]`);
+    console.log(
+      `[getAvailableIndicatorsForApprover] Total excluded indicator IDs: [${Array.from(excludedIds).join(", ")}]`
+    );
+    console.log(
+      `[getAvailableIndicatorsForApprover] Excluded indicator codes: [${Array.from(
+        excludedIds
+      )
+        .map((id) => {
+          const indicator = allIndicators.find(
+            (ind) => ind.id.toString() === id
+          );
+          return indicator ? indicator.code : id;
+        })
+        .join(", ")}]`
+    );
 
     // 4️⃣ Keep indicators NOT in excludedIds
     // This includes ONLY:
@@ -680,10 +751,13 @@ export class IndicatorService {
       (ind) => !excludedIds.has(ind.id.toString())
     );
 
+    console
+      .log
+      // `🟢 Found ${available.length} available indicators for state=${stateUt}`
+      ();
     console.log(
-     // `🟢 Found ${available.length} available indicators for state=${stateUt}`
+      `[getAvailableIndicatorsForApprover] Available indicator codes: [${available.map((ind) => ind.code).join(", ")}]`
     );
-    console.log(`[getAvailableIndicatorsForApprover] Available indicator codes: [${available.map(ind => ind.code).join(', ')}]`);
 
     return available.map((ind) => ({
       id: ind.id,
@@ -1102,7 +1176,7 @@ export class IndicatorService {
       "ACCEPTED",
       // "SUBMITTED_TO_MOSPI_REVIEWER",
       // "SUBMITTED_TO_MOSPI_APPROVER",
-      "APPROVED"
+      "APPROVED",
     ];
 
     const sectionToIndicatorMap: Record<string, string> = {
@@ -1120,17 +1194,18 @@ export class IndicatorService {
       section3_2: "3.2",
       section3_3: "3.3",
       section3_4: "3.4",
-      section4_1: "4.1",
-      section4_2: "4.2",
-      section4_3: "4.3",
-      section4_4: "4.4",
-      section4_5: "4.5",
-      section4_6: "4.6",
+      section4_2: "4.1",
+      section4_3: "4.2",
+      section4_4: "4.3",
+      section4_5: "4.4",
+      section4_6: "4.5",
     };
 
     try {
-      console.log(`[IndicatorService] getSubmittedIndicatorsInState called for state: ${stateUt}`);
-      
+      console.log(
+        `[IndicatorService] getSubmittedIndicatorsInState called for state: ${stateUt}`
+      );
+
       // CHANGED: Get ALL submissions from BOTH NODAL_OFFICERs AND STATE_APPROVERs
       // INCLUDING DRAFT status - we need to check DRAFT submissions too
       // Only exclude REJECTED_FINAL
@@ -1139,8 +1214,8 @@ export class IndicatorService {
         .innerJoin("submission.user", "user")
         .where("user.stateUt = :stateUt", { stateUt })
         .andWhere("user.isActive = :isActive", { isActive: true })
-        .andWhere("user.role IN (:...roles)", { 
-          roles: [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER] 
+        .andWhere("user.role IN (:...roles)", {
+          roles: [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER],
         })
         .andWhere("submission.status != :rejectedFinalStatus", {
           rejectedFinalStatus: SubmissionStatus.REJECTED_FINAL,
@@ -1148,27 +1223,45 @@ export class IndicatorService {
         // REMOVED: .andWhere("submission.status != :draftStatus") - we want to include DRAFT
         .getMany();
 
-      console.log(`[IndicatorService] Found ${submissions.length} submissions from NODAL_OFFICERs and STATE_APPROVERs in state ${stateUt} (including DRAFT)`);
-      
+      console.log(
+        `[IndicatorService] Found ${submissions.length} submissions from NODAL_OFFICERs and STATE_APPROVERs in state ${stateUt} (including DRAFT)`
+      );
+
       // Log breakdown by role
-      const nodalSubmissions = submissions.filter(s => s.user?.role === UserRole.NODAL_OFFICER);
-      const stateApproverSubmissions = submissions.filter(s => s.user?.role === UserRole.STATE_APPROVER);
-      console.log(`[IndicatorService] Breakdown: ${nodalSubmissions.length} from NODAL_OFFICERs, ${stateApproverSubmissions.length} from STATE_APPROVERs`);
-      
+      const nodalSubmissions = submissions.filter(
+        (s) => s.user?.role === UserRole.NODAL_OFFICER
+      );
+      const stateApproverSubmissions = submissions.filter(
+        (s) => s.user?.role === UserRole.STATE_APPROVER
+      );
+      console.log(
+        `[IndicatorService] Breakdown: ${nodalSubmissions.length} from NODAL_OFFICERs, ${stateApproverSubmissions.length} from STATE_APPROVERs`
+      );
+
       if (submissions.length === 0) {
-        console.log(`[IndicatorService] ⚠️ No submissions found for stateUt: ${stateUt}`);
+        console.log(
+          `[IndicatorService] ⚠️ No submissions found for stateUt: ${stateUt}`
+        );
         console.log(`[IndicatorService] This could mean:`);
-        console.log(`[IndicatorService]   1. No submissions exist for this state`);
-        console.log(`[IndicatorService]   2. All submissions are REJECTED_FINAL`);
-        console.log(`[IndicatorService]   3. The stateUt value doesn't match what's in the database`);
+        console.log(
+          `[IndicatorService]   1. No submissions exist for this state`
+        );
+        console.log(
+          `[IndicatorService]   2. All submissions are REJECTED_FINAL`
+        );
+        console.log(
+          `[IndicatorService]   3. The stateUt value doesn't match what's in the database`
+        );
       }
 
       const submittedIndicators = new Set<string>();
 
       submissions.forEach((submission, index) => {
         const formData = submission.formData || {};
-        const userRole = submission.user?.role || 'UNKNOWN';
-        console.log(`[IndicatorService] Processing submission ${index + 1}/${submissions.length}, ID: ${submission.id}, User Role: ${userRole}, Submission Status: ${submission.status}`);
+        const userRole = submission.user?.role || "UNKNOWN";
+        console.log(
+          `[IndicatorService] Processing submission ${index + 1}/${submissions.length}, ID: ${submission.id}, User Role: ${userRole}, Submission Status: ${submission.status}`
+        );
         console.log(`[IndicatorService] FormData keys:`, Object.keys(formData));
 
         // Check all categories
@@ -1196,7 +1289,9 @@ export class IndicatorService {
               ) {
                 const indicatorCode = sectionToIndicatorMap[sectionKey];
                 if (indicatorCode) {
-                  console.log(`[IndicatorService] Found submitted indicator: ${indicatorCode} in ${category}.${sectionKey} with status: ${sectionData.status} (from ${userRole} submission ${submission.id})`);
+                  console.log(
+                    `[IndicatorService] Found submitted indicator: ${indicatorCode} in ${category}.${sectionKey} with status: ${sectionData.status} (from ${userRole} submission ${submission.id})`
+                  );
                   submittedIndicators.add(indicatorCode);
                 }
               } else if (sectionKey === "section1_1") {
@@ -1207,7 +1302,9 @@ export class IndicatorService {
                   isObject: typeof sectionData === "object",
                   hasStatus: sectionData?.status,
                   statusValue: sectionData?.status,
-                  inBlockingStatuses: blockingStatuses.includes(sectionData?.status),
+                  inBlockingStatuses: blockingStatuses.includes(
+                    sectionData?.status
+                  ),
                   category,
                   categoryDataKeys: Object.keys(categoryData),
                   userRole,
@@ -1222,9 +1319,14 @@ export class IndicatorService {
 
       const result = Array.from(submittedIndicators);
       console.log(`[IndicatorService] Returning submitted indicators:`, result);
-      console.log(`[IndicatorService] Total indicators with SUBMITTED_TO_STATE status: ${result.length}`);
-      console.log(`[IndicatorService] Is 1.1 in result?`, result.includes("1.1"));
-      
+      console.log(
+        `[IndicatorService] Total indicators with SUBMITTED_TO_STATE status: ${result.length}`
+      );
+      console.log(
+        `[IndicatorService] Is 1.1 in result?`,
+        result.includes("1.1")
+      );
+
       return result;
     } catch (error) {
       console.error(
