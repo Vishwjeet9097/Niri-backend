@@ -28,9 +28,14 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   contactNumber?: string;
+  
 
   @IsEnum(UserRole)
   role: UserRole;
+
+  @IsOptional()
+  @IsString()
+  ministryId?: string;
 
   @IsString()
   @IsIn(INDIAN_STATES_AND_UTS, { message: "Please select a valid state/UT" })
@@ -62,6 +67,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   contactNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  ministryId?: string;
 
   @IsOptional()
   @IsEnum(UserRole)

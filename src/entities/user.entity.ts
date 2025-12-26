@@ -39,6 +39,9 @@ export class User {
   @Column({ nullable: true })
   contactNumber: string;
 
+  @Column({ nullable: true })
+  ministryId: string;
+
   @Column({
     type: "enum",
     enum: UserRole,

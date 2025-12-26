@@ -41,8 +41,12 @@ export class AuthService {
       contactNumber,
       role,
       stateUt,
-      indicatorCodes,
+      ministryId,
+      indicatorCodes = [],
     } = createUserDto;
+
+     console.log("ddddddddddddddddd11111=========", createUserDto)
+
 
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({
@@ -179,6 +183,15 @@ export class AuthService {
         : stateUt.trim();
     }
 
+    console.log("ddddddddddddddddd=========", { email,
+      password: hashedPassword,
+      firstName,
+      lastName,
+      contactNumber: normalizedContactNumber,
+      role,
+      stateUt: normalizedStateUt,
+      isActive: true})
+
     // Create user
     const user = this.userRepository.create({
       email,
@@ -188,6 +201,7 @@ export class AuthService {
       contactNumber: normalizedContactNumber,
       role,
       stateUt: normalizedStateUt,
+      ministryId,
       isActive: true,
     });
 
