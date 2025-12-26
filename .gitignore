@@ -158,7 +158,7 @@ common/
 docs/
 *.md
 !README.md
-!package.json
+
 !package-lock.json
 !tsconfig.json
 !nest-cli.json

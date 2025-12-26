@@ -245,16 +245,30 @@ export class SubmissionService {
     };
   }
 
-  // Helper function to check if a section has meaningful data
-  private hasSectionData(sectionData: any): boolean {
+  // Helper function to check if a section has meaningful data or status
+  private hasSectionData(sectionData: any, sectionKey?: string, category?: string): boolean {
     if (!sectionData || typeof sectionData !== "object") {
       return false;
     }
 
-    // Check if section has any non-empty, non-null values
-    const hasData = Object.entries(sectionData).some(([key, value]) => {
+    // Normalize sectionData - handle arrays (some sections are stored as arrays)
+    const section = Array.isArray(sectionData) ? sectionData[0] : sectionData;
+    
+    // If section is still not an object, return false
+    if (!section || typeof section !== "object") {
+      return false;
+    }
+
+    // First check: If section has a status field, it means it's been submitted/updated
+    // This is a strong indicator that the section should be scored
+    if (section.status && typeof section.status === "string" && section.status.trim() !== "") {
+      return true;
+    }
+
+    // Second check: Check if section has any meaningful data
+    const hasData = Object.entries(section).some(([key, value]) => {
       // Skip certain metadata fields that don't indicate actual data
-      if (["year", "percentage", "marksObtained"].includes(key)) {
+      if (["year", "percentage", "marksObtained", "nodalOfficerId", "status"].includes(key)) {
         return false;
       }
 
@@ -265,7 +279,24 @@ export class SubmissionService {
 
       // For arrays, check if they have items
       if (Array.isArray(value)) {
-        return value.length > 0;
+        // Empty arrays don't count as data
+        if (value.length === 0) {
+          return false;
+        }
+        // Check if array has meaningful items
+        return value.some(item => {
+          if (item === null || item === undefined) return false;
+          if (typeof item === "object") {
+            // For objects in arrays, check if they have any non-empty properties
+            return Object.values(item).some(val => {
+              if (val === null || val === undefined || val === "") return false;
+              if (Array.isArray(val)) return val.length > 0;
+              if (typeof val === "object") return Object.keys(val).length > 0;
+              return true;
+            });
+          }
+          return true;
+        });
       }
 
       // For numbers, check if they're not 0 (or consider 0 as valid data)
@@ -276,6 +307,11 @@ export class SubmissionService {
       // For strings, check if not empty after trim
       if (typeof value === "string") {
         return value.trim() !== "";
+      }
+
+      // For boolean values, they always indicate data
+      if (typeof value === "boolean") {
+        return true;
       }
 
       // For objects, recursively check
@@ -710,6 +746,86 @@ export class SubmissionService {
       this.logger.log(
         `Final Status: ${savedSubmission.status}, Owner: ${savedSubmission.currentOwnerRole}`
       );
+
+      // Calculate indicator scores for newly created submission
+      if (savedSubmission.formData) {
+        try {
+          this.logger.log(`🔍 Calculating scores for newly created submission ${savedSubmission.id}...`);
+          const formData = savedSubmission.formData;
+          const categories = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+          
+          for (const category of categories) {
+            const categoryData = formData[category];
+            if (!categoryData || typeof categoryData !== 'object') continue;
+            
+            this.logger.log(`📋 Processing category ${category} with sections: ${Object.keys(categoryData).join(', ')}`);
+            
+            for (const [sectionKey, sectionData] of Object.entries(categoryData)) {
+              if (!sectionKey.startsWith('section')) continue;
+              
+              // Extract indicator code
+              let indicatorCode: string;
+              if (sectionKey.startsWith('section')) {
+                const match = sectionKey.match(/section(\d+(_\d+)*)/);
+                if (match) {
+                  indicatorCode = match[1].replace(/_/g, '.');
+                } else {
+                  indicatorCode = sectionKey.replace('section', '').replace(/_/g, '.');
+                }
+              } else {
+                indicatorCode = sectionKey.replace(/_/g, '.');
+              }
+              
+              // Check if indicator has meaningful data or status before calculating score
+              const section = Array.isArray(sectionData) ? sectionData[0] : sectionData;
+              const indicatorStatus = section?.status || null;
+              
+              // Skip empty indicators (no status and no meaningful data)
+              if (!indicatorStatus && !this.hasSectionData(sectionData, sectionKey, category)) {
+                this.logger.log(`⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`);
+                continue;
+              }
+              
+              let updateReason = 'INDICATOR_UPDATED';
+              if (indicatorStatus === 'SUBMITTED_TO_STATE') {
+                updateReason = 'INDICATOR_SUBMITTED';
+              } else if (indicatorStatus === 'RESUBMITTED') {
+                updateReason = 'INDICATOR_RESUBMITTED';
+              } else if (indicatorStatus === 'REVERTED') {
+                updateReason = 'INDICATOR_REVERTED';
+              }
+              
+              try {
+                this.logger.log(`🧮 Calculating score for indicator ${indicatorCode}...`);
+                const calculatedScore = await this.scoringService.calculateIndicatorScore(
+                  savedSubmission.id,
+                  indicatorCode,
+                  category,
+                  formData,
+                  userId,
+                  updateReason,
+                  indicatorStatus
+                );
+                
+                this.logger.log(
+                  `✅ Calculated and saved score for indicator ${indicatorCode}: ${calculatedScore.score}/${calculatedScore.maxScore}`
+                );
+              } catch (scoringError) {
+                this.logger.error(
+                  `❌ Failed to calculate indicator score for ${sectionKey}: ${scoringError.message}`
+                );
+                this.logger.error(`Error stack: ${scoringError.stack}`);
+              }
+            }
+          }
+        } catch (scoringError) {
+          this.logger.error(
+            `❌ Error calculating scores during create: ${scoringError.message}`
+          );
+          this.logger.error(`Error stack: ${scoringError.stack}`);
+        }
+      }
+
       this.logger.log(`=== CREATE SUBMISSION SUCCESS ===`);
 
       return {
@@ -904,6 +1020,19 @@ export class SubmissionService {
       this.logger.log(
         `Found submission: ${submission.id}, Status: ${submission.status}, StateUt: ${submission.stateUt}`
       );
+
+      // Step 1.5: Load indicator scores for this submission
+      const indicatorScores = await this.scoringService.getSubmissionIndicatorScores(id);
+      if (indicatorScores.length > 0) {
+        (submission as any).indicatorScores = indicatorScores.map(score => ({
+          indicatorCode: score.indicatorCode,
+          score: parseFloat(score.score.toString()),
+          maxScore: parseFloat(score.maxScore.toString()),
+          category: score.category,
+          calculation: score.calculation,
+          updatedAt: score.updatedAt,
+        }));
+      }
 
       // Step 2: Check access permissions
       if (
@@ -1252,6 +1381,117 @@ export class SubmissionService {
       this.logger.log(
         `Submission updated successfully: ${updatedSubmission.id}`
       );
+
+      // Step 5.5: Calculate indicator scores for updated indicators
+      this.logger.log(`🔍 Step 5.5: Checking if scoring is needed...`);
+      this.logger.log(`updateData.formData exists: ${!!updateData.formData}`);
+      this.logger.log(`updatedSubmission.formData exists: ${!!updatedSubmission.formData}`);
+      
+      if (updateData.formData && updatedSubmission.formData) {
+        try {
+          const updatedFormData = updatedSubmission.formData;
+          const incomingFormData = updateSubmissionDto.formData || {};
+          
+          this.logger.log(`📊 Calculating scores for updated indicators...`);
+          this.logger.log(`Incoming formData categories: ${Object.keys(incomingFormData).join(', ')}`);
+          this.logger.log(`Updated formData categories: ${Object.keys(updatedFormData).join(', ')}`);
+          
+          // Iterate through all categories and sections to calculate scores
+          const categories = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+          
+          for (const category of categories) {
+            // Check both incoming and updated formData to find indicators that were updated
+            const incomingCategoryData = incomingFormData[category];
+            const updatedCategoryData = updatedFormData[category];
+            
+            // Use incoming data if available (what was actually updated), otherwise use updated data
+            const categoryData = incomingCategoryData || updatedCategoryData;
+            
+            if (!categoryData || typeof categoryData !== 'object') {
+              this.logger.log(`⏭️ Skipping category ${category} - no data`);
+              continue;
+            }
+            
+            this.logger.log(`📋 Processing category ${category} with sections: ${Object.keys(categoryData).join(', ')}`);
+            
+            // Find all sections that were updated
+            for (const [sectionKey, sectionData] of Object.entries(categoryData)) {
+              if (!sectionKey.startsWith('section')) {
+                this.logger.log(`⏭️ Skipping ${sectionKey} - not a section`);
+                continue;
+              }
+              
+              // Extract indicator code from section key (e.g., "section1_1" -> "1.1")
+              let indicatorCode: string;
+              if (sectionKey.startsWith('section')) {
+                const match = sectionKey.match(/section(\d+(_\d+)*)/);
+                if (match) {
+                  indicatorCode = match[1].replace(/_/g, '.');
+                } else {
+                  indicatorCode = sectionKey.replace('section', '').replace(/_/g, '.');
+                }
+              } else {
+                indicatorCode = sectionKey.replace(/_/g, '.');
+              }
+              
+              this.logger.log(`🎯 Processing indicator ${indicatorCode} (section: ${sectionKey})`);
+              
+              // Determine update reason based on status
+              const section = Array.isArray(sectionData) ? sectionData[0] : sectionData;
+              const indicatorStatus = section?.status || null;
+              
+              // Skip empty indicators (no status and no meaningful data)
+              if (!indicatorStatus && !this.hasSectionData(sectionData, sectionKey, category)) {
+                this.logger.log(`⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`);
+                continue;
+              }
+              
+              let updateReason = 'INDICATOR_UPDATED';
+              if (indicatorStatus === 'SUBMITTED_TO_STATE') {
+                updateReason = 'INDICATOR_SUBMITTED';
+              } else if (indicatorStatus === 'RESUBMITTED') {
+                updateReason = 'INDICATOR_RESUBMITTED';
+              } else if (indicatorStatus === 'REVERTED') {
+                updateReason = 'INDICATOR_REVERTED';
+              }
+              
+              this.logger.log(`📝 Indicator ${indicatorCode} status: ${indicatorStatus}, reason: ${updateReason}`);
+              
+              // Calculate and save indicator score
+              try {
+                this.logger.log(`🧮 Calling calculateIndicatorScore for ${indicatorCode}...`);
+                const calculatedScore = await this.scoringService.calculateIndicatorScore(
+                  id,
+                  indicatorCode,
+                  category,
+                  updatedFormData,
+                  userId,
+                  updateReason,
+                  indicatorStatus
+                );
+                
+                this.logger.log(
+                  `✅ Calculated and saved score for indicator ${indicatorCode} in submission ${id}: ${calculatedScore.score}/${calculatedScore.maxScore}`
+                );
+              } catch (scoringError) {
+                // Log error but don't fail the update
+                this.logger.error(
+                  `❌ Failed to calculate indicator score for ${sectionKey}: ${scoringError.message}`
+                );
+                this.logger.error(`Error stack: ${scoringError.stack}`);
+              }
+            }
+          }
+        } catch (scoringError) {
+          // Log error but don't fail the update
+          this.logger.error(
+            `❌ Error calculating scores during update: ${scoringError.message}`
+          );
+          this.logger.error(`Error stack: ${scoringError.stack}`);
+        }
+      } else {
+        this.logger.warn(`⚠️ Skipping score calculation - formData not found in updateData or updatedSubmission`);
+      }
 
       // NEW: Sync STATE_APPROVER's submission when NODAL_OFFICER resubmits an indicator
       // This ensures the STATE_APPROVER's submission (returned from MOSPI) stays in sync
@@ -4260,19 +4500,20 @@ export class SubmissionService {
       );
     }
 
-    // Accept multiple category formats: '1.1', 'section1_1', indicator UUID (will be normalized)
-    const rawCategory = category?.trim();
+    // Normalize section parameter (e.g., "section2_3", "2.3", etc. -> "section2_3")
+    // The section parameter should be the section key, not the category
+    const rawSection = section?.trim();
     let sectionKey: string;
-    if (/^section\d+_\d+$/.test(rawCategory)) {
-      sectionKey = rawCategory; // already normalized
-    } else if (/^\d+(\.\d+)*$/.test(rawCategory)) {
-      sectionKey = `section${rawCategory.replace(/\./g, "_")}`; // convert dotted code
+    if (/^section\d+(_\d+)*$/.test(rawSection)) {
+      sectionKey = rawSection; // already normalized (e.g., "section2_3")
+    } else if (/^\d+(\.\d+)*$/.test(rawSection)) {
+      sectionKey = `section${rawSection.replace(/\./g, "_")}`; // convert dotted code (e.g., "2.3" -> "section2_3")
     } else {
-      // Fallback: sanitize arbitrary string
-      sectionKey = `section_${rawCategory.replace(/[^a-zA-Z0-9]+/g, "_")}`;
+      // Fallback: assume it's already a section key or sanitize
+      sectionKey = rawSection.startsWith('section') ? rawSection : `section_${rawSection.replace(/[^a-zA-Z0-9]+/g, "_")}`;
     }
     this.logger.log(
-      `🔎 Normalizing category='${rawCategory}' -> sectionKey='${sectionKey}'`
+      `🔎 Normalizing section='${rawSection}' -> sectionKey='${sectionKey}' (category='${category}')`
     );
 
     // sectionStatus removed: no normalization, progress tracking, or persistence
@@ -4302,6 +4543,74 @@ export class SubmissionService {
       throw new NotFoundException(
         `Submission not found after update: ${submissionId}`
       );
+    }
+
+    // Calculate and save indicator score after updating formData
+    let calculatedScore: any = null;
+    try {
+      // Extract indicator code from section key (e.g., "section1_1" -> "1.1")
+      // sectionKey is already normalized (e.g., "section1_1", "section2_3", etc.)
+      let indicatorCode: string;
+      if (sectionKey.startsWith('section')) {
+        // Extract number pattern and convert underscores to dots
+        const match = sectionKey.match(/section(\d+(_\d+)*)/);
+        if (match) {
+          indicatorCode = match[1].replace(/_/g, '.');
+        } else {
+          // Fallback: try to extract from sectionKey
+          indicatorCode = sectionKey.replace('section', '').replace(/_/g, '.');
+        }
+      } else {
+        // If section is already in code format (e.g., "1.1")
+        indicatorCode = sectionKey.replace(/_/g, '.');
+      }
+      
+      // Determine update reason based on status
+      const targetSection = newFormData[category]?.[sectionKey];
+      const indicatorStatus = targetSection?.status || null;
+      
+      // Always calculate score if indicator has status OR has data
+      // This ensures scores are updated whenever an indicator is modified
+      const hasData = this.hasSectionData(targetSection, sectionKey, category);
+      const shouldCalculateScore = indicatorStatus || hasData;
+      
+      if (!shouldCalculateScore) {
+        this.logger.log(`⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`);
+      } else {
+        let updateReason = 'INDICATOR_UPDATED';
+        if (indicatorStatus === 'SUBMITTED_TO_STATE') {
+          updateReason = 'INDICATOR_SUBMITTED';
+        } else if (indicatorStatus === 'RESUBMITTED') {
+          updateReason = 'INDICATOR_RESUBMITTED';
+        } else if (indicatorStatus === 'REVERTED') {
+          updateReason = 'INDICATOR_REVERTED';
+        }
+
+        this.logger.log(
+          `🧮 Calculating score for indicator ${indicatorCode} (status: ${indicatorStatus || 'none'}, hasData: ${hasData}, reason: ${updateReason})`
+        );
+
+        // Calculate and save indicator score with history tracking
+        calculatedScore = await this.scoringService.calculateIndicatorScore(
+          submissionId,
+          indicatorCode,
+          category,
+          refreshed.formData,
+          userId,
+          updateReason,
+          indicatorStatus
+        );
+        
+        this.logger.log(
+          `✅ Calculated and saved score (with history) for indicator ${indicatorCode} in submission ${submissionId}: ${calculatedScore.score}/${calculatedScore.maxScore}`
+        );
+      }
+    } catch (scoringError) {
+      // Log error but don't fail the update
+      this.logger.error(
+        `Failed to calculate indicator score for ${sectionKey}: ${scoringError.message}`
+      );
+      this.logger.error(`Scoring error stack: ${scoringError.stack}`);
     }
 
     // NEW: Sync NODAL_OFFICER's submission when STATE_APPROVER accepts an indicator
@@ -4704,6 +5013,18 @@ export class SubmissionService {
     }
 
     // sectionStatus removed: no progress tracking or redirect info
+
+    // Add indicator score to response if calculated
+    if (calculatedScore) {
+      (refreshed as any).indicatorScore = {
+        indicatorCode: calculatedScore.indicatorCode,
+        score: parseFloat(calculatedScore.score.toString()),
+        maxScore: parseFloat(calculatedScore.maxScore.toString()),
+        category: calculatedScore.category,
+        calculation: calculatedScore.calculation,
+        updatedAt: calculatedScore.updatedAt,
+      };
+    }
 
     return refreshed;
   }

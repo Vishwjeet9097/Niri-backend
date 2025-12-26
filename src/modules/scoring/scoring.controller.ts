@@ -85,4 +85,72 @@ export class ScoringController {
       timestamp: new Date().toISOString(),
     };
   }
+
+  @Get('history/:submissionId')
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getSubmissionScoreHistory(@Param('submissionId') submissionId: string, @Request() req) {
+    const history = await this.scoringService.getSubmissionScoreHistory(submissionId);
+    return {
+      status: true,
+      data: history,
+      message: 'Score history retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('history/:submissionId/indicator/:indicatorCode')
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getIndicatorScoreHistory(
+    @Param('submissionId') submissionId: string,
+    @Param('indicatorCode') indicatorCode: string,
+    @Request() req
+  ) {
+    const history = await this.scoringService.getIndicatorScoreHistory(submissionId, indicatorCode);
+    return {
+      status: true,
+      data: history,
+      message: 'Indicator score history retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('history/:submissionId/grouped')
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getScoreHistoryGrouped(@Param('submissionId') submissionId: string, @Request() req) {
+    const groupedHistory = await this.scoringService.getScoreHistoryGroupedByIndicator(submissionId);
+    return {
+      status: true,
+      data: groupedHistory,
+      message: 'Grouped score history retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('indicator-scores/:submissionId')
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getIndicatorScores(@Param('submissionId') submissionId: string, @Request() req) {
+    const scores = await this.scoringService.getSubmissionIndicatorScores(submissionId);
+    return {
+      status: true,
+      data: scores,
+      message: 'Indicator scores retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('indicator-scores/:submissionId/:indicatorCode')
+  @Roles(UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, UserRole.MOSPI_REVIEWER, UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getIndicatorScore(
+    @Param('submissionId') submissionId: string,
+    @Param('indicatorCode') indicatorCode: string,
+    @Request() req
+  ) {
+    const score = await this.scoringService.getIndicatorScore(submissionId, indicatorCode);
+    return {
+      status: true,
+      data: score,
+      message: score ? 'Indicator score retrieved successfully' : 'No score found for this indicator',
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

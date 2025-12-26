@@ -308,8 +308,13 @@ export class SubmissionController {
       submission["commentsBySection"] = groupedComments;
     }
 
-    // sectionStatus removed; just return submission
-    return submission;
+    // Return submission with indicator scores if available
+    return {
+      status: true,
+      data: submission,
+      message: 'Submission retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
   }
 
   @Get(":id/status")
@@ -1083,7 +1088,7 @@ export class SubmissionController {
     }
 
     // Delegate to service
-    return this.submissionService.updateFormSectionFields(
+    const updatedSubmission = await this.submissionService.updateFormSectionFields(
       submissionId,
       category,
       section,
@@ -1092,6 +1097,14 @@ export class SubmissionController {
       req?.user?.role,
       req?.user?.stateUt
     );
+
+    // Return response with indicator score if available
+    return {
+      status: true,
+      data: updatedSubmission,
+      message: 'Indicator updated successfully',
+      timestamp: new Date().toISOString(),
+    };
   }
   // ...existing code...
 
