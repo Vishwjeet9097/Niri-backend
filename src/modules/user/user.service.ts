@@ -84,6 +84,7 @@ export class UserService {
         "user.contactNumber",
         "user.role",
         "user.stateUt",
+        "user.ministryId",
         "user.isActive",
         "user.createdAt",
       ])
@@ -185,6 +186,7 @@ export class UserService {
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
+        UserRole.MINISTRY_APPROVER,
       ].includes(userRole)
     ) {
       throw new ForbiddenException(
