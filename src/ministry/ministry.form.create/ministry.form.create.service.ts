@@ -557,4 +557,203 @@ export class MinistryFormCreateService {
       );
     }
   }
+
+  /**
+   * Upload and process Excel file to create subsections in bulk
+   * Excel format: Name, s.No
+   * Finds indicator by sNo and creates subsection with that indicator ID
+   */
+  async uploadExcelAndCreateSubsections(file: Express.Multer.File): Promise<{
+    status: boolean;
+    data: {
+      total: number;
+      created: number;
+      skipped: number;
+      errors: Array<{ row: number; error: string }>;
+      createdSubsections: IndicatorSubsection[];
+    };
+    message: string;
+  }> {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse Excel file
+      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      // Parse as raw data to handle header variations
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+      if (!rawData || rawData.length === 0) {
+        throw new BadRequestException('Excel file is empty');
+      }
+
+      // Find header row (first row with data)
+      const headerRow = rawData[0];
+      if (!headerRow || headerRow.length === 0) {
+        throw new BadRequestException('Could not find header row in Excel file');
+      }
+
+      // Normalize headers and find column indices
+      const headers = headerRow.map((h: any) => String(h || '').trim());
+      
+      // Helper function to find column index case-insensitively
+      const findColumnIndex = (searchTerms: string[]): number => {
+        for (let i = 0; i < headers.length; i++) {
+          const header = headers[i].toLowerCase();
+          for (const term of searchTerms) {
+            if (header === term.toLowerCase() || header.includes(term.toLowerCase())) {
+              return i;
+            }
+          }
+        }
+        return -1;
+      };
+
+      const nameColIndex = findColumnIndex(['name']);
+      const sNoColIndex = findColumnIndex(['s.no', 'sno', 's_no', 'serial', 'serial no', 'serial number']);
+
+      if (nameColIndex === -1 || sNoColIndex === -1) {
+        throw new BadRequestException(
+          `Could not find required columns. Found columns: ${headers.join(', ')}. ` +
+          `Looking for: Name and s.No (or similar)`
+        );
+      }
+
+      // Parse data rows
+      const data = rawData.slice(1).map((row, index) => ({
+        name: row[nameColIndex],
+        sNo: row[sNoColIndex],
+        rowNumber: index + 2, // +2 because Excel rows start at 1 and first row is header
+      })).filter(row => row.name !== undefined && row.sNo !== undefined);
+
+      if (!data || data.length === 0) {
+        throw new BadRequestException('Excel file has no data rows');
+      }
+
+      const createdSubsections: IndicatorSubsection[] = [];
+      const errors: Array<{ row: number; error: string }> = [];
+      let created = 0;
+      let skipped = 0;
+
+      // Track sequence per indicator
+      const indicatorSequenceMap: Record<string, number> = {};
+
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNumber = row.rowNumber;
+
+        try {
+          // Validate required fields
+          if (!row.name || row.name === '' || !row.sNo || row.sNo === '') {
+            errors.push({
+              row: rowNumber,
+              error: 'Missing required fields: Name or s.No is empty',
+            });
+            skipped++;
+            continue;
+          }
+
+          const name = String(row.name).trim();
+          const sNo = String(row.sNo).trim();
+
+          if (!name || !sNo) {
+            errors.push({
+              row: rowNumber,
+              error: 'Name or s.No cannot be empty',
+            });
+            skipped++;
+            continue;
+          }
+
+          // Find indicator by sNo
+          const indicator = await this.indicatorDetailRepository.findOne({
+            where: { sNo },
+          });
+
+          if (!indicator) {
+            errors.push({
+              row: rowNumber,
+              error: `Indicator with serial number ${sNo} not found`,
+            });
+            skipped++;
+            continue;
+          }
+
+          // Get or initialize sequence for this indicator
+          if (!indicatorSequenceMap[indicator.id]) {
+            // Get the highest sequence for this indicator
+            const existingSubsections = await this.indicatorSubsectionRepository.find({
+              where: { indicatorId: indicator.id },
+              order: { sequence: 'DESC' },
+              take: 1,
+            });
+            indicatorSequenceMap[indicator.id] = existingSubsections.length > 0 
+              ? existingSubsections[0].sequence + 1 
+              : 1;
+          } else {
+            indicatorSequenceMap[indicator.id]++;
+          }
+
+          const sequence = indicatorSequenceMap[indicator.id];
+
+          // Generate subsection ID
+          const subsectionId = this.generateSubsectionId(name, indicator.id);
+
+          // Check if subsection with this ID already exists
+          const existingSubsection = await this.indicatorSubsectionRepository.findOne({
+            where: { id: subsectionId },
+          });
+
+          if (existingSubsection) {
+            errors.push({
+              row: rowNumber,
+              error: `Subsection with name "${name}" for indicator ${sNo} already exists`,
+            });
+            skipped++;
+            continue;
+          }
+
+          // Create subsection
+          const subsection = this.indicatorSubsectionRepository.create({
+            id: subsectionId,
+            name,
+            indicatorId: indicator.id,
+            sequence,
+            status: true,
+          });
+
+          const savedSubsection = await this.indicatorSubsectionRepository.save(subsection);
+          createdSubsections.push(savedSubsection);
+          created++;
+        } catch (error) {
+          errors.push({
+            row: rowNumber,
+            error: error.message || 'Unknown error processing row',
+          });
+          skipped++;
+        }
+      }
+
+      return {
+        status: true,
+        data: {
+          total: data.length,
+          created,
+          skipped,
+          errors,
+          createdSubsections,
+        },
+        message: `Processed ${data.length} row(s): ${created} created, ${skipped} skipped`,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to process Excel file',
+      );
+    }
+  }
 }

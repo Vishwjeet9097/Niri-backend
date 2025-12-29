@@ -92,4 +92,18 @@ export class MinistryFormCreateController {
   async uploadExcelIndicators(@UploadedFile() file: Express.Multer.File) {
     return this.ministryFormCreateService.uploadExcelAndCreateIndicators(file);
   }
+
+  @Post('subsections/upload-excel')
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+  )
+  @UseInterceptors(FileInterceptor('file'))
+  @HttpCode(HttpStatus.CREATED)
+  async uploadExcelSubsections(@UploadedFile() file: Express.Multer.File) {
+    return this.ministryFormCreateService.uploadExcelAndCreateSubsections(file);
+  }
 }
