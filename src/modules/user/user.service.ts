@@ -83,6 +83,7 @@ export class UserService {
         "user.contactNumber",
         "user.role",
         "user.stateUt",
+        "user.ministryId",
         "user.isActive",
         "user.createdAt",
       ])
@@ -184,6 +185,7 @@ export class UserService {
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
+        UserRole.MINISTRY_APPROVER,
       ].includes(userRole)
     ) {
       throw new ForbiddenException(
@@ -274,7 +276,7 @@ export class UserService {
 
     // Normalize contact number if provided (remove spaces)
     if (updateData.contactNumber) {
-      updateData.contactNumber = updateData.contactNumber.replace(/\s/g, "");
+      updateData.contactNumber = typeof updateData.contactNumber === "string" && updateData.contactNumber ? updateData.contactNumber.replace(/\s/g, "") : updateData.contactNumber;
     }
 
     // Normalize stateUt if provided (trim whitespace to prevent inconsistencies)
@@ -414,13 +416,14 @@ export class UserService {
       throw new ConflictException("User with this email already exists");
     }
 
-    // Check if contact number already exists
+    // Check if contact number already exists (excluding current user if updating)
     if (contactNumber) {
-      const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+      const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
       const existingUserWithContact = await this.userRepository.findOne({
         where: { contactNumber: normalizedContactNumber },
       });
 
+      // In createUser, any match is a conflict (no user should exist with this contact)
       if (existingUserWithContact) {
         throw new ConflictException(
           "A user with this contact number already exists. Each user must have a unique contact number."
@@ -589,7 +592,7 @@ export class UserService {
       // Check if contact number already exists INSIDE transaction
       // This prevents race conditions when multiple requests come simultaneously
       if (contactNumber) {
-        const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+        const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
         const existingUserWithContact = await manager.findOne(User, {
           where: { contactNumber: normalizedContactNumber },
         });

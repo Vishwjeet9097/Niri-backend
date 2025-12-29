@@ -14,6 +14,7 @@ export enum UserRole {
   MOSPI_REVIEWER = "MOSPI_REVIEWER",
   MOSPI_APPROVER = "MOSPI_APPROVER",
   ADMIN = "ADMIN",
+  MINISTRY_APPROVER = "MINISTRY_APPROVER",
 }
 
 @Entity("users")
@@ -37,6 +38,9 @@ export class User {
 
   @Column({ nullable: true })
   contactNumber: string;
+
+  @Column({ nullable: true })
+  ministryId: string;
 
   @Column({
     type: "enum",

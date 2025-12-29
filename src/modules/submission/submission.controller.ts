@@ -51,7 +51,8 @@ export class SubmissionController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async testCommentGrouping(@Param("id") id: string, @Request() req) {
     const submission = await this.submissionService.findOne(
@@ -206,7 +207,8 @@ export class SubmissionController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async findAll(@Query() queryDto: any, @Request() req) {
     // Manual validation for status parameter
@@ -250,7 +252,8 @@ export class SubmissionController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async debugFindAll(@Request() req) {
     // Debug endpoint - returns all submissions without any filters
@@ -284,7 +287,8 @@ export class SubmissionController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async findOne(@Param("id") id: string, @Request() req) {
     const submission = await this.submissionService.findOne(
@@ -318,7 +322,8 @@ export class SubmissionController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async getSubmissionStatus(@Param("id") id: string, @Request() req) {
     const submission = await this.submissionService.findOne(
@@ -345,6 +350,7 @@ export class SubmissionController {
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
     UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER,
     UserRole.ADMIN
   )
   async findByUser(@Param("userId") userId: string, @Request() req) {
@@ -597,6 +603,7 @@ export class SubmissionController {
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
     UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER,
     UserRole.ADMIN
   )
   async addComment(
