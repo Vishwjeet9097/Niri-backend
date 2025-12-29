@@ -15,9 +15,10 @@ export class DashboardController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
-  async getSummary(@Request() req) {
+  async getSummary(@Request() req) { 
     return this.dashboardService.getDashboardSummary(
       req.user.role,
       req.user.stateUt
@@ -30,7 +31,8 @@ export class DashboardController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async getKPIs(@Request() req) {
     return this.dashboardService.getRoleSpecificKPIs(
@@ -45,7 +47,8 @@ export class DashboardController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async getRecentActivities(@Request() req) {
     return this.dashboardService.getRecentActivities(
