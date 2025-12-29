@@ -19,6 +19,12 @@ export class MinistrySubmissionIndicator {
   @Column({ name: "indicator_id" })
   indicatorId: string; // References ministry_indicator_details.id
 
+  @Column({ name: "status", type: "boolean", default: true })
+  status: boolean;
+
+  @Column({ name: "assigned_to", type: "varchar", length: 255, nullable: true })
+  assignedTo: string;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 

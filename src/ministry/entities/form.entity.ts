@@ -3,6 +3,7 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Column,
 } from "typeorm";
 
 @Entity("ministry_form")
@@ -10,6 +11,15 @@ export class Form {
   @PrimaryGeneratedColumn("uuid")
   id: string;
 
+  @Column({ type: "integer", nullable: true })
+  year: number;
+
+  @Column({ type: "varchar", length: 255, nullable: true })
+  ministry: string;
+
+  @Column({ name: "reviewer", type: "varchar", length: 255, nullable: true })
+  reviewer: string;
+  
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 
