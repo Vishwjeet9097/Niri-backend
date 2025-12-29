@@ -45,9 +45,6 @@ export class AuthService {
       indicatorCodes = [],
     } = createUserDto;
 
-     console.log("ddddddddddddddddd11111=========", createUserDto)
-
-
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({
       where: { email },
@@ -85,12 +82,9 @@ export class AuthService {
         },
       });
 
-      console.log(`[AUTH Register - STATE_APPROVER Validation] Checking for state: "${stateUt}" (normalized: "${normalizedStateUt}")`);
-      console.log(`[AUTH Register - STATE_APPROVER Validation] Found ${existingStateApprovers.length} existing STATE_APPROVERs`);
-      existingStateApprovers.forEach((approver, index) => {
+       existingStateApprovers.forEach((approver, index) => {
         const existingNormalized = approver.stateUt ? approver.stateUt.trim().toLowerCase() : '';
-        console.log(`[AUTH Register - STATE_APPROVER Validation] Existing ${index + 1}: stateUt="${approver.stateUt}" (normalized: "${existingNormalized}"), isActive=${approver.isActive}, email=${approver.email}`);
-      });
+       });
 
       // Check if any existing STATE_APPROVER has the same normalized state
       const duplicate = existingStateApprovers.find(approver => {
@@ -114,8 +108,7 @@ export class AuthService {
       // Parse comma-separated state names and normalize (trim and lowercase)
       const requestedStates = stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
       
-      console.log(`[AUTH Register - MOSPI_REVIEWER Validation] Checking for states: "${stateUt}" (normalized: [${requestedStates.join(', ')}])`);
-      
+       
       if (requestedStates.length > 0) {
         // Get all active MOSPI_REVIEWERs
         const existingReviewers = await this.userRepository.find({
@@ -125,11 +118,9 @@ export class AuthService {
           },
         });
 
-        console.log(`[AUTH Register - MOSPI_REVIEWER Validation] Found ${existingReviewers.length} existing MOSPI_REVIEWERs`);
-        existingReviewers.forEach((reviewer, index) => {
+         existingReviewers.forEach((reviewer, index) => {
           const reviewerStates = reviewer.stateUt ? reviewer.stateUt.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
-          console.log(`[AUTH Register - MOSPI_REVIEWER Validation] Existing ${index + 1}: stateUt="${reviewer.stateUt}" (normalized: [${reviewerStates.join(', ')}]), isActive=${reviewer.isActive}, email=${reviewer.email}`);
-        });
+         });
 
         // Check if any requested state is already assigned to another reviewer (case-insensitive)
         for (const requestedState of requestedStates) {
@@ -190,6 +181,7 @@ export class AuthService {
       contactNumber: normalizedContactNumber,
       role,
       stateUt: normalizedStateUt,
+      ministryId: ministryId,
       isActive: true})
 
     // Create user
@@ -207,9 +199,7 @@ export class AuthService {
 
     const savedUser = await this.userRepository.save(user);
 
-    console.log(`User created with role: ${role}`);
-    console.log(`Indicator codes:`, indicatorCodes);
-
+ 
     // Create indicator scope mappings for NODAL_OFFICER
     if (role === UserRole.NODAL_OFFICER && indicatorCodes) {
       try {
