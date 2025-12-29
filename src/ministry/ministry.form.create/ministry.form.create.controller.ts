@@ -6,7 +6,10 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { MinistryFormCreateService } from './ministry.form.create.service';
 import { CreateIndicatorDto } from './dto/create-indicator.dto';
 import { CreateSubsectionDto } from './dto/create-subsection.dto';
@@ -74,5 +77,19 @@ export class MinistryFormCreateController {
   @Get('input-fields')
   async getAllInputFields() {
     return this.ministryFormCreateService.getAllInputFields();
+  }
+
+  @Post('indicators/upload-excel')
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+  )
+  @UseInterceptors(FileInterceptor('file'))
+  @HttpCode(HttpStatus.CREATED)
+  async uploadExcelIndicators(@UploadedFile() file: Express.Multer.File) {
+    return this.ministryFormCreateService.uploadExcelAndCreateIndicators(file);
   }
 }

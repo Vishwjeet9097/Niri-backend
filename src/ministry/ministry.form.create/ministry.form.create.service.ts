@@ -1,6 +1,7 @@
 import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as XLSX from 'xlsx';
 import { IndicatorDetail, IndicatorCategory } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField, DataType } from '../entities/input-field.entity';
@@ -380,6 +381,179 @@ export class MinistryFormCreateService {
     } catch (error) {
       throw new BadRequestException(
         error.message || 'Failed to fetch input fields',
+      );
+    }
+  }
+
+  /**
+   * Upload and process Excel file to create indicators in bulk
+   */
+  async uploadExcelAndCreateIndicators(file: Express.Multer.File): Promise<{
+    status: boolean;
+    data: {
+      total: number;
+      created: number;
+      skipped: number;
+      errors: Array<{ row: number; error: string }>;
+      createdIndicators: IndicatorDetail[];
+    };
+    message: string;
+  }> {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse Excel file
+      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      // Parse as JSON - first row is header
+      const data = XLSX.utils.sheet_to_json(worksheet) as Array<{
+        'S.no': string | number;
+        'Name': string;
+        'Category': string;
+        'Sequence': string | number;
+      }>;
+
+      if (!data || data.length === 0) {
+        throw new BadRequestException('Excel file is empty or has no data rows');
+      }
+
+      const createdIndicators: IndicatorDetail[] = [];
+      const errors: Array<{ row: number; error: string }> = [];
+      let created = 0;
+      let skipped = 0;
+
+      // Helper function to map category string to enum
+      const mapCategoryToEnum = (categoryStr: string): IndicatorCategory | null => {
+        const normalized = categoryStr.trim();
+        const categoryMap: Record<string, IndicatorCategory> = {
+          'Infra Financing': IndicatorCategory.INFRA_FINANCING,
+          'Infra Enablers': IndicatorCategory.INFRA_ENABLERS,
+          'Infra Development': IndicatorCategory.INFRA_DEVELOPMENT,
+          'PPP Development': IndicatorCategory.PPP_DEVELOPMENT,
+        };
+        return categoryMap[normalized] || null;
+      };
+
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNumber = i + 2; // +2 because Excel rows start at 1 and first row is header
+
+        try {
+          // Validate required fields
+          if (!row['S.no'] || !row['Name'] || !row['Category']) {
+            errors.push({
+              row: rowNumber,
+              error: 'Missing required fields: S.no, Name, or Category',
+            });
+            skipped++;
+            continue;
+          }
+
+          // Convert sNo to string
+          const sNo = String(row['S.no']).trim();
+          const name = String(row['Name']).trim();
+          const categoryStr = String(row['Category']).trim();
+          const sequence = row['Sequence'] ? Number(row['Sequence']) : 0;
+
+          // Map category to enum
+          const category = mapCategoryToEnum(categoryStr);
+          if (!category) {
+            errors.push({
+              row: rowNumber,
+              error: `Invalid category: ${categoryStr}. Must be one of: Infra Financing, Infra Enablers, Infra Development, PPP Development`,
+            });
+            skipped++;
+            continue;
+          }
+
+          // Check if sNo already exists
+          const existingIndicator = await this.indicatorDetailRepository.findOne({
+            where: { sNo },
+          });
+
+          if (existingIndicator) {
+            errors.push({
+              row: rowNumber,
+              error: `Indicator with serial number ${sNo} already exists`,
+            });
+            skipped++;
+            continue;
+          }
+
+          // Generate ID
+          const indicatorId = this.generateIndicatorId(category, sNo);
+
+          // Check if ID already exists (unlikely but possible)
+          const existingById = await this.indicatorDetailRepository.findOne({
+            where: { id: indicatorId },
+          });
+
+          if (existingById) {
+            // Regenerate with different random suffix
+            const categoryKey = Object.keys(IndicatorCategory).find(
+              (key) => IndicatorCategory[key] === category,
+            ) || category.replace(/\s+/g, '_').toUpperCase();
+            const randomSuffix = Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+            const newIndicatorId = `${categoryKey}_SECTION_${sNo}_${randomSuffix}`;
+            
+            // Create indicator
+            const indicator = this.indicatorDetailRepository.create({
+              id: newIndicatorId,
+              name,
+              category,
+              sNo,
+              sequence,
+              status: true,
+              associatedForm: null,
+            });
+
+            const savedIndicator = await this.indicatorDetailRepository.save(indicator);
+            createdIndicators.push(savedIndicator);
+            created++;
+          } else {
+            // Create indicator
+            const indicator = this.indicatorDetailRepository.create({
+              id: indicatorId,
+              name,
+              category,
+              sNo,
+              sequence,
+              status: true,
+              associatedForm: null,
+            });
+
+            const savedIndicator = await this.indicatorDetailRepository.save(indicator);
+            createdIndicators.push(savedIndicator);
+            created++;
+          }
+        } catch (error) {
+          errors.push({
+            row: rowNumber,
+            error: error.message || 'Unknown error processing row',
+          });
+          skipped++;
+        }
+      }
+
+      return {
+        status: true,
+        data: {
+          total: data.length,
+          created,
+          skipped,
+          errors,
+          createdIndicators,
+        },
+        message: `Processed ${data.length} row(s): ${created} created, ${skipped} skipped`,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to process Excel file',
       );
     }
   }
