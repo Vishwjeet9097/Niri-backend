@@ -1,6 +1,12 @@
 import { DataSource } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import { config } from "dotenv";
+import { Form } from "../ministry/entities/form.entity";
+import { IndicatorDetail } from "../ministry/entities/indicator-detail.entity";
+import { IndicatorSubsection } from "../ministry/entities/indicator-subsection.entity";
+import { InputField } from "../ministry/entities/input-field.entity";
+import { MinistrySubmission } from "../ministry/entities/ministry-submission.entity";
+import { MinistrySubmissionIndicator } from "../ministry/entities/ministry-submission-indicator.entity";
 
 config();
 
@@ -19,7 +25,15 @@ export const AppDataSource = new DataSource({
   extra: {
     ssl: false, // Disable SSL for local development
   },
-  entities: ["src/entities/*.entity.ts"],
+  entities: [
+    "src/entities/*.entity.ts",
+    Form,
+    IndicatorDetail,
+    IndicatorSubsection,
+    InputField,
+    MinistrySubmission,
+    MinistrySubmissionIndicator,
+  ],
   migrations: ["src/migrations/*.ts"],
   synchronize: false,
 });

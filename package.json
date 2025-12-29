@@ -25,7 +25,7 @@
     "test:complete": "./test-complete.sh",
     "test:all": "npm run test && npm run test:e2e",
     "typeorm": "typeorm-ts-node-commonjs",
-    "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts",
+    "migration:generate": "npm run typeorm -- migration:generate src/migrations/MigrationName -d src/database/data-source.ts",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
     "db:migrate": "./migrate-db.sh",
@@ -58,7 +58,8 @@
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.17",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
