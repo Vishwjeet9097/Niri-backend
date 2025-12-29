@@ -15,6 +15,7 @@ export enum UserRole {
   MOSPI_APPROVER = "MOSPI_APPROVER",
   ADMIN = "ADMIN",
   MINISTRY_APPROVER = "MINISTRY_APPROVER",
+  // MINISTRY = "MINISTRY",
 }
 
 @Entity("users")
