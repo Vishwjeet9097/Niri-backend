@@ -19,6 +19,9 @@ export class Form {
 
   @Column({ name: "reviewer", type: "varchar", length: 255, nullable: true })
   reviewer: string;
+
+  @Column({ name: "ministry_user", type: "varchar", length: 255, nullable: true })
+  ministryUser: string;
   
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
