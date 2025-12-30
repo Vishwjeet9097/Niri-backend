@@ -1185,7 +1185,15 @@ export class MinistryFormCreateService {
       const sectionSequenceMap: Record<string, number> = {};
 
       // Helper function to map data type string to DataType enum
-      const mapDataType = (dataTypeStr: string): DataType => {
+      // Also checks UI Component to determine if it's a dropdown
+      const mapDataType = (dataTypeStr: string, uiComponent: string): DataType => {
+        const uiComponentNormalized = String(uiComponent || '').trim().toLowerCase();
+        
+        // If UI Component is "Dropdown", set dataType to DROPDOWN
+        if (uiComponentNormalized === 'dropdown' || uiComponentNormalized.includes('dropdown')) {
+          return DataType.DROPDOWN;
+        }
+        
         const normalized = String(dataTypeStr || '').trim().toLowerCase();
         if (normalized.includes('numeric') || normalized.includes('number')) {
           return DataType.NUMBER;
@@ -1194,6 +1202,23 @@ export class MinistryFormCreateService {
           return DataType.FILE;
         }
         return DataType.STRING;
+      };
+
+      // Helper function to parse dropdown options from field name
+      // Examples: "Asset Type (Core/Non-Core)" -> ["Core", "Non-Core"]
+      //           "Type (Option1/Option2/Option3)" -> ["Option1", "Option2", "Option3"]
+      const parseDropdownOptions = (fieldName: string): string[] | null => {
+        // Look for patterns like (Option1/Option2) or (Option1, Option2)
+        const parenthesesMatch = fieldName.match(/\(([^)]+)\)/);
+        if (parenthesesMatch) {
+          const optionsStr = parenthesesMatch[1];
+          // Split by / or , and trim each option
+          const options = optionsStr.split(/[\/,]/).map(opt => opt.trim()).filter(opt => opt.length > 0);
+          if (options.length > 0) {
+            return options;
+          }
+        }
+        return null;
       };
 
       // Helper function to determine if subsection field
@@ -1219,10 +1244,22 @@ export class MinistryFormCreateService {
           }
 
           const sNo = String(row.sNo).trim();
-          const fieldName = String(row.fieldName).trim();
+          const originalFieldName = String(row.fieldName).trim();
           const dataTypeStr = String(row.dataType || 'string').trim();
           const uiComponent = String(row.uiComponent || '').trim();
           const isSubsection = isSubsectionField(row.subsectionField);
+          
+          // Parse dropdown options from original field name before cleaning
+          let dropdownOptions: string[] | null = null;
+          let fieldName: string;
+          if (uiComponent.toLowerCase().includes('dropdown')) {
+            dropdownOptions = parseDropdownOptions(originalFieldName);
+            // Clean field name: remove options in parentheses for dropdown fields
+            // e.g., "Asset Type (Core/Non-Core)" -> "Asset Type"
+            fieldName = originalFieldName.replace(/\s*\([^)]+\)\s*$/, '').trim();
+          } else {
+            fieldName = originalFieldName;
+          }
 
           if (!sNo || !fieldName) {
             errors.push({
@@ -1288,8 +1325,8 @@ export class MinistryFormCreateService {
 
           const sequence = sectionSequenceMap[sectionId];
 
-          // Map data type
-          const dataType = mapDataType(dataTypeStr);
+          // Map data type (check UI Component for dropdown)
+          const dataType = mapDataType(dataTypeStr, uiComponent);
 
           // Create validation rules based on UI component and data type
           let validationRules: any = null;
@@ -1301,6 +1338,14 @@ export class MinistryFormCreateService {
             validationRules = {
               required: false,
             };
+          } else if (dataType === DataType.DROPDOWN) {
+            validationRules = {
+              required: true,
+            };
+            // Add options if found (already parsed from original field name)
+            if (dropdownOptions && dropdownOptions.length > 0) {
+              validationRules.options = dropdownOptions;
+            }
           }
 
           // Check if input field with same label already exists for this section
@@ -1355,8 +1400,4 @@ export class MinistryFormCreateService {
       );
     }
   }
-
-
-
-
 }

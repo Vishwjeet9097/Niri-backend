@@ -11,6 +11,7 @@ export enum DataType {
   NUMBER = "number",
   FILE = "file",
   STRING = "string",
+  DROPDOWN = "dropdown",
 }
 
 @Entity("ministry_input_fields")
