@@ -17,7 +17,6 @@ import { CreateIndicatorDto } from './dto/create-indicator.dto';
 import { CreateSubsectionDto } from './dto/create-subsection.dto';
 import { CreateInputFieldDto } from './dto/create-input-field.dto';
 import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
-import { AssignIndicatorToNodalDto } from './dto/assign-indicator-to-nodal.dto';
 
 @Injectable()
 export class MinistryFormCreateService {
@@ -42,7 +41,7 @@ export class MinistryFormCreateService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Ministry)
     private readonly ministryRepository: Repository<Ministry>,
-  ) { }
+  ) {}
 
   /**
    * Generate custom indicator ID
@@ -57,7 +56,7 @@ export class MinistryFormCreateService {
     const categoryKey = Object.keys(IndicatorCategory).find(
       (key) => IndicatorCategory[key] === category,
     ) || category.replace(/\s+/g, '_').toUpperCase();
-
+    
     const randomSuffix = Math.random().toString(36).substring(2, 9);
     return `${categoryKey}_SECTION_${section}_${randomSuffix}`;
   }
@@ -181,7 +180,7 @@ export class MinistryFormCreateService {
 
       // Group indicators by category
       const groupedIndicators: Record<string, IndicatorDetail[]> = {};
-
+      
       indicators.forEach((indicator) => {
         const category = indicator.category;
         if (!groupedIndicators[category]) {
@@ -312,7 +311,7 @@ export class MinistryFormCreateService {
 
       // Group subsections by indicator_id
       const groupedSubsections: Record<string, IndicatorSubsection[]> = {};
-
+      
       subsections.forEach((subsection) => {
         const indicatorId = subsection.indicatorId;
         if (!groupedSubsections[indicatorId]) {
@@ -413,7 +412,7 @@ export class MinistryFormCreateService {
 
       // Group input fields by section_id
       const groupedInputFields: Record<string, InputField[]> = {};
-
+      
       inputFields.forEach((inputField) => {
         const sectionId = inputField.sectionId;
         if (!groupedInputFields[sectionId]) {
@@ -563,7 +562,7 @@ export class MinistryFormCreateService {
             ) || category.replace(/\s+/g, '_').toUpperCase();
             const randomSuffix = Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
             const newIndicatorId = `${categoryKey}_SECTION_${sNo}_${randomSuffix}`;
-
+            
             // Create indicator
             const indicator = this.indicatorDetailRepository.create({
               id: newIndicatorId,
@@ -662,7 +661,7 @@ export class MinistryFormCreateService {
 
       // Normalize headers and find column indices
       const headers = headerRow.map((h: any) => String(h || '').trim());
-
+      
       // Helper function to find column index case-insensitively
       const findColumnIndex = (searchTerms: string[]): number => {
         for (let i = 0; i < headers.length; i++) {
@@ -755,8 +754,8 @@ export class MinistryFormCreateService {
               order: { sequence: 'DESC' },
               take: 1,
             });
-            indicatorSequenceMap[indicator.id] = existingSubsections.length > 0
-              ? existingSubsections[0].sequence + 1
+            indicatorSequenceMap[indicator.id] = existingSubsections.length > 0 
+              ? existingSubsections[0].sequence + 1 
               : 1;
           } else {
             indicatorSequenceMap[indicator.id]++;
@@ -896,13 +895,13 @@ export class MinistryFormCreateService {
         }
       } else if (userRole === UserRole.MINISTRY_APPROVER) {
         const formExisted = !!existingForm;
-
+        
         if (existingForm) {
           // Check if ministry_user already exists and is different from current userId
           if (existingForm.ministryUser && existingForm.ministryUser !== userId) {
             throw new ConflictException('User already exists as ministry user for this form');
           }
-
+          
           // Update existing form - update ministryUser (only if it doesn't exist or is the same user)
           existingForm.ministryUser = userId;
           const savedForm = await this.formRepository.save(existingForm);
@@ -976,120 +975,4 @@ export class MinistryFormCreateService {
       );
     }
   }
-
-  /**
-    * Assign indicators to nodal officer
-    * Gets formId from ministryUserId, creates submission, and updates submission indicators
-    */
-  async assignIndicatorToNodal(assignIndicatorToNodalDto: AssignIndicatorToNodalDto): Promise<{
-    status: boolean;
-    data: any;
-    message: string;
-  }> {
-    try {
-      const { nodalUserId, ministryUserId, indicatorsId } = assignIndicatorToNodalDto;
-
-      // Validate nodal user exists
-      const nodalUser = await this.userRepository.findOne({ where: { id: nodalUserId } });
-      if (!nodalUser) {
-        throw new NotFoundException(`Nodal user with ID ${nodalUserId} not found`);
-      }
-
-      // Validate ministry user exists
-      const ministryUser = await this.userRepository.findOne({ where: { id: ministryUserId } });
-      if (!ministryUser) {
-        throw new NotFoundException(`Ministry user with ID ${ministryUserId} not found`);
-      }
-
-      // Get formId from ministryUserId (find form where ministryUser = ministryUserId)
-      const form = await this.formRepository.findOne({
-        where: { ministryUser: ministryUserId },
-      });
-
-      if (!form) {
-        throw new NotFoundException(`Form not found for ministry user ${ministryUserId}`);
-      }
-
-      // Get the ministry user's submission to find existing submission indicators
-      const ministrySubmission = await this.ministrySubmissionRepository.findOne({
-        where: { formId: form.id, userId: ministryUserId },
-      });
-
-      if (!ministrySubmission) {
-        throw new NotFoundException(`Submission not found for ministry user ${ministryUserId}`);
-      }
-
-      // Check if all indicators in the array are assigned to ministry user
-      const existingIndicators = await this.ministrySubmissionIndicatorRepository.find({
-        where: {
-          submissionId: ministrySubmission.id,
-          indicatorId: In(indicatorsId),
-          assignedTo: ministryUserId,
-        },
-      });
-
-      // Check if all requested indicators are found and assigned to ministry user
-      const foundIndicatorIds = existingIndicators.map((ind) => ind.indicatorId);
-      const missingIndicators = indicatorsId.filter((id) => !foundIndicatorIds.includes(id));
-
-      if (missingIndicators.length > 0) {
-        throw new BadRequestException(
-          `Some indicators are not assigned to ministry user: ${missingIndicators.join(', ')}`
-        );
-      }
-
-      if (existingIndicators.length !== indicatorsId.length) {
-        throw new BadRequestException(
-          `Not all indicators are assigned to ministry user. Found ${existingIndicators.length}, expected ${indicatorsId.length}`
-        );
-      }
-
-      // Generate submission ID: SUB-{year}-{randomNum}
-      const currentYear = new Date().getFullYear();
-      const randomNum = Math.floor(Math.random() * 1000000);
-      const submissionId = `SUB-${currentYear}-${randomNum}`;
-
-      // Create new submission with formId and nodalUserId
-      const newSubmission = this.ministrySubmissionRepository.create({
-        submissionId,
-        formId: form.id,
-        userId: nodalUserId,
-        status: SubmissionStatus.DRAFT,
-      });
-
-      const savedSubmission = await this.ministrySubmissionRepository.save(newSubmission);
-
-      // Update submission indicators: change assigned_to to nodalUserId and submissionId to new submission id
-      await this.ministrySubmissionIndicatorRepository.update(
-        {
-          submissionId: ministrySubmission.id,
-          indicatorId: In(indicatorsId),
-          assignedTo: ministryUserId,
-        },
-        {
-          assignedTo: nodalUserId,
-          submissionId: savedSubmission.id,
-        }
-      );
-
-      return {
-        status: true,
-        data: {
-          submission: savedSubmission,
-          indicatorsCount: indicatorsId.length,
-          updatedIndicators: indicatorsId,
-        },
-        message: `Successfully assigned ${indicatorsId.length} indicator(s) to nodal officer`,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException(
-        error.message || 'Failed to assign indicators to nodal officer',
-      );
-    }
-  }
-
-
 }

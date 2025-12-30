@@ -132,4 +132,5 @@ export class MinistryFormCreateController {
   async assignIndicatorToNodal(@Body() assignIndicatorToNodalDto: AssignIndicatorToNodalDto) {
     return this.ministryFormCreateService.assignIndicatorToNodal(assignIndicatorToNodalDto);
   }
+  
 }
