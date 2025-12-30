@@ -8,6 +8,7 @@ import {
   HttpStatus,
   UseInterceptors,
   UploadedFile,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MinistryFormCreateService } from './ministry.form.create.service';
@@ -39,8 +40,8 @@ export class MinistryFormCreateController {
   }
 
   @Get('indicators')
-  async getAllActiveIndicators() {
-    return this.ministryFormCreateService.getAllActiveIndicators();
+  async getAllActiveIndicators(@Query('userId') userId?: string) {
+    return this.ministryFormCreateService.getAllActiveIndicators(userId);
   }
 
   @Post('subsection')

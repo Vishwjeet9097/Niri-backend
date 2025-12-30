@@ -1,10 +1,12 @@
 import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import * as XLSX from 'xlsx';
 import { IndicatorDetail, IndicatorCategory } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField, DataType } from '../entities/input-field.entity';
+import { Indicator } from '../../entities/indicator.entity';
+import { UserIndicatorScope } from '../../entities/user-indicator-scope.entity';
 import { CreateIndicatorDto } from './dto/create-indicator.dto';
 import { CreateSubsectionDto } from './dto/create-subsection.dto';
 import { CreateInputFieldDto } from './dto/create-input-field.dto';
@@ -18,6 +20,10 @@ export class MinistryFormCreateService {
     private readonly indicatorSubsectionRepository: Repository<IndicatorSubsection>,
     @InjectRepository(InputField)
     private readonly inputFieldRepository: Repository<InputField>,
+    @InjectRepository(Indicator)
+    private readonly indicatorRepository: Repository<Indicator>,
+    @InjectRepository(UserIndicatorScope)
+    private readonly userIndicatorScopeRepository: Repository<UserIndicatorScope>,
   ) {}
 
   /**
@@ -108,17 +114,52 @@ export class MinistryFormCreateService {
 
   /**
    * Get all indicators with status = true, grouped by category and ordered by sequence
+   * If userId is provided, returns only indicators associated with that user
    */
-  async getAllActiveIndicators(): Promise<{
+  async getAllActiveIndicators(userId?: string): Promise<{
     status: boolean;
     data: Record<string, IndicatorDetail[]>;
     message: string;
   }> {
     try {
-      const indicators = await this.indicatorDetailRepository.find({
-        where: { status: true },
-        order: { sequence: 'ASC', sNo: 'ASC' },
-      });
+      let indicatorCodes: string[] = [];
+
+      // If userId is provided, get indicator codes associated with that user
+      if (userId) {
+        const userIndicatorScopes = await this.userIndicatorScopeRepository
+          .createQueryBuilder('scope')
+          .leftJoinAndSelect('scope.indicator', 'indicator')
+          .where('scope.userId = :userId', { userId })
+          .getMany();
+
+        // Extract indicator codes from the scopes
+        indicatorCodes = userIndicatorScopes
+          .map((scope) => scope.indicator?.code)
+          .filter((code): code is string => !!code);
+
+        // If no indicators found for the user, return empty result
+        if (indicatorCodes.length === 0) {
+          return {
+            status: true,
+            data: {},
+            message: `No indicators found for user ${userId}`,
+          };
+        }
+      }
+
+      // Build query for indicator details
+      let query = this.indicatorDetailRepository.createQueryBuilder('indicatorDetail')
+        .where('indicatorDetail.status = :status', { status: true });
+
+      // If userId is provided, filter by indicator codes (matching sNo with code)
+      if (userId && indicatorCodes.length > 0) {
+        query = query.andWhere('indicatorDetail.sNo IN (:...codes)', { codes: indicatorCodes });
+      }
+
+      const indicators = await query
+        .orderBy('indicatorDetail.sequence', 'ASC')
+        .addOrderBy('indicatorDetail.sNo', 'ASC')
+        .getMany();
 
       // Group indicators by category
       const groupedIndicators: Record<string, IndicatorDetail[]> = {};
@@ -145,10 +186,14 @@ export class MinistryFormCreateService {
       const totalCount = indicators.length;
       const categoryCount = Object.keys(groupedIndicators).length;
 
+      const message = userId
+        ? `Found ${totalCount} active indicator(s) for user ${userId} across ${categoryCount} category/categories`
+        : `Found ${totalCount} active indicator(s) across ${categoryCount} category/categories`;
+
       return {
         status: true,
         data: groupedIndicators,
-        message: `Found ${totalCount} active indicator(s) across ${categoryCount} category/categories`,
+        message,
       };
     } catch (error) {
       throw new BadRequestException(
