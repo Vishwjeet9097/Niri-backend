@@ -11,7 +11,16 @@ export enum DataType {
   NUMBER = "number",
   FILE = "file",
   STRING = "string",
-  DROPDOWN = "dropdown",
+}
+
+export enum UIComponent {
+  INPUT_TEXT = "Input (Text)",
+  INPUT_NUMBER = "Input (Number)",
+  DROPDOWN = "Dropdown",
+  AUTO_CALCULATED = "Auto-calculated field",
+  FILE = "File",
+  CHECKBOXES = "Checkbox",
+  TEXT_AREA = "Text Area",
 }
 
 @Entity("ministry_input_fields")
@@ -33,6 +42,14 @@ export class InputField {
     default: DataType.STRING,
   })
   dataType: DataType;
+
+  @Column({
+    name: "ui_component",
+    type: "enum",
+    enum: UIComponent,
+    default: UIComponent.INPUT_TEXT,
+  })
+  uiComponent: UIComponent;
 
   @Column({ name: "validation_rules", type: "jsonb", nullable: true })
   validationRules: {

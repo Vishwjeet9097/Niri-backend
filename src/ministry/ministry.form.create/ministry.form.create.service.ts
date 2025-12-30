@@ -4,7 +4,7 @@ import { Repository, In } from 'typeorm';
 import * as XLSX from 'xlsx';
 import { IndicatorDetail, IndicatorCategory } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
-import { InputField, DataType } from '../entities/input-field.entity';
+import { InputField, DataType, UIComponent } from '../entities/input-field.entity';
 import { Indicator } from '../../entities/indicator.entity';
 import { UserIndicatorScope } from '../../entities/user-indicator-scope.entity';
 import { Form } from '../entities/form.entity';
@@ -376,6 +376,7 @@ export class MinistryFormCreateService {
         sectionId: createInputFieldDto.sectionId,
         label: createInputFieldDto.label,
         dataType: createInputFieldDto.dataType,
+        uiComponent: createInputFieldDto.uiComponent,
         validationRules: createInputFieldDto.validationRules ?? null,
         sequence: createInputFieldDto.sequence ?? 0,
       });
@@ -1185,15 +1186,7 @@ export class MinistryFormCreateService {
       const sectionSequenceMap: Record<string, number> = {};
 
       // Helper function to map data type string to DataType enum
-      // Also checks UI Component to determine if it's a dropdown
-      const mapDataType = (dataTypeStr: string, uiComponent: string): DataType => {
-        const uiComponentNormalized = String(uiComponent || '').trim().toLowerCase();
-        
-        // If UI Component is "Dropdown", set dataType to DROPDOWN
-        if (uiComponentNormalized === 'dropdown' || uiComponentNormalized.includes('dropdown')) {
-          return DataType.DROPDOWN;
-        }
-        
+      const mapDataType = (dataTypeStr: string): DataType => {
         const normalized = String(dataTypeStr || '').trim().toLowerCase();
         if (normalized.includes('numeric') || normalized.includes('number')) {
           return DataType.NUMBER;
@@ -1202,6 +1195,41 @@ export class MinistryFormCreateService {
           return DataType.FILE;
         }
         return DataType.STRING;
+      };
+
+      // Helper function to map UI Component string to UIComponent enum
+      const mapUIComponent = (uiComponentStr: string): UIComponent => {
+        const normalized = String(uiComponentStr || '').trim().toLowerCase();
+        
+        // Match exact or partial UI Component strings (order matters - check specific ones first)
+        if (normalized.includes('auto-calculated') || normalized.includes('auto calculated')) {
+          return UIComponent.AUTO_CALCULATED;
+        }
+        if (normalized.includes('text area') || normalized.includes('textarea')) {
+          return UIComponent.TEXT_AREA;
+        }
+        if (normalized.includes('checkbox')) {
+          return UIComponent.CHECKBOXES;
+        }
+        if (normalized.includes('file')) {
+          return UIComponent.FILE;
+        }
+        if (normalized.includes('dropdown')) {
+          return UIComponent.DROPDOWN;
+        }
+        if (normalized.includes('input') && (normalized.includes('number') || normalized.includes('numeric'))) {
+          return UIComponent.INPUT_NUMBER;
+        }
+        if (normalized.includes('input') && normalized.includes('text')) {
+          return UIComponent.INPUT_TEXT;
+        }
+        
+        // Default fallback based on common patterns
+        if (normalized.includes('number') || normalized.includes('numeric')) {
+          return UIComponent.INPUT_NUMBER;
+        }
+        
+        return UIComponent.INPUT_TEXT;
       };
 
       // Helper function to parse dropdown options from field name
@@ -1325,8 +1353,9 @@ export class MinistryFormCreateService {
 
           const sequence = sectionSequenceMap[sectionId];
 
-          // Map data type (check UI Component for dropdown)
-          const dataType = mapDataType(dataTypeStr, uiComponent);
+          // Map data type and UI component
+          const dataType = mapDataType(dataTypeStr);
+          const mappedUIComponent = mapUIComponent(uiComponent);
 
           // Create validation rules based on UI component and data type
           let validationRules: any = null;
@@ -1338,7 +1367,7 @@ export class MinistryFormCreateService {
             validationRules = {
               required: false,
             };
-          } else if (dataType === DataType.DROPDOWN) {
+          } else if (mappedUIComponent === UIComponent.DROPDOWN) {
             validationRules = {
               required: true,
             };
@@ -1367,6 +1396,7 @@ export class MinistryFormCreateService {
             sectionId,
             label: fieldName,
             dataType,
+            uiComponent: mappedUIComponent,
             validationRules,
             sequence,
           });
