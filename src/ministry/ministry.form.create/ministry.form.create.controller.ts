@@ -15,6 +15,8 @@ import { MinistryFormCreateService } from './ministry.form.create.service';
 import { CreateIndicatorDto } from './dto/create-indicator.dto';
 import { CreateSubsectionDto } from './dto/create-subsection.dto';
 import { CreateInputFieldDto } from './dto/create-input-field.dto';
+import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
+import { AssignIndicatorToNodalDto } from './dto/assign-indicator-to-nodal.dto';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../../modules/auth/guards/roles.guard';
 import { UserRole } from '../../entities/user.entity';
@@ -106,5 +108,28 @@ export class MinistryFormCreateController {
   @HttpCode(HttpStatus.CREATED)
   async uploadExcelSubsections(@UploadedFile() file: Express.Multer.File) {
     return this.ministryFormCreateService.uploadExcelAndCreateSubsections(file);
+  }
+
+  @Post('form')
+  @UseGuards(RolesGuard)
+  // @Roles(
+  //   UserRole.ADMIN,
+  //   UserRole.MOSPI_REVIEWER,
+  //   UserRole.MINISTRY_APPROVER,
+  // )
+  @HttpCode(HttpStatus.CREATED)
+  async createMinistryForm(@Body() createMinistryFormDto: CreateMinistryFormDto) {
+    return this.ministryFormCreateService.createMinistryForm(createMinistryFormDto);
+  }
+
+  @Post('assign-indicator-to-nodal')
+  @UseGuards(RolesGuard)
+  // @Roles(
+  //   UserRole.ADMIN,
+  //   UserRole.MINISTRY_APPROVER,
+  // )
+  @HttpCode(HttpStatus.OK)
+  async assignIndicatorToNodal(@Body() assignIndicatorToNodalDto: AssignIndicatorToNodalDto) {
+    return this.ministryFormCreateService.assignIndicatorToNodal(assignIndicatorToNodalDto);
   }
 }
