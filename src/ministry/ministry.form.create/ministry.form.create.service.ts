@@ -42,7 +42,7 @@ export class MinistryFormCreateService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Ministry)
     private readonly ministryRepository: Repository<Ministry>,
-  ) {}
+  ) { }
 
   /**
    * Generate custom indicator ID
@@ -57,7 +57,7 @@ export class MinistryFormCreateService {
     const categoryKey = Object.keys(IndicatorCategory).find(
       (key) => IndicatorCategory[key] === category,
     ) || category.replace(/\s+/g, '_').toUpperCase();
-    
+
     const randomSuffix = Math.random().toString(36).substring(2, 9);
     return `${categoryKey}_SECTION_${section}_${randomSuffix}`;
   }
@@ -181,7 +181,7 @@ export class MinistryFormCreateService {
 
       // Group indicators by category
       const groupedIndicators: Record<string, IndicatorDetail[]> = {};
-      
+
       indicators.forEach((indicator) => {
         const category = indicator.category;
         if (!groupedIndicators[category]) {
@@ -312,7 +312,7 @@ export class MinistryFormCreateService {
 
       // Group subsections by indicator_id
       const groupedSubsections: Record<string, IndicatorSubsection[]> = {};
-      
+
       subsections.forEach((subsection) => {
         const indicatorId = subsection.indicatorId;
         if (!groupedSubsections[indicatorId]) {
@@ -413,7 +413,7 @@ export class MinistryFormCreateService {
 
       // Group input fields by section_id
       const groupedInputFields: Record<string, InputField[]> = {};
-      
+
       inputFields.forEach((inputField) => {
         const sectionId = inputField.sectionId;
         if (!groupedInputFields[sectionId]) {
@@ -563,7 +563,7 @@ export class MinistryFormCreateService {
             ) || category.replace(/\s+/g, '_').toUpperCase();
             const randomSuffix = Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
             const newIndicatorId = `${categoryKey}_SECTION_${sNo}_${randomSuffix}`;
-            
+
             // Create indicator
             const indicator = this.indicatorDetailRepository.create({
               id: newIndicatorId,
@@ -662,7 +662,7 @@ export class MinistryFormCreateService {
 
       // Normalize headers and find column indices
       const headers = headerRow.map((h: any) => String(h || '').trim());
-      
+
       // Helper function to find column index case-insensitively
       const findColumnIndex = (searchTerms: string[]): number => {
         for (let i = 0; i < headers.length; i++) {
@@ -755,8 +755,8 @@ export class MinistryFormCreateService {
               order: { sequence: 'DESC' },
               take: 1,
             });
-            indicatorSequenceMap[indicator.id] = existingSubsections.length > 0 
-              ? existingSubsections[0].sequence + 1 
+            indicatorSequenceMap[indicator.id] = existingSubsections.length > 0
+              ? existingSubsections[0].sequence + 1
               : 1;
           } else {
             indicatorSequenceMap[indicator.id]++;
@@ -896,13 +896,13 @@ export class MinistryFormCreateService {
         }
       } else if (userRole === UserRole.MINISTRY_APPROVER) {
         const formExisted = !!existingForm;
-        
+
         if (existingForm) {
           // Check if ministry_user already exists and is different from current userId
           if (existingForm.ministryUser && existingForm.ministryUser !== userId) {
             throw new ConflictException('User already exists as ministry user for this form');
           }
-          
+
           // Update existing form - update ministryUser (only if it doesn't exist or is the same user)
           existingForm.ministryUser = userId;
           const savedForm = await this.formRepository.save(existingForm);
@@ -978,11 +978,11 @@ export class MinistryFormCreateService {
   }
 
 
-   /**
-   * Assign indicators to nodal officer
-   * Gets formId from ministryUserId, creates submission, and updates submission indicators
-   */
-   async assignIndicatorToNodal(assignIndicatorToNodalDto: AssignIndicatorToNodalDto): Promise<{
+  /**
+  * Assign indicators to nodal officer
+  * Gets formId from ministryUserId, creates submission, and updates submission indicators
+  */
+  async assignIndicatorToNodal(assignIndicatorToNodalDto: AssignIndicatorToNodalDto): Promise<{
     status: boolean;
     data: any;
     message: string;
@@ -1091,5 +1091,272 @@ export class MinistryFormCreateService {
       );
     }
   }
-  
+
+  /**
+     * Upload and process Excel file to create input fields in bulk
+     * Excel format: Indicator S.no, Field Name, Data Type, UI Component, Subsection Field
+     * If Subsection Field = "No": sectionId = indicator.id
+     * If Subsection Field = "Yes": sectionId = first active subsection.id for that indicator
+     */
+  async uploadExcelAndCreateInputFields(file: Express.Multer.File): Promise<{
+    status: boolean;
+    data: {
+      total: number;
+      created: number;
+      skipped: number;
+      errors: Array<{ row: number; error: string }>;
+      createdInputFields: InputField[];
+    };
+    message: string;
+  }> {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse Excel file
+      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      // Parse as raw data to handle header variations
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+      if (!rawData || rawData.length === 0) {
+        throw new BadRequestException('Excel file is empty');
+      }
+
+      // Find header row (first row with data)
+      const headerRow = rawData[0];
+      if (!headerRow || headerRow.length === 0) {
+        throw new BadRequestException('Could not find header row in Excel file');
+      }
+
+      // Normalize headers and find column indices
+      const headers = headerRow.map((h: any) => String(h || '').trim());
+
+      // Helper function to find column index case-insensitively
+      const findColumnIndex = (searchTerms: string[]): number => {
+        for (let i = 0; i < headers.length; i++) {
+          const header = headers[i].toLowerCase();
+          for (const term of searchTerms) {
+            if (header === term.toLowerCase() || header.includes(term.toLowerCase())) {
+              return i;
+            }
+          }
+        }
+        return -1;
+      };
+
+      const sNoColIndex = findColumnIndex(['indicator s.no', 's.no', 'sno', 's_no', 'serial', 'serial no', 'indicator s no']);
+      const fieldNameColIndex = findColumnIndex(['field name', 'fieldname', 'field']);
+      const dataTypeColIndex = findColumnIndex(['data type', 'datatype', 'type']);
+      const uiComponentColIndex = findColumnIndex(['ui component', 'uicomponent', 'component']);
+      const subsectionFieldColIndex = findColumnIndex(['subsection field', 'subsectionfield', 'subsection']);
+
+      if (sNoColIndex === -1 || fieldNameColIndex === -1 || dataTypeColIndex === -1 ||
+        uiComponentColIndex === -1 || subsectionFieldColIndex === -1) {
+        throw new BadRequestException(
+          `Could not find required columns. Found columns: ${headers.join(', ')}. ` +
+          `Looking for: Indicator S.no, Field Name, Data Type, UI Component, Subsection Field`
+        );
+      }
+
+      // Parse data rows
+      const data = rawData.slice(1).map((row, index) => ({
+        sNo: row[sNoColIndex],
+        fieldName: row[fieldNameColIndex],
+        dataType: row[dataTypeColIndex],
+        uiComponent: row[uiComponentColIndex],
+        subsectionField: row[subsectionFieldColIndex],
+        rowNumber: index + 2, // +2 because Excel rows start at 1 and first row is header
+      })).filter(row => row.sNo !== undefined && row.fieldName !== undefined);
+
+      if (!data || data.length === 0) {
+        throw new BadRequestException('Excel file has no data rows');
+      }
+
+      const createdInputFields: InputField[] = [];
+      const errors: Array<{ row: number; error: string }> = [];
+      let created = 0;
+      let skipped = 0;
+
+      // Track sequence per section
+      const sectionSequenceMap: Record<string, number> = {};
+
+      // Helper function to map data type string to DataType enum
+      const mapDataType = (dataTypeStr: string): DataType => {
+        const normalized = String(dataTypeStr || '').trim().toLowerCase();
+        if (normalized.includes('numeric') || normalized.includes('number')) {
+          return DataType.NUMBER;
+        }
+        if (normalized.includes('file')) {
+          return DataType.FILE;
+        }
+        return DataType.STRING;
+      };
+
+      // Helper function to determine if subsection field
+      const isSubsectionField = (value: any): boolean => {
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1';
+      };
+
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNumber = row.rowNumber;
+
+        try {
+          // Validate required fields
+          if (!row.sNo || row.sNo === '' || !row.fieldName || row.fieldName === '') {
+            errors.push({
+              row: rowNumber,
+              error: 'Missing required fields: Indicator S.no or Field Name is empty',
+            });
+            skipped++;
+            continue;
+          }
+
+          const sNo = String(row.sNo).trim();
+          const fieldName = String(row.fieldName).trim();
+          const dataTypeStr = String(row.dataType || 'string').trim();
+          const uiComponent = String(row.uiComponent || '').trim();
+          const isSubsection = isSubsectionField(row.subsectionField);
+
+          if (!sNo || !fieldName) {
+            errors.push({
+              row: rowNumber,
+              error: 'Indicator S.no or Field Name cannot be empty',
+            });
+            skipped++;
+            continue;
+          }
+
+          // Find indicator by sNo
+          const indicator = await this.indicatorDetailRepository.findOne({
+            where: { sNo },
+          });
+
+          if (!indicator) {
+            errors.push({
+              row: rowNumber,
+              error: `Indicator with serial number ${sNo} not found`,
+            });
+            skipped++;
+            continue;
+          }
+
+          let sectionId: string;
+
+          if (isSubsection) {
+            // Get first active subsection for this indicator
+            const subsection = await this.indicatorSubsectionRepository.findOne({
+              where: { indicatorId: indicator.id, status: true },
+              order: { sequence: 'ASC' },
+            });
+
+            if (!subsection) {
+              errors.push({
+                row: rowNumber,
+                error: `No active subsection found for indicator ${sNo}`,
+              });
+              skipped++;
+              continue;
+            }
+
+            sectionId = subsection.id;
+          } else {
+            // Use indicator id as sectionId
+            sectionId = indicator.id;
+          }
+
+          // Get or initialize sequence for this section
+          if (!sectionSequenceMap[sectionId]) {
+            // Get the highest sequence for this section
+            const existingInputFields = await this.inputFieldRepository.find({
+              where: { sectionId },
+              order: { sequence: 'DESC' },
+              take: 1,
+            });
+            sectionSequenceMap[sectionId] = existingInputFields.length > 0
+              ? existingInputFields[0].sequence + 1
+              : 1;
+          } else {
+            sectionSequenceMap[sectionId]++;
+          }
+
+          const sequence = sectionSequenceMap[sectionId];
+
+          // Map data type
+          const dataType = mapDataType(dataTypeStr);
+
+          // Create validation rules based on UI component and data type
+          let validationRules: any = null;
+          if (dataType === DataType.NUMBER) {
+            validationRules = {
+              required: true,
+            };
+          } else if (dataType === DataType.FILE) {
+            validationRules = {
+              required: false,
+            };
+          }
+
+          // Check if input field with same label already exists for this section
+          const existingInputField = await this.inputFieldRepository.findOne({
+            where: { sectionId, label: fieldName },
+          });
+
+          if (existingInputField) {
+            errors.push({
+              row: rowNumber,
+              error: `Input field with name "${fieldName}" already exists for this section`,
+            });
+            skipped++;
+            continue;
+          }
+
+          // Create input field
+          const inputField = this.inputFieldRepository.create({
+            sectionId,
+            label: fieldName,
+            dataType,
+            validationRules,
+            sequence,
+          });
+
+          const savedInputField = await this.inputFieldRepository.save(inputField);
+          createdInputFields.push(savedInputField);
+          created++;
+        } catch (error) {
+          errors.push({
+            row: rowNumber,
+            error: error.message || 'Unknown error processing row',
+          });
+          skipped++;
+        }
+      }
+
+      return {
+        status: true,
+        data: {
+          total: data.length,
+          created,
+          skipped,
+          errors,
+          createdInputFields,
+        },
+        message: `Processed ${data.length} row(s): ${created} created, ${skipped} skipped`,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to process Excel file',
+      );
+    }
+  }
+
+
+
+
 }

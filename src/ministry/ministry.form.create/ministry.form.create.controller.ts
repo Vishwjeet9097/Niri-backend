@@ -132,5 +132,19 @@ export class MinistryFormCreateController {
   async assignIndicatorToNodal(@Body() assignIndicatorToNodalDto: AssignIndicatorToNodalDto) {
     return this.ministryFormCreateService.assignIndicatorToNodal(assignIndicatorToNodalDto);
   }
+
+  @Post('input-fields/upload-excel')
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.STATE_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+  )
+  @UseInterceptors(FileInterceptor('file'))
+  @HttpCode(HttpStatus.CREATED)
+  async uploadExcelInputFields(@UploadedFile() file: Express.Multer.File) {
+    return this.ministryFormCreateService.uploadExcelAndCreateInputFields(file);
+  }
   
 }
