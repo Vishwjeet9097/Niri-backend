@@ -1,13 +1,22 @@
 import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import * as XLSX from 'xlsx';
 import { IndicatorDetail, IndicatorCategory } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField, DataType } from '../entities/input-field.entity';
+import { Indicator } from '../../entities/indicator.entity';
+import { UserIndicatorScope } from '../../entities/user-indicator-scope.entity';
+import { Form } from '../entities/form.entity';
+import { MinistrySubmission } from '../entities/ministry-submission.entity';
+import { MinistrySubmissionIndicator } from '../entities/ministry-submission-indicator.entity';
+import { User, UserRole } from '../../entities/user.entity';
+import { Ministry } from '../../entities/ministry.entity';
+import { SubmissionStatus } from '../../entities/submission.entity';
 import { CreateIndicatorDto } from './dto/create-indicator.dto';
 import { CreateSubsectionDto } from './dto/create-subsection.dto';
 import { CreateInputFieldDto } from './dto/create-input-field.dto';
+import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
 
 @Injectable()
 export class MinistryFormCreateService {
@@ -18,6 +27,20 @@ export class MinistryFormCreateService {
     private readonly indicatorSubsectionRepository: Repository<IndicatorSubsection>,
     @InjectRepository(InputField)
     private readonly inputFieldRepository: Repository<InputField>,
+    @InjectRepository(Indicator)
+    private readonly indicatorRepository: Repository<Indicator>,
+    @InjectRepository(UserIndicatorScope)
+    private readonly userIndicatorScopeRepository: Repository<UserIndicatorScope>,
+    @InjectRepository(Form)
+    private readonly formRepository: Repository<Form>,
+    @InjectRepository(MinistrySubmission)
+    private readonly ministrySubmissionRepository: Repository<MinistrySubmission>,
+    @InjectRepository(MinistrySubmissionIndicator)
+    private readonly ministrySubmissionIndicatorRepository: Repository<MinistrySubmissionIndicator>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(Ministry)
+    private readonly ministryRepository: Repository<Ministry>,
   ) {}
 
   /**
@@ -108,17 +131,52 @@ export class MinistryFormCreateService {
 
   /**
    * Get all indicators with status = true, grouped by category and ordered by sequence
+   * If userId is provided, returns only indicators associated with that user
    */
-  async getAllActiveIndicators(): Promise<{
+  async getAllActiveIndicators(userId?: string): Promise<{
     status: boolean;
     data: Record<string, IndicatorDetail[]>;
     message: string;
   }> {
     try {
-      const indicators = await this.indicatorDetailRepository.find({
-        where: { status: true },
-        order: { sequence: 'ASC', sNo: 'ASC' },
-      });
+      let indicatorCodes: string[] = [];
+
+      // If userId is provided, get indicator codes associated with that user
+      if (userId) {
+        const userIndicatorScopes = await this.userIndicatorScopeRepository
+          .createQueryBuilder('scope')
+          .leftJoinAndSelect('scope.indicator', 'indicator')
+          .where('scope.userId = :userId', { userId })
+          .getMany();
+
+        // Extract indicator codes from the scopes
+        indicatorCodes = userIndicatorScopes
+          .map((scope) => scope.indicator?.code)
+          .filter((code): code is string => !!code);
+
+        // If no indicators found for the user, return empty result
+        if (indicatorCodes.length === 0) {
+          return {
+            status: true,
+            data: {},
+            message: `No indicators found for user ${userId}`,
+          };
+        }
+      }
+
+      // Build query for indicator details
+      let query = this.indicatorDetailRepository.createQueryBuilder('indicatorDetail')
+        .where('indicatorDetail.status = :status', { status: true });
+
+      // If userId is provided, filter by indicator codes (matching sNo with code)
+      if (userId && indicatorCodes.length > 0) {
+        query = query.andWhere('indicatorDetail.sNo IN (:...codes)', { codes: indicatorCodes });
+      }
+
+      const indicators = await query
+        .orderBy('indicatorDetail.sequence', 'ASC')
+        .addOrderBy('indicatorDetail.sNo', 'ASC')
+        .getMany();
 
       // Group indicators by category
       const groupedIndicators: Record<string, IndicatorDetail[]> = {};
@@ -145,10 +203,14 @@ export class MinistryFormCreateService {
       const totalCount = indicators.length;
       const categoryCount = Object.keys(groupedIndicators).length;
 
+      const message = userId
+        ? `Found ${totalCount} active indicator(s) for user ${userId} across ${categoryCount} category/categories`
+        : `Found ${totalCount} active indicator(s) across ${categoryCount} category/categories`;
+
       return {
         status: true,
         data: groupedIndicators,
-        message: `Found ${totalCount} active indicator(s) across ${categoryCount} category/categories`,
+        message,
       };
     } catch (error) {
       throw new BadRequestException(
@@ -753,6 +815,163 @@ export class MinistryFormCreateService {
     } catch (error) {
       throw new BadRequestException(
         error.message || 'Failed to process Excel file',
+      );
+    }
+  }
+
+  /**
+   * Create ministry form based on user role
+   * For MOSPI_REVIEWER: Create/update form with ministryId and add userId to reviewer
+   * For MINISTRY_APPROVER: Create/update form with ministryId, add userId to ministryUser, create submission, and insert submission indicators
+   */
+  async createMinistryForm(createMinistryFormDto: CreateMinistryFormDto): Promise<{
+    status: boolean;
+    data: any;
+    message: string;
+  }> {
+    try {
+      const { userId, userRole, ministryId } = createMinistryFormDto;
+
+      // Validate user exists
+      const user = await this.userRepository.findOne({ where: { id: userId } });
+      if (!user) {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+
+      // Validate ministry exists
+      const ministry = await this.ministryRepository.findOne({ where: { id: ministryId } });
+      if (!ministry) {
+        throw new NotFoundException(`Ministry with ID ${ministryId} not found`);
+      }
+
+      // Validate user role
+      if (userRole !== UserRole.MOSPI_REVIEWER && userRole !== UserRole.MINISTRY_APPROVER) {
+        throw new BadRequestException(
+          `Invalid user role. Expected MOSPI_REVIEWER or MINISTRY_APPROVER, got ${userRole}`
+        );
+      }
+
+      const currentYear = new Date().getFullYear();
+
+      // Check if form already exists with this ministryId
+      let existingForm = await this.formRepository.findOne({
+        where: { ministry: ministryId },
+      });
+
+      if (userRole === UserRole.MOSPI_REVIEWER) {
+        if (existingForm) {
+          // Update existing form - only update reviewer
+          existingForm.reviewer = userId;
+          const savedForm = await this.formRepository.save(existingForm);
+
+          return {
+            status: true,
+            data: {
+              form: savedForm,
+              role: 'MOSPI_REVIEWER',
+              action: 'updated',
+            },
+            message: 'Form reviewer updated successfully for MOSPI Reviewer',
+          };
+        } else {
+          // Create new form with ministryId and add userId to reviewer
+          const form = this.formRepository.create({
+            year: currentYear,
+            ministry: ministryId,
+            reviewer: userId,
+          });
+
+          const savedForm = await this.formRepository.save(form);
+
+          return {
+            status: true,
+            data: {
+              form: savedForm,
+              role: 'MOSPI_REVIEWER',
+              action: 'created',
+            },
+            message: 'Form created successfully for MOSPI Reviewer',
+          };
+        }
+      } else if (userRole === UserRole.MINISTRY_APPROVER) {
+        const formExisted = !!existingForm;
+        
+        if (existingForm) {
+          // Check if ministry_user already exists and is different from current userId
+          if (existingForm.ministryUser && existingForm.ministryUser !== userId) {
+            throw new ConflictException('User already exists as ministry user for this form');
+          }
+          
+          // Update existing form - update ministryUser (only if it doesn't exist or is the same user)
+          existingForm.ministryUser = userId;
+          const savedForm = await this.formRepository.save(existingForm);
+          existingForm = savedForm;
+        } else {
+          // Create new form with ministryId and ministryUser
+          const form = this.formRepository.create({
+            year: currentYear,
+            ministry: ministryId,
+            ministryUser: userId,
+          });
+
+          const savedForm = await this.formRepository.save(form);
+          existingForm = savedForm;
+        }
+
+        // Update user's ministryId
+        await this.userRepository.update(userId, { ministryId: ministryId });
+
+        // Generate submission ID: SUB-{year}-{randomNum}
+        const randomNum = Math.floor(Math.random() * 1000000);
+        const submissionId = `SUB-${currentYear}-${randomNum}`;
+
+        // Create submission with formId and userId
+        const submission = this.ministrySubmissionRepository.create({
+          submissionId,
+          formId: existingForm.id,
+          userId: userId,
+          status: SubmissionStatus.DRAFT,
+        });
+
+        const savedSubmission = await this.ministrySubmissionRepository.save(submission);
+
+        // Get all active indicator details
+        const activeIndicators = await this.indicatorDetailRepository.find({
+          where: { status: true },
+        });
+
+        // Insert submission indicators for all active indicators with userId
+        const submissionIndicators = activeIndicators.map((indicator) =>
+          this.ministrySubmissionIndicatorRepository.create({
+            submissionId: savedSubmission.id,
+            indicatorId: indicator.id,
+            status: true,
+            assignedTo: userId,
+          })
+        );
+
+        await this.ministrySubmissionIndicatorRepository.save(submissionIndicators);
+
+        return {
+          status: true,
+          data: {
+            form: existingForm,
+            submission: savedSubmission,
+            indicatorsCount: activeIndicators.length,
+            role: 'MINISTRY_APPROVER',
+            action: formExisted ? 'updated' : 'created',
+          },
+          message: `Form ${formExisted ? 'updated' : 'created'} and submission created successfully for Ministry Approver. ${activeIndicators.length} indicators added.`,
+        };
+      }
+
+      throw new BadRequestException('Invalid user role');
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException || error instanceof ConflictException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to create ministry form',
       );
     }
   }
