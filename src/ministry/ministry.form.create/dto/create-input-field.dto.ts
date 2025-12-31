@@ -6,7 +6,7 @@ import {
   IsObject,
   Min,
 } from "class-validator";
-import { DataType } from "../../entities/input-field.entity";
+import { DataType, UIComponent } from "../../entities/input-field.entity";
 
 export class CreateInputFieldDto {
   @IsString()
@@ -17,6 +17,9 @@ export class CreateInputFieldDto {
 
   @IsEnum(DataType)
   dataType: DataType;
+
+  @IsEnum(UIComponent)
+  uiComponent: UIComponent;
 
   @IsOptional()
   @IsObject()

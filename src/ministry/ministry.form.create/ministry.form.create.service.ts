@@ -4,7 +4,7 @@ import { Repository, In } from 'typeorm';
 import * as XLSX from 'xlsx';
 import { IndicatorDetail, IndicatorCategory } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
-import { InputField, DataType } from '../entities/input-field.entity';
+import { InputField, DataType, UIComponent } from '../entities/input-field.entity';
 import { Indicator } from '../../entities/indicator.entity';
 import { UserIndicatorScope } from '../../entities/user-indicator-scope.entity';
 import { Form } from '../entities/form.entity';
@@ -42,7 +42,7 @@ export class MinistryFormCreateService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Ministry)
     private readonly ministryRepository: Repository<Ministry>,
-  ) {}
+  ) { }
 
   /**
    * Generate custom indicator ID
@@ -57,7 +57,7 @@ export class MinistryFormCreateService {
     const categoryKey = Object.keys(IndicatorCategory).find(
       (key) => IndicatorCategory[key] === category,
     ) || category.replace(/\s+/g, '_').toUpperCase();
-    
+
     const randomSuffix = Math.random().toString(36).substring(2, 9);
     return `${categoryKey}_SECTION_${section}_${randomSuffix}`;
   }
@@ -132,7 +132,7 @@ export class MinistryFormCreateService {
 
   /**
    * Get all indicators with status = true, grouped by category and ordered by sequence
-   * If userId is provided, returns only indicators associated with that user
+   * If userId is provided, first gets indicator IDs from ministry_submission_indicator table
    */
   async getAllActiveIndicators(userId?: string): Promise<{
     status: boolean;
@@ -140,27 +140,42 @@ export class MinistryFormCreateService {
     message: string;
   }> {
     try {
-      let indicatorCodes: string[] = [];
 
-      // If userId is provided, get indicator codes associated with that user
+      console.log('userId', userId);
+      let indicatorIds: string[] = [];
+
+      // If userId is provided, get indicator IDs from ministry_submission_indicator table
       if (userId) {
-        const userIndicatorScopes = await this.userIndicatorScopeRepository
-          .createQueryBuilder('scope')
-          .leftJoinAndSelect('scope.indicator', 'indicator')
-          .where('scope.userId = :userId', { userId })
-          .getMany();
+        // First, get submissions for this user
+        const submissions = await this.ministrySubmissionRepository.find({
+          where: { userId: userId },
+        });
 
-        // Extract indicator codes from the scopes
-        indicatorCodes = userIndicatorScopes
-          .map((scope) => scope.indicator?.code)
-          .filter((code): code is string => !!code);
-
-        // If no indicators found for the user, return empty result
-        if (indicatorCodes.length === 0) {
+        if (submissions.length === 0) {
           return {
             status: true,
             data: {},
-            message: `No indicators found for user ${userId}`,
+            message: `No submissions found for user ${userId}`,
+          };
+        }
+
+        // Get all submission IDs
+        const submissionIds = submissions.map((sub) => sub.id);
+
+        // Get indicator IDs from ministry_submission_indicator table
+        const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: { submissionId: In(submissionIds), status: true },
+        });
+
+        // Extract unique indicator IDs
+        indicatorIds = [...new Set(submissionIndicators.map((si) => si.indicatorId))];
+
+        // If no indicators found, return empty result
+        if (indicatorIds.length === 0) {
+          return {
+            status: true,
+            data: {},
+            message: `No indicators found for user ${userId} in submission indicators`,
           };
         }
       }
@@ -169,9 +184,9 @@ export class MinistryFormCreateService {
       let query = this.indicatorDetailRepository.createQueryBuilder('indicatorDetail')
         .where('indicatorDetail.status = :status', { status: true });
 
-      // If userId is provided, filter by indicator codes (matching sNo with code)
-      if (userId && indicatorCodes.length > 0) {
-        query = query.andWhere('indicatorDetail.sNo IN (:...codes)', { codes: indicatorCodes });
+      // If userId is provided, filter by indicator IDs from submission_indicator table
+      if (userId && indicatorIds.length > 0) {
+        query = query.andWhere('indicatorDetail.id IN (:...ids)', { ids: indicatorIds });
       }
 
       const indicators = await query
@@ -181,7 +196,7 @@ export class MinistryFormCreateService {
 
       // Group indicators by category
       const groupedIndicators: Record<string, IndicatorDetail[]> = {};
-      
+
       indicators.forEach((indicator) => {
         const category = indicator.category;
         if (!groupedIndicators[category]) {
@@ -312,7 +327,7 @@ export class MinistryFormCreateService {
 
       // Group subsections by indicator_id
       const groupedSubsections: Record<string, IndicatorSubsection[]> = {};
-      
+
       subsections.forEach((subsection) => {
         const indicatorId = subsection.indicatorId;
         if (!groupedSubsections[indicatorId]) {
@@ -376,6 +391,7 @@ export class MinistryFormCreateService {
         sectionId: createInputFieldDto.sectionId,
         label: createInputFieldDto.label,
         dataType: createInputFieldDto.dataType,
+        uiComponent: createInputFieldDto.uiComponent,
         validationRules: createInputFieldDto.validationRules ?? null,
         sequence: createInputFieldDto.sequence ?? 0,
       });
@@ -413,7 +429,7 @@ export class MinistryFormCreateService {
 
       // Group input fields by section_id
       const groupedInputFields: Record<string, InputField[]> = {};
-      
+
       inputFields.forEach((inputField) => {
         const sectionId = inputField.sectionId;
         if (!groupedInputFields[sectionId]) {
@@ -563,7 +579,7 @@ export class MinistryFormCreateService {
             ) || category.replace(/\s+/g, '_').toUpperCase();
             const randomSuffix = Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
             const newIndicatorId = `${categoryKey}_SECTION_${sNo}_${randomSuffix}`;
-            
+
             // Create indicator
             const indicator = this.indicatorDetailRepository.create({
               id: newIndicatorId,
@@ -662,7 +678,7 @@ export class MinistryFormCreateService {
 
       // Normalize headers and find column indices
       const headers = headerRow.map((h: any) => String(h || '').trim());
-      
+
       // Helper function to find column index case-insensitively
       const findColumnIndex = (searchTerms: string[]): number => {
         for (let i = 0; i < headers.length; i++) {
@@ -755,8 +771,8 @@ export class MinistryFormCreateService {
               order: { sequence: 'DESC' },
               take: 1,
             });
-            indicatorSequenceMap[indicator.id] = existingSubsections.length > 0 
-              ? existingSubsections[0].sequence + 1 
+            indicatorSequenceMap[indicator.id] = existingSubsections.length > 0
+              ? existingSubsections[0].sequence + 1
               : 1;
           } else {
             indicatorSequenceMap[indicator.id]++;
@@ -896,13 +912,13 @@ export class MinistryFormCreateService {
         }
       } else if (userRole === UserRole.MINISTRY_APPROVER) {
         const formExisted = !!existingForm;
-        
+
         if (existingForm) {
           // Check if ministry_user already exists and is different from current userId
           if (existingForm.ministryUser && existingForm.ministryUser !== userId) {
             throw new ConflictException('User already exists as ministry user for this form');
           }
-          
+
           // Update existing form - update ministryUser (only if it doesn't exist or is the same user)
           existingForm.ministryUser = userId;
           const savedForm = await this.formRepository.save(existingForm);
@@ -978,11 +994,11 @@ export class MinistryFormCreateService {
   }
 
 
-   /**
-   * Assign indicators to nodal officer
-   * Gets formId from ministryUserId, creates submission, and updates submission indicators
-   */
-   async assignIndicatorToNodal(assignIndicatorToNodalDto: AssignIndicatorToNodalDto): Promise<{
+  /**
+  * Assign indicators to nodal officer
+  * Gets formId from ministryUserId, creates submission, and updates submission indicators
+  */
+  async assignIndicatorToNodal(assignIndicatorToNodalDto: AssignIndicatorToNodalDto): Promise<{
     status: boolean;
     data: any;
     message: string;
@@ -1091,5 +1107,342 @@ export class MinistryFormCreateService {
       );
     }
   }
-  
+
+  /**
+     * Upload and process Excel file to create input fields in bulk
+     * Excel format: Indicator S.no, Field Name, Data Type, UI Component, Subsection Field
+     * If Subsection Field = "No": sectionId = indicator.id
+     * If Subsection Field = "Yes": sectionId = first active subsection.id for that indicator
+     */
+  async uploadExcelAndCreateInputFields(file: Express.Multer.File): Promise<{
+    status: boolean;
+    data: {
+      total: number;
+      created: number;
+      skipped: number;
+      errors: Array<{ row: number; error: string }>;
+      createdInputFields: InputField[];
+    };
+    message: string;
+  }> {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse Excel file
+      const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      // Parse as raw data to handle header variations
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+      if (!rawData || rawData.length === 0) {
+        throw new BadRequestException('Excel file is empty');
+      }
+
+      // Find header row (first row with data)
+      const headerRow = rawData[0];
+      if (!headerRow || headerRow.length === 0) {
+        throw new BadRequestException('Could not find header row in Excel file');
+      }
+
+      // Normalize headers and find column indices
+      const headers = headerRow.map((h: any) => String(h || '').trim());
+
+      // Helper function to find column index case-insensitively
+      const findColumnIndex = (searchTerms: string[]): number => {
+        for (let i = 0; i < headers.length; i++) {
+          const header = headers[i].toLowerCase();
+          for (const term of searchTerms) {
+            if (header === term.toLowerCase() || header.includes(term.toLowerCase())) {
+              return i;
+            }
+          }
+        }
+        return -1;
+      };
+
+      const sNoColIndex = findColumnIndex(['indicator s.no', 's.no', 'sno', 's_no', 'serial', 'serial no', 'indicator s no']);
+      const fieldNameColIndex = findColumnIndex(['field name', 'fieldname', 'field']);
+      const dataTypeColIndex = findColumnIndex(['data type', 'datatype', 'type']);
+      const uiComponentColIndex = findColumnIndex(['ui component', 'uicomponent', 'component']);
+      const subsectionFieldColIndex = findColumnIndex(['subsection field', 'subsectionfield', 'subsection']);
+
+      if (sNoColIndex === -1 || fieldNameColIndex === -1 || dataTypeColIndex === -1 ||
+        uiComponentColIndex === -1 || subsectionFieldColIndex === -1) {
+        throw new BadRequestException(
+          `Could not find required columns. Found columns: ${headers.join(', ')}. ` +
+          `Looking for: Indicator S.no, Field Name, Data Type, UI Component, Subsection Field`
+        );
+      }
+
+      // Parse data rows
+      const data = rawData.slice(1).map((row, index) => ({
+        sNo: row[sNoColIndex],
+        fieldName: row[fieldNameColIndex],
+        dataType: row[dataTypeColIndex],
+        uiComponent: row[uiComponentColIndex],
+        subsectionField: row[subsectionFieldColIndex],
+        rowNumber: index + 2, // +2 because Excel rows start at 1 and first row is header
+      })).filter(row => row.sNo !== undefined && row.fieldName !== undefined);
+
+      if (!data || data.length === 0) {
+        throw new BadRequestException('Excel file has no data rows');
+      }
+
+      const createdInputFields: InputField[] = [];
+      const errors: Array<{ row: number; error: string }> = [];
+      let created = 0;
+      let skipped = 0;
+
+      // Track sequence per section
+      const sectionSequenceMap: Record<string, number> = {};
+
+      // Helper function to map data type string to DataType enum
+      const mapDataType = (dataTypeStr: string): DataType => {
+        const normalized = String(dataTypeStr || '').trim().toLowerCase();
+        if (normalized.includes('numeric') || normalized.includes('number')) {
+          return DataType.NUMBER;
+        }
+        if (normalized.includes('file')) {
+          return DataType.FILE;
+        }
+        return DataType.STRING;
+      };
+
+      // Helper function to map UI Component string to UIComponent enum
+      const mapUIComponent = (uiComponentStr: string): UIComponent => {
+        const normalized = String(uiComponentStr || '').trim().toLowerCase();
+        
+        // Match exact or partial UI Component strings (order matters - check specific ones first)
+        if (normalized.includes('auto-calculated') || normalized.includes('auto calculated')) {
+          return UIComponent.AUTO_CALCULATED;
+        }
+        if (normalized.includes('text area') || normalized.includes('textarea')) {
+          return UIComponent.TEXT_AREA;
+        }
+        if (normalized.includes('checkbox')) {
+          return UIComponent.CHECKBOXES;
+        }
+        if (normalized.includes('file')) {
+          return UIComponent.FILE;
+        }
+        if (normalized.includes('dropdown')) {
+          return UIComponent.DROPDOWN;
+        }
+        if (normalized.includes('input') && (normalized.includes('number') || normalized.includes('numeric'))) {
+          return UIComponent.INPUT_NUMBER;
+        }
+        if (normalized.includes('input') && normalized.includes('text')) {
+          return UIComponent.INPUT_TEXT;
+        }
+        
+        // Default fallback based on common patterns
+        if (normalized.includes('number') || normalized.includes('numeric')) {
+          return UIComponent.INPUT_NUMBER;
+        }
+        
+        return UIComponent.INPUT_TEXT;
+      };
+
+      // Helper function to parse dropdown options from field name
+      // Examples: "Asset Type (Core/Non-Core)" -> ["Core", "Non-Core"]
+      //           "Type (Option1/Option2/Option3)" -> ["Option1", "Option2", "Option3"]
+      const parseDropdownOptions = (fieldName: string): string[] | null => {
+        // Look for patterns like (Option1/Option2) or (Option1, Option2)
+        const parenthesesMatch = fieldName.match(/\(([^)]+)\)/);
+        if (parenthesesMatch) {
+          const optionsStr = parenthesesMatch[1];
+          // Split by / or , and trim each option
+          const options = optionsStr.split(/[\/,]/).map(opt => opt.trim()).filter(opt => opt.length > 0);
+          if (options.length > 0) {
+            return options;
+          }
+        }
+        return null;
+      };
+
+      // Helper function to determine if subsection field
+      const isSubsectionField = (value: any): boolean => {
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1';
+      };
+
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const rowNumber = row.rowNumber;
+
+        try {
+          // Validate required fields
+          if (!row.sNo || row.sNo === '' || !row.fieldName || row.fieldName === '') {
+            errors.push({
+              row: rowNumber,
+              error: 'Missing required fields: Indicator S.no or Field Name is empty',
+            });
+            skipped++;
+            continue;
+          }
+
+          const sNo = String(row.sNo).trim();
+          const originalFieldName = String(row.fieldName).trim();
+          const dataTypeStr = String(row.dataType || 'string').trim();
+          const uiComponent = String(row.uiComponent || '').trim();
+          const isSubsection = isSubsectionField(row.subsectionField);
+          
+          // Parse dropdown options from original field name before cleaning
+          let dropdownOptions: string[] | null = null;
+          let fieldName: string;
+          if (uiComponent.toLowerCase().includes('dropdown')) {
+            dropdownOptions = parseDropdownOptions(originalFieldName);
+            // Clean field name: remove options in parentheses for dropdown fields
+            // e.g., "Asset Type (Core/Non-Core)" -> "Asset Type"
+            fieldName = originalFieldName.replace(/\s*\([^)]+\)\s*$/, '').trim();
+          } else {
+            fieldName = originalFieldName;
+          }
+
+          if (!sNo || !fieldName) {
+            errors.push({
+              row: rowNumber,
+              error: 'Indicator S.no or Field Name cannot be empty',
+            });
+            skipped++;
+            continue;
+          }
+
+          // Find indicator by sNo
+          const indicator = await this.indicatorDetailRepository.findOne({
+            where: { sNo },
+          });
+
+          if (!indicator) {
+            errors.push({
+              row: rowNumber,
+              error: `Indicator with serial number ${sNo} not found`,
+            });
+            skipped++;
+            continue;
+          }
+
+          let sectionId: string;
+
+          if (isSubsection) {
+            // Get first active subsection for this indicator
+            const subsection = await this.indicatorSubsectionRepository.findOne({
+              where: { indicatorId: indicator.id, status: true },
+              order: { sequence: 'ASC' },
+            });
+
+            if (!subsection) {
+              errors.push({
+                row: rowNumber,
+                error: `No active subsection found for indicator ${sNo}`,
+              });
+              skipped++;
+              continue;
+            }
+
+            sectionId = subsection.id;
+          } else {
+            // Use indicator id as sectionId
+            sectionId = indicator.id;
+          }
+
+          // Get or initialize sequence for this section
+          if (!sectionSequenceMap[sectionId]) {
+            // Get the highest sequence for this section
+            const existingInputFields = await this.inputFieldRepository.find({
+              where: { sectionId },
+              order: { sequence: 'DESC' },
+              take: 1,
+            });
+            sectionSequenceMap[sectionId] = existingInputFields.length > 0
+              ? existingInputFields[0].sequence + 1
+              : 1;
+          } else {
+            sectionSequenceMap[sectionId]++;
+          }
+
+          const sequence = sectionSequenceMap[sectionId];
+
+          // Map data type and UI component
+          const dataType = mapDataType(dataTypeStr);
+          const mappedUIComponent = mapUIComponent(uiComponent);
+
+          // Create validation rules based on UI component and data type
+          let validationRules: any = null;
+          if (dataType === DataType.NUMBER) {
+            validationRules = {
+              required: true,
+            };
+          } else if (dataType === DataType.FILE) {
+            validationRules = {
+              required: false,
+            };
+          } else if (mappedUIComponent === UIComponent.DROPDOWN) {
+            validationRules = {
+              required: true,
+            };
+            // Add options if found (already parsed from original field name)
+            if (dropdownOptions && dropdownOptions.length > 0) {
+              validationRules.options = dropdownOptions;
+            }
+          }
+
+          // Check if input field with same label already exists for this section
+          const existingInputField = await this.inputFieldRepository.findOne({
+            where: { sectionId, label: fieldName },
+          });
+
+          if (existingInputField) {
+            errors.push({
+              row: rowNumber,
+              error: `Input field with name "${fieldName}" already exists for this section`,
+            });
+            skipped++;
+            continue;
+          }
+
+          // Create input field
+          const inputField = this.inputFieldRepository.create({
+            sectionId,
+            label: fieldName,
+            dataType,
+            uiComponent: mappedUIComponent,
+            validationRules,
+            sequence,
+          });
+
+          const savedInputField = await this.inputFieldRepository.save(inputField);
+          createdInputFields.push(savedInputField);
+          created++;
+        } catch (error) {
+          errors.push({
+            row: rowNumber,
+            error: error.message || 'Unknown error processing row',
+          });
+          skipped++;
+        }
+      }
+
+      return {
+        status: true,
+        data: {
+          total: data.length,
+          created,
+          skipped,
+          errors,
+          createdInputFields,
+        },
+        message: `Processed ${data.length} row(s): ${created} created, ${skipped} skipped`,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to process Excel file',
+      );
+    }
+  }
 }
