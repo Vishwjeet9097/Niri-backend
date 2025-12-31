@@ -199,9 +199,9 @@ export class AuthService {
 
     const savedUser = await this.userRepository.save(user);
 
- 
+  
     // Create indicator scope mappings for NODAL_OFFICER
-    if (role === UserRole.NODAL_OFFICER && indicatorCodes) {
+    if (role === UserRole.NODAL_OFFICER && indicatorCodes && indicatorCodes.length > 0) {
       try {
         console.log(
           `Creating indicator scope for user ${savedUser.id} with codes: ${indicatorCodes.join(", ")}`
