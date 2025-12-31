@@ -305,8 +305,8 @@ export class UserService {
     userRole: UserRole,
     userStateUt: string
   ): Promise<void> {
-    await this.findOne(id, userRole, userStateUt);
-
+    const userToDelete = await this.findOne(id, userRole, userStateUt);
+  
     // Admin, State Approver and MoSPI roles can deactivate users
     if (
       ![
@@ -320,25 +320,46 @@ export class UserService {
         "Only Admin, State Approver and MoSPI roles can deactivate users"
       );
     }
-
+  
+    // Check if the user being deleted is a STATE_APPROVER
+    // If yes, check if they have created any NODAL_OFFICER users
+    if (userToDelete.role === UserRole.STATE_APPROVER) {
+      const stateApproverStateUt = userToDelete.stateUt;
+      
+      // Check if there are any NODAL_OFFICER users in the same state
+      const nodalOfficerCount = await this.userRepository.count({
+        where: {
+          role: UserRole.NODAL_OFFICER,
+          stateUt: stateApproverStateUt,
+          isActive: true,
+        },
+      });
+  
+      if (nodalOfficerCount > 0) {
+        throw new BadRequestException(
+          `Cannot delete State Approver. This State Approver has created ${nodalOfficerCount} Nodal Officer(s). Please delete all associated Nodal Officers first.`
+        );
+      }
+    }
+  
     // Check if the user has any submissions
     // If they do, prevent deletion
     const submissionCount = await this.submissionRepository.count({
       where: { submittedBy: id },
     });
-
+  
     if (submissionCount > 0) {
       throw new BadRequestException(
         `Cannot delete nodal officer. This user has ${submissionCount} submission(s) associated with them. Please remove or reassign the submissions before deleting.`
       );
     }
-
+  
     // Use transaction to ensure both operations happen atomically
     await this.dataSource.transaction(async (manager) => {
       // Delete all indicator scope assignments for this user first
       // This ensures indicators become available again for the state approver
       await manager.delete(UserIndicatorScope, { userId: id });
-
+  
       // Hard delete the user since they have no submissions
       await manager.delete(User, id);
     });
