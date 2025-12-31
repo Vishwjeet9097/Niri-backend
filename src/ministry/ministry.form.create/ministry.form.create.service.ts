@@ -132,7 +132,7 @@ export class MinistryFormCreateService {
 
   /**
    * Get all indicators with status = true, grouped by category and ordered by sequence
-   * If userId is provided, returns only indicators associated with that user
+   * If userId is provided, first gets indicator IDs from ministry_submission_indicator table
    */
   async getAllActiveIndicators(userId?: string): Promise<{
     status: boolean;
@@ -140,27 +140,42 @@ export class MinistryFormCreateService {
     message: string;
   }> {
     try {
-      let indicatorCodes: string[] = [];
 
-      // If userId is provided, get indicator codes associated with that user
+      console.log('userId', userId);
+      let indicatorIds: string[] = [];
+
+      // If userId is provided, get indicator IDs from ministry_submission_indicator table
       if (userId) {
-        const userIndicatorScopes = await this.userIndicatorScopeRepository
-          .createQueryBuilder('scope')
-          .leftJoinAndSelect('scope.indicator', 'indicator')
-          .where('scope.userId = :userId', { userId })
-          .getMany();
+        // First, get submissions for this user
+        const submissions = await this.ministrySubmissionRepository.find({
+          where: { userId: userId },
+        });
 
-        // Extract indicator codes from the scopes
-        indicatorCodes = userIndicatorScopes
-          .map((scope) => scope.indicator?.code)
-          .filter((code): code is string => !!code);
-
-        // If no indicators found for the user, return empty result
-        if (indicatorCodes.length === 0) {
+        if (submissions.length === 0) {
           return {
             status: true,
             data: {},
-            message: `No indicators found for user ${userId}`,
+            message: `No submissions found for user ${userId}`,
+          };
+        }
+
+        // Get all submission IDs
+        const submissionIds = submissions.map((sub) => sub.id);
+
+        // Get indicator IDs from ministry_submission_indicator table
+        const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: { submissionId: In(submissionIds), status: true },
+        });
+
+        // Extract unique indicator IDs
+        indicatorIds = [...new Set(submissionIndicators.map((si) => si.indicatorId))];
+
+        // If no indicators found, return empty result
+        if (indicatorIds.length === 0) {
+          return {
+            status: true,
+            data: {},
+            message: `No indicators found for user ${userId} in submission indicators`,
           };
         }
       }
@@ -169,9 +184,9 @@ export class MinistryFormCreateService {
       let query = this.indicatorDetailRepository.createQueryBuilder('indicatorDetail')
         .where('indicatorDetail.status = :status', { status: true });
 
-      // If userId is provided, filter by indicator codes (matching sNo with code)
-      if (userId && indicatorCodes.length > 0) {
-        query = query.andWhere('indicatorDetail.sNo IN (:...codes)', { codes: indicatorCodes });
+      // If userId is provided, filter by indicator IDs from submission_indicator table
+      if (userId && indicatorIds.length > 0) {
+        query = query.andWhere('indicatorDetail.id IN (:...ids)', { ids: indicatorIds });
       }
 
       const indicators = await query
