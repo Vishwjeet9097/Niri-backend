@@ -176,6 +176,27 @@ export class UserService {
   ): Promise<User> {
     const user = await this.findOne(id, userRole, userStateUt);
 
+       // ✅ VALIDATION: Prevent editing STATE_APPROVER if they have NODAL_OFFICER users assigned
+       if (user.role === UserRole.STATE_APPROVER) {
+        const stateApproverStateUt = user.stateUt || userStateUt;
+        
+        if (stateApproverStateUt) {
+          // Check if there are any active NODAL_OFFICER users assigned to this STATE_APPROVER's state
+          const nodalOfficersCount = await this.userRepository.count({
+            where: {
+              role: UserRole.NODAL_OFFICER,
+              stateUt: stateApproverStateUt,
+              isActive: true,
+            },
+          });
+  
+          if (nodalOfficersCount > 0) {
+            throw new BadRequestException(
+              "Cannot edit STATE_APPROVER. This state approver has NODAL_OFFICER users assigned. Please remove or reassign all nodal officers before editing."
+            );
+          }
+        }
+      }
     // Admin, State Approver and MoSPI roles can change user roles
     if (
       updateUserDto.role &&
