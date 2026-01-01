@@ -70,7 +70,7 @@ export class UserService {
 
   async findAll(
     userRole: UserRole,
-    userStateUt: string,
+    userStateUt?: string,
     userId?: string
   ): Promise<any[]> {
     let query = this.userRepository
@@ -86,6 +86,7 @@ export class UserService {
         "user.ministryId",
         "user.isActive",
         "user.createdAt",
+        "user.ministryId",
       ])
       .where("user.isActive = :isActive", { isActive: true })
       .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN })
@@ -104,14 +105,18 @@ export class UserService {
       });
     }
 
-    // Only STATE_APPROVER can see NODAL_OFFICER users, others cannot see them
-    if (userRole !== UserRole.STATE_APPROVER) {
-      query = query.andWhere("user.role != :nodalRole", {
+    // Only STATE_APPROVER can see NODAL_OFFICER users, MINISTRY_APPROVER can see all except NODAL_OFFICER, others cannot see NODAL_OFFICER
+    if (userRole === UserRole.STATE_APPROVER) {
+       query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
+    } else if (userRole === UserRole.MINISTRY_APPROVER) {
+       query = query.andWhere("user.role = :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
     } else {
-      // STATE_APPROVER can only see NODAL_OFFICER users
-      query = query.andWhere("user.role = :nodalRole", {
+      // Others cannot see NODAL_OFFICER users
+      query = query.andWhere("user.role != :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
     }

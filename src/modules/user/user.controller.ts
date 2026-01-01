@@ -53,7 +53,7 @@ export class UserController {
   async findAll(@Request() req) {
     const users = await this.userService.findAll(
       req.user.role,
-      req.user.stateUt,
+      req.user.stateUt ?? undefined,
       req.user.id
     );
     return {
