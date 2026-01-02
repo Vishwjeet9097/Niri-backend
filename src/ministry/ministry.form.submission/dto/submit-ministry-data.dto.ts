@@ -1,4 +1,4 @@
-import { IsString, IsObject, IsArray, ValidateNested, IsNotEmpty, ValidateIf } from 'class-validator';
+import { IsString, IsObject, IsArray, ValidateNested, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class InputDataDto {

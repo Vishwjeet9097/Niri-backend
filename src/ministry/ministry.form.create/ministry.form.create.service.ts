@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, IsNull } from 'typeorm';
 import * as XLSX from 'xlsx';
 import { IndicatorDetail, IndicatorCategory } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
@@ -18,6 +18,7 @@ import { CreateSubsectionDto } from './dto/create-subsection.dto';
 import { CreateInputFieldDto } from './dto/create-input-field.dto';
 import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
 import { AssignIndicatorToNodalDto } from './dto/assign-indicator-to-nodal.dto';
+import { ReassignIndicatorDto } from './dto/reassign-indicator.dto';
 
 @Injectable()
 export class MinistryFormCreateService {
@@ -134,39 +135,57 @@ export class MinistryFormCreateService {
    * Get all indicators with status = true, grouped by category and ordered by sequence
    * If userId is provided, first gets indicator IDs from ministry_submission_indicator table
    */
-  async getAllActiveIndicators(userId?: string): Promise<{
+  async getAllActiveIndicators(userId?: string, forUpdate?: boolean): Promise<{
     status: boolean;
     data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string })[]>;
     message: string;
   }> {
     try {
 
-      console.log('userId', userId);
+      console.log('userId', userId, 'forUpdate', forUpdate);
       let indicatorIds: string[] = [];
       let submissionIndicatorMap: Map<string, string> = new Map(); // Map indicatorId -> submissionIndicatorId
 
       // If userId is provided, get indicator IDs from ministry_submission_indicator table
       if (userId) {
-        // First, get submissions for this user
-        const submissions = await this.ministrySubmissionRepository.find({
-          where: { userId: userId },
-        });
+        let submissionIndicators: MinistrySubmissionIndicator[];
 
-        if (submissions.length === 0) {
-          return {
-            status: true,
-            data: {},
-            message: `No submissions found for user ${userId}`,
-          };
+        if (forUpdate === true) {
+          // Filter by ministryUser equals userId and status is null
+          submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+            where: { 
+              ministryUser: userId,
+              status: IsNull(),
+            },
+          });
+        } else {
+          // Previous logic: Filter by assignedTo and get from submissions
+          // First, get submissions for this user
+          const submissions = await this.ministrySubmissionRepository.find({
+            where: { userId: userId },
+          });
+
+          if (submissions.length === 0) {
+            return {
+              status: true,
+              data: {},
+              message: `No submissions found for user ${userId}`,
+            };
+          }
+
+          // Get all submission IDs
+          const submissionIds: string[] = submissions.map((sub) => sub.id);
+
+          // Get indicator IDs from ministry_submission_indicator table
+          // where assignedTo = userId
+          submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+            where: { 
+              submissionId: In(submissionIds),
+              assignedTo: userId,
+              status: IsNull(),
+            },
+          });
         }
-
-        // Get all submission IDs
-        const submissionIds = submissions.map((sub) => sub.id);
-
-        // Get indicator IDs from ministry_submission_indicator table
-        const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
-          where: { submissionId: In(submissionIds), status: true },
-        });
 
         // Extract unique indicator IDs and create mapping
         indicatorIds = [...new Set(submissionIndicators.map((si) => si.indicatorId))];
@@ -181,10 +200,13 @@ export class MinistryFormCreateService {
 
         // If no indicators found, return empty result
         if (indicatorIds.length === 0) {
+          const message = forUpdate === true
+            ? `No indicators found for user ${userId} with null status in submission indicators`
+            : `No indicators found for user ${userId} in submission indicators`;
           return {
             status: true,
             data: {},
-            message: `No indicators found for user ${userId} in submission indicators`,
+            message,
           };
         }
       }
@@ -975,12 +997,13 @@ export class MinistryFormCreateService {
           where: { status: true },
         });
 
-        // Insert submission indicators for all active indicators with userId
+        // Insert submission indicators for all active indicators with userId and ministryUser
         const submissionIndicators = activeIndicators.map((indicator) =>
           this.ministrySubmissionIndicatorRepository.create({
             submissionId: savedSubmission.id,
             indicatorId: indicator.id,
-            status: true,
+            status: null, // Status is null initially
+            ministryUser: userId,
             assignedTo: userId,
           })
         );
@@ -1122,6 +1145,137 @@ export class MinistryFormCreateService {
       }
       throw new BadRequestException(
         error.message || 'Failed to assign indicators to nodal officer',
+      );
+    }
+  }
+
+  /**
+   * Reassign indicators from ministry user to another user
+   * Checks if ministryUser matches and status is null, then updates submissionId and assignedTo
+   */
+  async reassignIndicator(reassignIndicatorDto: ReassignIndicatorDto): Promise<{
+    status: boolean;
+    data: any;
+    message: string;
+  }> {
+    try {
+      const { userId, ministryUserId, indicatorsId } = reassignIndicatorDto;
+
+      // Validate indicatorIds is an array and not empty
+      if (!Array.isArray(indicatorsId) || indicatorsId.length === 0) {
+        throw new BadRequestException('indicatorIds must be a non-empty array');
+      }
+
+      // Validate user exists
+      const user = await this.userRepository.findOne({ where: { id: userId } });
+      if (!user) {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+
+      // Validate ministry user exists
+      const ministryUser = await this.userRepository.findOne({ where: { id: ministryUserId } });
+      if (!ministryUser) {
+        throw new NotFoundException(`Ministry user with ID ${ministryUserId} not found`);
+      }
+
+      // Check if submission indicators exist with:
+      // - ministryUser = ministryUserId
+      // - status is null
+      // - indicatorId in the provided array
+      // Ensure indicatorIds is a valid array before using In()
+      const validIndicatorIds = Array.isArray(indicatorsId) ? indicatorsId : [];
+      if (validIndicatorIds.length === 0) {
+        throw new BadRequestException('indicatorIds must be a non-empty array');
+      }
+
+      const existingIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          ministryUser: ministryUserId,
+          indicatorId: In(validIndicatorIds),
+          status: IsNull(),
+        },
+      });
+
+      if (existingIndicators.length === 0) {
+        throw new NotFoundException(
+          `No indicators found for ministry user ${ministryUserId} with null status`
+        );
+      }
+
+      // Check if all requested indicators are found
+      const foundIndicatorIds = existingIndicators.map((ind) => ind.indicatorId);
+      const missingIndicators = validIndicatorIds.filter((id) => !foundIndicatorIds.includes(id));
+
+      if (missingIndicators.length > 0) {
+        throw new BadRequestException(
+          `Some indicators are not found or do not have null status for ministry user: ${missingIndicators.join(', ')}`
+        );
+      }
+
+      // Get the user's submission (the user we're assigning to)
+      // First, get the form for this user (if exists) or create one
+      let userSubmission = await this.ministrySubmissionRepository.findOne({
+        where: { userId: userId },
+        order: { createdAt: 'DESC' }, // Get the most recent submission
+      });
+
+      // If no submission exists for the user, we need to create one
+      // But first, we need to check if there's a form
+      if (!userSubmission) {
+        // Get or create form for the user
+        // For now, let's assume we need to get the form from the ministry user's form
+        const ministryForm = await this.formRepository.findOne({
+          where: { ministryUser: ministryUserId },
+        });
+
+        if (!ministryForm) {
+          throw new NotFoundException(`Form not found for ministry user ${ministryUserId}`);
+        }
+
+        // Generate submission ID: SUB-{year}-{randomNum}
+        const currentYear = new Date().getFullYear();
+        const randomNum = Math.floor(Math.random() * 1000000);
+        const submissionId = `SUB-${currentYear}-${randomNum}`;
+
+        // Create new submission for the user
+        userSubmission = this.ministrySubmissionRepository.create({
+          submissionId,
+          formId: ministryForm.id,
+          userId: userId,
+          status: SubmissionStatus.DRAFT,
+        });
+
+        userSubmission = await this.ministrySubmissionRepository.save(userSubmission);
+      }
+
+      // Update submission indicators:
+      // - Update submissionId to user's submission id
+      // - Update assignedTo to userId
+      await this.ministrySubmissionIndicatorRepository.update(
+        {
+          id: In(existingIndicators.map((ind) => ind.id)),
+        },
+        {
+          submissionId: userSubmission.id,
+          assignedTo: userId,
+        }
+      );
+
+      return {
+        status: true,
+        data: {
+          submission: userSubmission,
+          indicatorsCount: existingIndicators.length,
+          updatedIndicators: foundIndicatorIds,
+        },
+        message: `Successfully reassigned ${existingIndicators.length} indicator(s) to user ${userId}`,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to reassign indicators',
       );
     }
   }
