@@ -4,4 +4,5 @@ export * from "./indicator-subsection.entity";
 export * from "./input-field.entity";
 export * from "./ministry-submission.entity";
 export * from "./ministry-submission-indicator.entity";
+export * from "./ministry-submission-data.entity";
 
