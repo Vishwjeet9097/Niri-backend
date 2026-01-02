@@ -12,16 +12,14 @@ export class MinistryController {
   constructor(private readonly ministryService: MinistryService) {}
 
   @Get()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.MINISTRY_APPROVER)
+  @UseGuards(RolesGuard) 
   async getAll(): Promise<Omit<Ministry, 'createdAt' | 'updatedAt'>[]> {
     const ministries = await this.ministryService.findAll();
     return ministries.map(({ createdAt, updatedAt, ...rest }) => rest);
   }
 
   @Get(':id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.MINISTRY_APPROVER)
+  @UseGuards(RolesGuard) 
   async getOne(@Param('id') id: string): Promise<Omit<Ministry, 'createdAt' | 'updatedAt'>> {
     const { createdAt, updatedAt, ...rest } = await this.ministryService.findOne(id);
     return rest;
