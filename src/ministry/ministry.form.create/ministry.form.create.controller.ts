@@ -17,6 +17,7 @@ import { CreateSubsectionDto } from './dto/create-subsection.dto';
 import { CreateInputFieldDto } from './dto/create-input-field.dto';
 import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
 import { AssignIndicatorToNodalDto } from './dto/assign-indicator-to-nodal.dto';
+import { ReassignIndicatorDto } from './dto/reassign-indicator.dto';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../../modules/auth/guards/roles.guard';
 import { UserRole } from '../../entities/user.entity';
@@ -42,8 +43,12 @@ export class MinistryFormCreateController {
   }
 
   @Get('indicators')
-  async getAllActiveIndicators(@Query('userId') userId?: string) {
-    return this.ministryFormCreateService.getAllActiveIndicators(userId);
+  async getAllActiveIndicators(
+    @Query('userId') userId?: string,
+    @Query('forUpdate') forUpdate?: string,
+  ) {
+    const forUpdateBool = forUpdate === 'true';
+    return this.ministryFormCreateService.getAllActiveIndicators(userId, forUpdateBool);
   }
 
   @Post('subsection')
@@ -145,6 +150,13 @@ export class MinistryFormCreateController {
   @HttpCode(HttpStatus.CREATED)
   async uploadExcelInputFields(@UploadedFile() file: Express.Multer.File) {
     return this.ministryFormCreateService.uploadExcelAndCreateInputFields(file);
+  }
+
+  @Post('reassign-indicator')
+  @UseGuards(RolesGuard)
+  @HttpCode(HttpStatus.OK)
+  async reassignIndicator(@Body() reassignIndicatorDto: ReassignIndicatorDto) {
+    return this.ministryFormCreateService.reassignIndicator(reassignIndicatorDto);
   }
   
 }
