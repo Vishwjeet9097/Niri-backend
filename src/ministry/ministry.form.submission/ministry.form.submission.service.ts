@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { MinistrySubmissionIndicator } from '../entities/ministry-submission-indicator.entity';
+import { MinistrySubmissionIndicator, SubmissionIndicatorStatus } from '../entities/ministry-submission-indicator.entity';
 import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { IndicatorDetail } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
@@ -45,6 +45,11 @@ export class MinistryFormSubmissionService {
         throw new NotFoundException(
           `Submission indicator with id ${dto.submissionIndicatorId} not found`,
         );
+      }
+
+      // Check if status is already DRAFT - if yes, return error
+      if (submissionIndicator.status === SubmissionIndicatorStatus.DRAFT) {
+        throw new BadRequestException('Data already submitted. Status is already DRAFT.');
       }
 
       const { submissionId, indicatorId } = submissionIndicator;
@@ -142,6 +147,12 @@ export class MinistryFormSubmissionService {
       // Step 6: Save all data to database
       const saved = await this.ministrySubmissionDataRepository.save(savedData);
 
+      // Step 7: Update submission indicator status to DRAFT
+      await this.ministrySubmissionIndicatorRepository.update(
+        { id: dto.submissionIndicatorId },
+        { status: SubmissionIndicatorStatus.DRAFT }
+      );
+
       return {
         status: true,
         message: 'Ministry submission data saved successfully',
@@ -174,7 +185,7 @@ export class MinistryFormSubmissionService {
     const submissionData = new MinistrySubmissionData();
     submissionData.submissionIndicatorId = submissionIndicatorId;
     submissionData.inputFieldId = inputFieldId;
-
+    
     // Set value based on data type
     switch (dataType) {
       case DataType.NUMBER:
