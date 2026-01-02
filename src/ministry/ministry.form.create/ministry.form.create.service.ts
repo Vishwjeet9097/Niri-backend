@@ -136,13 +136,14 @@ export class MinistryFormCreateService {
    */
   async getAllActiveIndicators(userId?: string): Promise<{
     status: boolean;
-    data: Record<string, IndicatorDetail[]>;
+    data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string })[]>;
     message: string;
   }> {
     try {
 
       console.log('userId', userId);
       let indicatorIds: string[] = [];
+      let submissionIndicatorMap: Map<string, string> = new Map(); // Map indicatorId -> submissionIndicatorId
 
       // If userId is provided, get indicator IDs from ministry_submission_indicator table
       if (userId) {
@@ -167,8 +168,16 @@ export class MinistryFormCreateService {
           where: { submissionId: In(submissionIds), status: true },
         });
 
-        // Extract unique indicator IDs
+        // Extract unique indicator IDs and create mapping
         indicatorIds = [...new Set(submissionIndicators.map((si) => si.indicatorId))];
+        
+        // Create map of indicatorId -> submissionIndicatorId
+        // If multiple submission indicators exist for same indicator, use the first one
+        submissionIndicators.forEach((si) => {
+          if (!submissionIndicatorMap.has(si.indicatorId)) {
+            submissionIndicatorMap.set(si.indicatorId, si.id);
+          }
+        });
 
         // If no indicators found, return empty result
         if (indicatorIds.length === 0) {
@@ -194,15 +203,24 @@ export class MinistryFormCreateService {
         .addOrderBy('indicatorDetail.sNo', 'ASC')
         .getMany();
 
-      // Group indicators by category
-      const groupedIndicators: Record<string, IndicatorDetail[]> = {};
+      // Group indicators by category and add submissionIndicatorId
+      const groupedIndicators: Record<string, (IndicatorDetail & { submissionIndicatorId?: string })[]> = {};
 
       indicators.forEach((indicator) => {
         const category = indicator.category;
         if (!groupedIndicators[category]) {
           groupedIndicators[category] = [];
         }
-        groupedIndicators[category].push(indicator);
+        
+        // Add submissionIndicatorId if userId is provided and mapping exists
+        const indicatorWithSubmissionId = {
+          ...indicator,
+          ...(userId && submissionIndicatorMap.has(indicator.id) && {
+            submissionIndicatorId: submissionIndicatorMap.get(indicator.id)
+          })
+        };
+        
+        groupedIndicators[category].push(indicatorWithSubmissionId);
       });
 
       // Sort each category's indicators by sequence
