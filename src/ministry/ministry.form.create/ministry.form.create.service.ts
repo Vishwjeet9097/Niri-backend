@@ -1159,7 +1159,9 @@ export class MinistryFormCreateService {
     message: string;
   }> {
     try {
-      const { userId, ministryUserId, indicatorsId } = reassignIndicatorDto;
+      const { nodalUserId:userId, ministryUserId, indicatorsId } = reassignIndicatorDto;
+
+      console.log('RECIEVED USER ID', userId);
 
       // Validate indicatorIds is an array and not empty
       if (!Array.isArray(indicatorsId) || indicatorsId.length === 0) {
@@ -1212,6 +1214,8 @@ export class MinistryFormCreateService {
         );
       }
 
+
+      console.log('foundIndicatorIds', foundIndicatorIds);
       // Get the user's submission (the user we're assigning to)
       // First, get the form for this user (if exists) or create one
       let userSubmission = await this.ministrySubmissionRepository.findOne({
@@ -1251,6 +1255,9 @@ export class MinistryFormCreateService {
       // Update submission indicators:
       // - Update submissionId to user's submission id
       // - Update assignedTo to userId
+
+      console.log('userID before updating', userId);
+
       await this.ministrySubmissionIndicatorRepository.update(
         {
           id: In(existingIndicators.map((ind) => ind.id)),

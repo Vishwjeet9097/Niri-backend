@@ -4,7 +4,7 @@ export class ReassignIndicatorDto {
   @IsString()
   @IsNotEmpty()
   @IsUUID()
-  userId: string; // User to assign indicators to
+  nodalUserId: string; // User to assign indicators to
 
   @IsString()
   @IsNotEmpty()
