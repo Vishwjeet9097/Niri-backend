@@ -14,8 +14,8 @@ export class MinistryFormRetrieveController {
     private readonly ministryFormRetrieveService: MinistryFormRetrieveService,
   ) {}
 
-  @Get('submission/:submissionId')
-  async getSubmissionDetails(@Param('submissionId') submissionId: string) {
-    return this.ministryFormRetrieveService.getSubmissionDetails(submissionId);
+  @Get('submission/:userId')
+  async getSubmissionDetails(@Param('userId') userId: string) {
+    return this.ministryFormRetrieveService.getSubmissionDetails(userId);
   }
 }

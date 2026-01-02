@@ -24,28 +24,34 @@ export class MinistryFormRetrieveService {
 
   /**
    * Get submission details with indicators, subsections, and input fields
+   * Retrieves submission by userId
    */
-  async getSubmissionDetails(submissionId: string): Promise<{
+  async getSubmissionDetails(userId: string): Promise<{
     status: boolean;
     data: any[];
     message: string;
   }> {
     try {
-      // Step 1: Verify submission exists
+      // Step 1: Get submission by userId (get the most recent one if multiple exist)
       const submission = await this.ministrySubmissionRepository.findOne({
-        where: { id: submissionId },
+        where: { userId: userId },
+        order: { createdAt: 'DESC' },
       });
 
       if (!submission) {
         throw new NotFoundException(
-          `Submission with ID ${submissionId} not found`,
+          `Submission not found for user ID ${userId}`,
         );
       }
 
+      const submissionId = submission.id;
+
       // Step 2: Get all indicators mapped to this submission
       const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
-        where: { submissionId: submissionId },
+        where: { submissionId: submission.id },
       });
+
+      //console.log('submissionIndicators', submissionIndicators);
 
       if (submissionIndicators.length === 0) {
         return {
@@ -56,6 +62,12 @@ export class MinistryFormRetrieveService {
       }
 
       const indicatorIds = submissionIndicators.map((si) => si.indicatorId);
+
+      // Create a map of indicatorId -> submissionIndicatorId
+      const submissionIndicatorMap = new Map<string, string>();
+      submissionIndicators.forEach((si) => {
+        submissionIndicatorMap.set(si.indicatorId, si.id);
+      });
 
       // Step 3: Get indicator details
       const indicators = await this.indicatorDetailRepository.find({
@@ -133,11 +145,15 @@ export class MinistryFormRetrieveService {
           // Get direct inputs for this indicator
           const indicatorInputs = inputFieldsBySection[indicator.id] || [];
 
+          // Get submission indicator ID for this indicator
+          const submissionIndicatorId = submissionIndicatorMap.get(indicator.id);
+
           // Build indicator object
           return {
             [indicator.name]: {
               sNo: indicator.sNo,
               sequence: indicator.sequence,
+              submissionIndicatorId: submissionIndicatorId || null,
               inputs: indicatorInputs,
               subsection: subsectionArray,
             },
