@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Not, IsNull } from 'typeorm';
 import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { MinistrySubmissionIndicator } from '../entities/ministry-submission-indicator.entity';
 import { IndicatorDetail } from '../entities/indicator-detail.entity';
@@ -187,8 +187,9 @@ export class MinistryFormRetrieveService {
   /**
    * Get submission details with indicators, subsections, input fields, and submitted data
    * Retrieves submission by userId and includes submitted data from ministry_submission_data table
+   * If forReview is true, only returns indicators with status not null
    */
-  async getSubmissionDetailsWithData(userId: string): Promise<{
+  async getSubmissionDetailsWithData(userId: string, forReview?: boolean): Promise<{
     status: boolean;
     data: any[];
     message: string;
@@ -209,8 +210,14 @@ export class MinistryFormRetrieveService {
       const submissionId = submission.id;
 
       // Step 2: Get all indicators mapped to this submission
+      // If forReview is true, filter by status not null
+      const whereCondition: any = { submissionId: submissionId };
+      if (forReview === true) {
+        whereCondition.status = Not(IsNull());
+      }
+
       const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
-        where: { submissionId: submissionId },
+        where: whereCondition,
       });
 
       if (submissionIndicators.length === 0) {
@@ -225,8 +232,11 @@ export class MinistryFormRetrieveService {
 
       // Create a map of indicatorId -> submissionIndicatorId
       const submissionIndicatorMap = new Map<string, string>();
+      // Create a map of indicatorId -> status
+      const indicatorStatusMap = new Map<string, string | null>();
       submissionIndicators.forEach((si) => {
         submissionIndicatorMap.set(si.indicatorId, si.id);
+        indicatorStatusMap.set(si.indicatorId, si.status);
       });
 
       // Step 3: Get indicator details
@@ -352,12 +362,16 @@ export class MinistryFormRetrieveService {
             };
           });
 
+          // Get status for this indicator
+          const indicatorStatus = indicatorStatusMap.get(indicator.id) || null;
+
           // Build indicator object
           return {
             [indicator.name]: {
               sNo: indicator.sNo,
               sequence: indicator.sequence,
               submissionIndicatorId: submissionIndicatorId || null,
+              status: indicatorStatus,
               inputs: inputsWithData,
               subsection: subsectionArray,
             },

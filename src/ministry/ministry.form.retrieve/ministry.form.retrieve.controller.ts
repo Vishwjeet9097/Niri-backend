@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Param,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { MinistryFormRetrieveService } from './ministry.form.retrieve.service';
@@ -20,7 +21,11 @@ export class MinistryFormRetrieveController {
   }
 
   @Get('submission-with-data/:userId')
-  async getSubmissionDetailsWithData(@Param('userId') userId: string) {
-    return this.ministryFormRetrieveService.getSubmissionDetailsWithData(userId);
+  async getSubmissionDetailsWithData(
+    @Param('userId') userId: string,
+    @Query('forReview') forReview?: string,
+  ) {
+    const forReviewBool = forReview === 'true';
+    return this.ministryFormRetrieveService.getSubmissionDetailsWithData(userId, forReviewBool);
   }
 }
