@@ -7,6 +7,7 @@ import { MinistrySubmissionIndicator } from '../entities/ministry-submission-ind
 import { IndicatorDetail } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField } from '../entities/input-field.entity';
+import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { InputField } from '../entities/input-field.entity';
       IndicatorDetail,
       IndicatorSubsection,
       InputField,
+      MinistrySubmissionData,
     ]),
   ],
   controllers: [MinistryFormRetrieveController],

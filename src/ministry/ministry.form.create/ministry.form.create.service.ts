@@ -1216,26 +1216,55 @@ export class MinistryFormCreateService {
 
 
       console.log('foundIndicatorIds', foundIndicatorIds);
-      // Get the user's submission (the user we're assigning to)
-      // First, get the form for this user (if exists) or create one
+      
+      // Step 1: Get ministry user's submission
+      const ministryForm = await this.formRepository.findOne({
+        where: { ministryUser: ministryUserId },
+      });
+
+      if (!ministryForm) {
+        throw new NotFoundException(`Form not found for ministry user ${ministryUserId}`);
+      }
+
+      const ministrySubmission = await this.ministrySubmissionRepository.findOne({
+        where: { formId: ministryForm.id, userId: ministryUserId },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (!ministrySubmission) {
+        throw new NotFoundException(`Submission not found for ministry user ${ministryUserId}`);
+      }
+
+      // Step 2: Find all indicators already assigned to nodal user (userId) with status null
+      // and reassign them back to ministry user
+      const nodalUserIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          assignedTo: userId,
+          status: IsNull(),
+        },
+      });
+
+      if (nodalUserIndicators.length > 0) {
+        // Reassign these indicators back to ministry user
+        await this.ministrySubmissionIndicatorRepository.update(
+          {
+            id: In(nodalUserIndicators.map((ind) => ind.id)),
+          },
+          {
+            assignedTo: ministryUserId,
+            submissionId: ministrySubmission.id,
+          }
+        );
+      }
+
+      // Step 3: Get the nodal user's submission (the user we're assigning to)
       let userSubmission = await this.ministrySubmissionRepository.findOne({
         where: { userId: userId },
         order: { createdAt: 'DESC' }, // Get the most recent submission
       });
 
-      // If no submission exists for the user, we need to create one
-      // But first, we need to check if there's a form
+      // If no submission exists for the user, create one
       if (!userSubmission) {
-        // Get or create form for the user
-        // For now, let's assume we need to get the form from the ministry user's form
-        const ministryForm = await this.formRepository.findOne({
-          where: { ministryUser: ministryUserId },
-        });
-
-        if (!ministryForm) {
-          throw new NotFoundException(`Form not found for ministry user ${ministryUserId}`);
-        }
-
         // Generate submission ID: SUB-{year}-{randomNum}
         const currentYear = new Date().getFullYear();
         const randomNum = Math.floor(Math.random() * 1000000);
@@ -1252,7 +1281,7 @@ export class MinistryFormCreateService {
         userSubmission = await this.ministrySubmissionRepository.save(userSubmission);
       }
 
-      // Update submission indicators:
+      // Step 4: Update the indicators received in array to assign them to nodal user
       // - Update submissionId to user's submission id
       // - Update assignedTo to userId
 
@@ -1274,8 +1303,9 @@ export class MinistryFormCreateService {
           submission: userSubmission,
           indicatorsCount: existingIndicators.length,
           updatedIndicators: foundIndicatorIds,
+          reassignedToMinistry: nodalUserIndicators.length,
         },
-        message: `Successfully reassigned ${existingIndicators.length} indicator(s) to user ${userId}`,
+        message: `Successfully reassigned ${nodalUserIndicators.length} indicator(s) back to ministry user and ${existingIndicators.length} indicator(s) to nodal user ${userId}`,
       };
     } catch (error) {
       if (error instanceof NotFoundException || error instanceof BadRequestException) {
