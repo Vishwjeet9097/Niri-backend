@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsArray,
   ValidateNested,
+  IsBoolean,
 } from "class-validator";
 import { Type } from "class-transformer";
 import {
@@ -217,4 +218,8 @@ export class SubmissionQueryDto {
   @IsOptional()
   @IsString()
   limit?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  includeDraftOnly?: boolean;
 }

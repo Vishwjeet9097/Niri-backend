@@ -756,57 +756,75 @@ export class SubmissionService {
           
           for (const category of categories) {
             const categoryData = formData[category];
-            if (!categoryData || typeof categoryData !== 'object') continue;
-            
-            this.logger.log(`📋 Processing category ${category} with sections: ${Object.keys(categoryData).join(', ')}`);
-            
-            for (const [sectionKey, sectionData] of Object.entries(categoryData)) {
-              if (!sectionKey.startsWith('section')) continue;
-              
+            if (!categoryData || typeof categoryData !== "object") continue;
+
+            this.logger.log(
+              `📋 Processing category ${category} with sections: ${Object.keys(categoryData).join(", ")}`
+            );
+
+            for (const [sectionKey, sectionData] of Object.entries(
+              categoryData
+            )) {
+              if (!sectionKey.startsWith("section")) continue;
+
               // Extract indicator code
               let indicatorCode: string;
-              if (sectionKey.startsWith('section')) {
+              if (sectionKey.startsWith("section")) {
                 const match = sectionKey.match(/section(\d+(_\d+)*)/);
                 if (match) {
-                  indicatorCode = match[1].replace(/_/g, '.');
+                  indicatorCode = match[1].replace(/_/g, ".");
                 } else {
-                  indicatorCode = sectionKey.replace('section', '').replace(/_/g, '.');
+                  indicatorCode = sectionKey
+                    .replace("section", "")
+                    .replace(/_/g, ".");
                 }
               } else {
-                indicatorCode = sectionKey.replace(/_/g, '.');
+                indicatorCode = sectionKey.replace(/_/g, ".");
               }
-              
+
               // Check if indicator has meaningful data or status before calculating score
-              const section = Array.isArray(sectionData) ? sectionData[0] : sectionData;
+              const section = Array.isArray(sectionData)
+                ? sectionData[0]
+                : sectionData;
               const indicatorStatus = section?.status || null;
-              
+
               // Skip empty indicators (no status and no meaningful data)
-              if (!indicatorStatus && !this.hasSectionData(sectionData, sectionKey, category)) {
-                this.logger.log(`⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`);
+              if (
+                !indicatorStatus &&
+                !this.hasSectionData(sectionData, sectionKey, category)
+              ) {
+                this.logger.log(
+                  `⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`
+                );
                 continue;
               }
-              
-              let updateReason = 'INDICATOR_UPDATED';
-              if (indicatorStatus === 'SUBMITTED_TO_STATE') {
-                updateReason = 'INDICATOR_SUBMITTED';
-              } else if (indicatorStatus === 'RESUBMITTED') {
-                updateReason = 'INDICATOR_RESUBMITTED';
-              } else if (indicatorStatus === 'REVERTED') {
-                updateReason = 'INDICATOR_REVERTED';
+
+              let updateReason = "INDICATOR_UPDATED";
+              if (indicatorStatus === "SUBMITTED_TO_STATE") {
+                updateReason = "INDICATOR_SUBMITTED";
+              } else if (indicatorStatus === "RESUBMITTED") {
+                updateReason = "INDICATOR_RESUBMITTED";
+              } else if (indicatorStatus === "REVERTED") {
+                updateReason = "INDICATOR_REVERTED";
+              } else if (indicatorStatus === "SAVE_AS_DRAFT") {
+                updateReason = "INDICATOR_SAVED_AS_DRAFT";
               }
-              
+
               try {
-                this.logger.log(`🧮 Calculating score for indicator ${indicatorCode}...`);
-                const calculatedScore = await this.scoringService.calculateIndicatorScore(
-                  savedSubmission.id,
-                  indicatorCode,
-                  category,
-                  formData,
-                  userId,
-                  updateReason,
-                  indicatorStatus
+                this.logger.log(
+                  `🧮 Calculating score for indicator ${indicatorCode}...`
                 );
-                
+                const calculatedScore =
+                  await this.scoringService.calculateIndicatorScore(
+                    savedSubmission.id,
+                    indicatorCode,
+                    category,
+                    formData,
+                    userId,
+                    updateReason,
+                    indicatorStatus
+                  );
+
                 this.logger.log(
                   `✅ Calculated and saved score for indicator ${indicatorCode}: ${calculatedScore.score}/${calculatedScore.maxScore}`
                 );
@@ -841,146 +859,229 @@ export class SubmissionService {
       throw error;
     }
   }
+/**
+ * Check if submission has at least one indicator with submitted status
+ * (not SAVE_AS_DRAFT). Returns false if all indicators are SAVE_AS_DRAFT.
+ */
+private hasSubmittedIndicators(formData: any): boolean {
+  if (!formData || typeof formData !== 'object') {
+    return false;
+  }
+  // Parse if it's a string
+  let parsedFormData = formData;
+  if (typeof formData === 'string') {
+    try {
+      parsedFormData = JSON.parse(formData);
+    } catch (e) {
+      this.logger.error('Failed to parse formData in hasSubmittedIndicators:', e);
+      return false;
+    }
+  }
+  
+  if (typeof parsedFormData !== 'object') {
+    return false;
+  }
 
-  async findAll(
-    queryDto: SubmissionQueryDto,
-    userRole: UserRole,
-    userStateUt: string,
-    userId: string
-  ): Promise<{ submissions: Submission[]; total: number }> {
-    const {
-      status,
-      stateUt,
-      submittedBy,
-      currentOwnerRole,
-      page = "1",
-      limit = "10",
-    } = queryDto;
+  const categories = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
+  const submittedStatuses = [
+    'SUBMITTED_TO_STATE',
+    'RESUBMITTED',
+    'ACCEPTED',
+    'APPROVED',
+    'REVERTED',
+    'SUBMITTED_TO_MOSPI_REVIEWER',
+    'SUBMITTED_TO_MOSPI_APPROVER',
+    'RETURNED_FROM_STATE',
+    'RETURNED_FROM_MOSPI',
+  ];
 
-    const query = this.submissionRepository
-      .createQueryBuilder("submission")
-      .leftJoinAndSelect("submission.user", "user")
-      .leftJoinAndSelect("submission.finalScore", "finalScore");
+  for (const category of categories) {
+    if (formData[category] && typeof formData[category] === 'object') {
+      const categoryData = formData[category];
+      const sectionKeys = Object.keys(categoryData);
 
-    // Apply role-based filtering
-    if (userRole === UserRole.NODAL_OFFICER) {
-      query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
-      query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
-    } else if (userRole === UserRole.STATE_APPROVER) {
-      // STATE_APPROVER can see all submissions from their state (all statuses including APPROVED)
-      // This includes: SUBMITTED_TO_STATE, SUBMITTED_TO_MOSPI_REVIEWER, SUBMITTED_TO_MOSPI_APPROVER, APPROVED, etc.
-      query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
-    } else if (userRole === UserRole.MOSPI_REVIEWER) {
-      // MoSPI Reviewer can only see submissions from their assigned state(s)
-      // Handle multiple states: userStateUt can be comma-separated like "Odisha, Maharashtra"
-      // Split by comma and check if submission's stateUt matches any of the assigned states
-      const assignedStates = userStateUt
-        ? userStateUt
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
-
-      this.logger.log(
-        `[MOSPI_REVIEWER] UserId: ${userId}, UserStateUt: ${userStateUt}, AssignedStates: ${JSON.stringify(assignedStates)}`
-      );
-
-      if (assignedStates.length > 0) {
-        // Use IN clause for multiple states, or exact match for single state
-        // Use case-insensitive comparison to handle state name variations
-        if (assignedStates.length === 1) {
-          query.andWhere(
-            "LOWER(TRIM(submission.stateUt)) = LOWER(TRIM(:stateUt))",
-            {
-              stateUt: assignedStates[0],
-            }
-          );
-        } else {
-          // For multiple states, use case-insensitive IN comparison
-          const lowerAssignedStates = assignedStates.map((s) =>
-            s.toLowerCase()
-          );
-          query.andWhere(
-            "LOWER(TRIM(submission.stateUt)) IN (:...assignedStates)",
-            { assignedStates: lowerAssignedStates }
-          );
+      for (const sectionKey of sectionKeys) {
+        const section = categoryData[sectionKey];
+        if (section && typeof section === 'object' && section.status) {
+          const status = String(section.status).toUpperCase();
+          
+          // If we find at least one indicator with a submitted status, return true
+          if (submittedStatuses.includes(status)) {
+            return true;
+          }
         }
       }
-      // If no status filter is provided, default to showing SUBMITTED_TO_MOSPI_REVIEWER, SUBMITTED_TO_MOSPI_APPROVER, and APPROVED
-      // This allows MOSPI_REVIEWER to see submissions they need to review, submissions they've forwarded to approver, and approved submissions
-      if (!status) {
-        query.andWhere("submission.status IN (:...defaultStatuses)", {
-          defaultStatuses: [
-            SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
-            SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
-            SubmissionStatus.APPROVED,
-          ],
-        });
-      }
-    } else if (userRole === UserRole.MOSPI_APPROVER) {
-      // MoSPI Approver can see submissions from all states
-      // No state filter - they see all submissions submitted to them
-      // If no status filter is provided, default to SUBMITTED_TO_MOSPI_APPROVER and APPROVED
-      if (!status) {
-        query.andWhere("submission.status IN (:...defaultStatuses)", {
-          defaultStatuses: [
-            SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
-            SubmissionStatus.APPROVED,
-          ],
-        });
-      }
     }
-    // Only ADMIN can see all submissions
+  }
 
-    // Apply filters
-    if (status) {
-      // Handle comma-separated status values
-      const statusArray = status.split(",").map((s) => s.trim());
-      if (statusArray.length === 1) {
-        query.andWhere("submission.status = :status", {
-          status: statusArray[0],
-        });
+  // If we reach here, either no indicators exist or all are SAVE_AS_DRAFT
+  return false;
+}
+
+
+async findAll(
+  queryDto: SubmissionQueryDto,
+  userRole: UserRole,
+  userStateUt: string,
+  userId: string
+): Promise<{ submissions: Submission[]; total: number }> {
+  const {
+    status,
+    stateUt,
+    submittedBy,
+    currentOwnerRole,
+    page = "1",
+    limit = "10",
+    includeDraftOnly = false, // NEW: Add this parameter
+  } = queryDto;
+
+  const query = this.submissionRepository
+    .createQueryBuilder("submission")
+    .leftJoinAndSelect("submission.user", "user")
+    .leftJoinAndSelect("submission.finalScore", "finalScore");
+
+  // Apply role-based filtering
+  if (userRole === UserRole.NODAL_OFFICER) {
+    query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
+    query.andWhere("submission.submittedBy = :userId", { userId }); // Only own submissions
+  } else if (userRole === UserRole.STATE_APPROVER) {
+    // STATE_APPROVER can see all submissions from their state (all statuses including APPROVED)
+    // This includes: SUBMITTED_TO_STATE, SUBMITTED_TO_MOSPI_REVIEWER, SUBMITTED_TO_MOSPI_APPROVER, APPROVED, etc.
+    query.andWhere("submission.stateUt = :stateUt", { stateUt: userStateUt });
+  } else if (userRole === UserRole.MOSPI_REVIEWER) {
+    // MoSPI Reviewer can only see submissions from their assigned state(s)
+    // Handle multiple states: userStateUt can be comma-separated like "Odisha, Maharashtra"
+    // Split by comma and check if submission's stateUt matches any of the assigned states
+    const assignedStates = userStateUt
+      ? userStateUt
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+    this.logger.log(
+      `[MOSPI_REVIEWER] UserId: ${userId}, UserStateUt: ${userStateUt}, AssignedStates: ${JSON.stringify(assignedStates)}`
+    );
+
+    if (assignedStates.length > 0) {
+      // Use IN clause for multiple states, or exact match for single state
+      // Use case-insensitive comparison to handle state name variations
+      if (assignedStates.length === 1) {
+        query.andWhere(
+          "LOWER(TRIM(submission.stateUt)) = LOWER(TRIM(:stateUt))",
+          {
+            stateUt: assignedStates[0],
+          }
+        );
       } else {
-        query.andWhere("submission.status IN (:...statuses)", {
-          statuses: statusArray,
-        });
-      }
-    }
-    if (stateUt) {
-      // Only ADMIN can filter by any state
-      if (userRole !== UserRole.ADMIN) {
-        throw new ForbiddenException(
-          "Access denied - can only filter by your own state"
+        // For multiple states, use case-insensitive IN comparison
+        const lowerAssignedStates = assignedStates.map((s) =>
+          s.toLowerCase()
+        );
+        query.andWhere(
+          "LOWER(TRIM(submission.stateUt)) IN (:...assignedStates)",
+          { assignedStates: lowerAssignedStates }
         );
       }
-      query.andWhere("submission.stateUt = :stateUt", { stateUt });
     }
-    if (currentOwnerRole) {
-      query.andWhere("submission.currentOwnerRole = :currentOwnerRole", {
-        currentOwnerRole,
+    // If no status filter is provided, default to showing SUBMITTED_TO_MOSPI_REVIEWER, SUBMITTED_TO_MOSPI_APPROVER, and APPROVED
+    // This allows MOSPI_REVIEWER to see submissions they need to review, submissions they've forwarded to approver, and approved submissions
+    if (!status) {
+      query.andWhere("submission.status IN (:...defaultStatuses)", {
+        defaultStatuses: [
+          SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+          SubmissionStatus.APPROVED,
+        ],
       });
     }
-
-    // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    query.skip(skip).take(parseInt(limit));
-
-    // Order by creation date
-    query.orderBy("submission.createdAt", "DESC");
-
-    const [submissions, total] = await query.getManyAndCount();
-
-    // Update indicatorComment for each submission
-    for (const submission of submissions) {
-      if (submission.reviewComments && submission.reviewComments.length > 0) {
-        submission.indicatorComment = this.groupCommentsByIndicator(
-          submission.reviewComments
-        );
-      }
+  } else if (userRole === UserRole.MOSPI_APPROVER) {
+    // MoSPI Approver can see submissions from all states
+    // No state filter - they see all submissions submitted to them
+    // If no status filter is provided, default to SUBMITTED_TO_MOSPI_APPROVER and APPROVED
+    if (!status) {
+      query.andWhere("submission.status IN (:...defaultStatuses)", {
+        defaultStatuses: [
+          SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+          SubmissionStatus.APPROVED,
+        ],
+      });
     }
-
-    return { submissions, total };
   }
+  // Only ADMIN can see all submissions
+
+  // Apply filters
+  if (status) {
+    // Handle comma-separated status values
+    const statusArray = status.split(",").map((s) => s.trim());
+    if (statusArray.length === 1) {
+      query.andWhere("submission.status = :status", {
+        status: statusArray[0],
+      });
+    } else {
+      query.andWhere("submission.status IN (:...statuses)", {
+        statuses: statusArray,
+      });
+    }
+  }
+  if (stateUt) {
+    // Only ADMIN can filter by any state
+    if (userRole !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        "Access denied - can only filter by your own state"
+      );
+    }
+    query.andWhere("submission.stateUt = :stateUt", { stateUt });
+  }
+  if (currentOwnerRole) {
+    query.andWhere("submission.currentOwnerRole = :currentOwnerRole", {
+      currentOwnerRole,
+    });
+  }
+
+  // Pagination
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  query.skip(skip).take(parseInt(limit));
+
+  // Order by creation date
+  query.orderBy("submission.createdAt", "DESC");
+
+  const [submissions, total] = await query.getManyAndCount();
+
+  // Update indicatorComment for each submission
+  for (const submission of submissions) {
+    if (submission.reviewComments && submission.reviewComments.length > 0) {
+      submission.indicatorComment = this.groupCommentsByIndicator(
+        submission.reviewComments
+      );
+    }
+  }
+
+  
+
+  
+    // Filter out submissions where all indicators are SAVE_AS_DRAFT
+    // BUT: Skip this filtering if includeDraftOnly is true (when looking for submission to update)
+    const filteredSubmissions = includeDraftOnly 
+      ? submissions // Don't filter when looking for submission to update
+      : submissions.filter((submission) => {
+          if (!submission.formData) {
+            return true;
+          }
+          const hasSubmitted = this.hasSubmittedIndicators(submission.formData);
+          if (!hasSubmitted) {
+            this.logger.log(
+              `[findAll] Excluding submission ${submission.id} - all indicators are SAVE_AS_DRAFT`
+            );
+          }
+          return hasSubmitted;
+        });
+
+    return { 
+      submissions: filteredSubmissions, 
+      total: includeDraftOnly ? total : filteredSubmissions.length 
+    };
+}
 
   async findOne(
     id: string,
@@ -1022,9 +1123,10 @@ export class SubmissionService {
       );
 
       // Step 1.5: Load indicator scores for this submission
-      const indicatorScores = await this.scoringService.getSubmissionIndicatorScores(id);
+      const indicatorScores =
+        await this.scoringService.getSubmissionIndicatorScores(id);
       if (indicatorScores.length > 0) {
-        (submission as any).indicatorScores = indicatorScores.map(score => ({
+        (submission as any).indicatorScores = indicatorScores.map((score) => ({
           indicatorCode: score.indicatorCode,
           score: parseFloat(score.score.toString()),
           maxScore: parseFloat(score.maxScore.toString()),
@@ -1084,6 +1186,10 @@ export class SubmissionService {
         );
       }
 
+      // NOTE: We do NOT filter out SAVE_AS_DRAFT indicators in findOne
+      // This allows users to see draft indicators with their status badges when editing
+      // SAVE_AS_DRAFT indicators are only filtered in findAll (list endpoint)
+
       // normalizedFormData removed - not needed in response
 
       this.logger.log(`Access granted for user role: ${userRole}`);
@@ -1097,7 +1203,6 @@ export class SubmissionService {
       throw error;
     }
   }
-
   // Build a flattened indicator-code keyed object from nested category.section structure
   private buildNormalizedFormData(raw: Record<string, any>): {
     byIndicatorCode: Record<string, any>;
@@ -1385,91 +1490,124 @@ export class SubmissionService {
       // Step 5.5: Calculate indicator scores for updated indicators
       this.logger.log(`🔍 Step 5.5: Checking if scoring is needed...`);
       this.logger.log(`updateData.formData exists: ${!!updateData.formData}`);
-      this.logger.log(`updatedSubmission.formData exists: ${!!updatedSubmission.formData}`);
-      
+      this.logger.log(
+        `updatedSubmission.formData exists: ${!!updatedSubmission.formData}`
+      );
+
       if (updateData.formData && updatedSubmission.formData) {
         try {
           const updatedFormData = updatedSubmission.formData;
           const incomingFormData = updateSubmissionDto.formData || {};
-          
+
           this.logger.log(`📊 Calculating scores for updated indicators...`);
-          this.logger.log(`Incoming formData categories: ${Object.keys(incomingFormData).join(', ')}`);
-          this.logger.log(`Updated formData categories: ${Object.keys(updatedFormData).join(', ')}`);
-          
+          this.logger.log(
+            `Incoming formData categories: ${Object.keys(incomingFormData).join(", ")}`
+          );
+          this.logger.log(
+            `Updated formData categories: ${Object.keys(updatedFormData).join(", ")}`
+          );
+
           // Iterate through all categories and sections to calculate scores
-          const categories = ['infraFinancing', 'infraDevelopment', 'pppDevelopment', 'infraEnablers'];
-          
+          const categories = [
+            "infraFinancing",
+            "infraDevelopment",
+            "pppDevelopment",
+            "infraEnablers",
+          ];
+
           for (const category of categories) {
             // Check both incoming and updated formData to find indicators that were updated
             const incomingCategoryData = incomingFormData[category];
             const updatedCategoryData = updatedFormData[category];
-            
+
             // Use incoming data if available (what was actually updated), otherwise use updated data
             const categoryData = incomingCategoryData || updatedCategoryData;
-            
-            if (!categoryData || typeof categoryData !== 'object') {
+
+            if (!categoryData || typeof categoryData !== "object") {
               this.logger.log(`⏭️ Skipping category ${category} - no data`);
               continue;
             }
-            
-            this.logger.log(`📋 Processing category ${category} with sections: ${Object.keys(categoryData).join(', ')}`);
-            
+
+            this.logger.log(
+              `📋 Processing category ${category} with sections: ${Object.keys(categoryData).join(", ")}`
+            );
+
             // Find all sections that were updated
-            for (const [sectionKey, sectionData] of Object.entries(categoryData)) {
-              if (!sectionKey.startsWith('section')) {
+            for (const [sectionKey, sectionData] of Object.entries(
+              categoryData
+            )) {
+              if (!sectionKey.startsWith("section")) {
                 this.logger.log(`⏭️ Skipping ${sectionKey} - not a section`);
                 continue;
               }
-              
+
               // Extract indicator code from section key (e.g., "section1_1" -> "1.1")
               let indicatorCode: string;
-              if (sectionKey.startsWith('section')) {
+              if (sectionKey.startsWith("section")) {
                 const match = sectionKey.match(/section(\d+(_\d+)*)/);
                 if (match) {
-                  indicatorCode = match[1].replace(/_/g, '.');
+                  indicatorCode = match[1].replace(/_/g, ".");
                 } else {
-                  indicatorCode = sectionKey.replace('section', '').replace(/_/g, '.');
+                  indicatorCode = sectionKey
+                    .replace("section", "")
+                    .replace(/_/g, ".");
                 }
               } else {
-                indicatorCode = sectionKey.replace(/_/g, '.');
+                indicatorCode = sectionKey.replace(/_/g, ".");
               }
-              
-              this.logger.log(`🎯 Processing indicator ${indicatorCode} (section: ${sectionKey})`);
-              
+
+              this.logger.log(
+                `🎯 Processing indicator ${indicatorCode} (section: ${sectionKey})`
+              );
+
               // Determine update reason based on status
-              const section = Array.isArray(sectionData) ? sectionData[0] : sectionData;
+              const section = Array.isArray(sectionData)
+                ? sectionData[0]
+                : sectionData;
               const indicatorStatus = section?.status || null;
-              
+
               // Skip empty indicators (no status and no meaningful data)
-              if (!indicatorStatus && !this.hasSectionData(sectionData, sectionKey, category)) {
-                this.logger.log(`⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`);
+              if (
+                !indicatorStatus &&
+                !this.hasSectionData(sectionData, sectionKey, category)
+              ) {
+                this.logger.log(
+                  `⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`
+                );
                 continue;
               }
-              
-              let updateReason = 'INDICATOR_UPDATED';
-              if (indicatorStatus === 'SUBMITTED_TO_STATE') {
-                updateReason = 'INDICATOR_SUBMITTED';
-              } else if (indicatorStatus === 'RESUBMITTED') {
-                updateReason = 'INDICATOR_RESUBMITTED';
-              } else if (indicatorStatus === 'REVERTED') {
-                updateReason = 'INDICATOR_REVERTED';
+
+              let updateReason = "INDICATOR_UPDATED";
+              if (indicatorStatus === "SUBMITTED_TO_STATE") {
+                updateReason = "INDICATOR_SUBMITTED";
+              } else if (indicatorStatus === "RESUBMITTED") {
+                updateReason = "INDICATOR_RESUBMITTED";
+              } else if (indicatorStatus === "REVERTED") {
+                updateReason = "INDICATOR_REVERTED";
+              } else if (indicatorStatus === "SAVE_AS_DRAFT") {
+                updateReason = "INDICATOR_SAVED_AS_DRAFT";
               }
-              
-              this.logger.log(`📝 Indicator ${indicatorCode} status: ${indicatorStatus}, reason: ${updateReason}`);
-              
+
+              this.logger.log(
+                `📝 Indicator ${indicatorCode} status: ${indicatorStatus}, reason: ${updateReason}`
+              );
+
               // Calculate and save indicator score
               try {
-                this.logger.log(`🧮 Calling calculateIndicatorScore for ${indicatorCode}...`);
-                const calculatedScore = await this.scoringService.calculateIndicatorScore(
-                  id,
-                  indicatorCode,
-                  category,
-                  updatedFormData,
-                  userId,
-                  updateReason,
-                  indicatorStatus
+                this.logger.log(
+                  `🧮 Calling calculateIndicatorScore for ${indicatorCode}...`
                 );
-                
+                const calculatedScore =
+                  await this.scoringService.calculateIndicatorScore(
+                    id,
+                    indicatorCode,
+                    category,
+                    updatedFormData,
+                    userId,
+                    updateReason,
+                    indicatorStatus
+                  );
+
                 this.logger.log(
                   `✅ Calculated and saved score for indicator ${indicatorCode} in submission ${id}: ${calculatedScore.score}/${calculatedScore.maxScore}`
                 );
@@ -1490,7 +1628,9 @@ export class SubmissionService {
           this.logger.error(`Error stack: ${scoringError.stack}`);
         }
       } else {
-        this.logger.warn(`⚠️ Skipping score calculation - formData not found in updateData or updatedSubmission`);
+        this.logger.warn(
+          `⚠️ Skipping score calculation - formData not found in updateData or updatedSubmission`
+        );
       }
 
       // NEW: Sync STATE_APPROVER's submission when NODAL_OFFICER resubmits an indicator
@@ -4510,7 +4650,9 @@ export class SubmissionService {
       sectionKey = `section${rawSection.replace(/\./g, "_")}`; // convert dotted code (e.g., "2.3" -> "section2_3")
     } else {
       // Fallback: assume it's already a section key or sanitize
-      sectionKey = rawSection.startsWith('section') ? rawSection : `section_${rawSection.replace(/[^a-zA-Z0-9]+/g, "_")}`;
+      sectionKey = rawSection.startsWith("section")
+        ? rawSection
+        : `section_${rawSection.replace(/[^a-zA-Z0-9]+/g, "_")}`;
     }
     this.logger.log(
       `🔎 Normalizing section='${rawSection}' -> sectionKey='${sectionKey}' (category='${category}')`
@@ -4551,43 +4693,47 @@ export class SubmissionService {
       // Extract indicator code from section key (e.g., "section1_1" -> "1.1")
       // sectionKey is already normalized (e.g., "section1_1", "section2_3", etc.)
       let indicatorCode: string;
-      if (sectionKey.startsWith('section')) {
+      if (sectionKey.startsWith("section")) {
         // Extract number pattern and convert underscores to dots
         const match = sectionKey.match(/section(\d+(_\d+)*)/);
         if (match) {
-          indicatorCode = match[1].replace(/_/g, '.');
+          indicatorCode = match[1].replace(/_/g, ".");
         } else {
           // Fallback: try to extract from sectionKey
-          indicatorCode = sectionKey.replace('section', '').replace(/_/g, '.');
+          indicatorCode = sectionKey.replace("section", "").replace(/_/g, ".");
         }
       } else {
         // If section is already in code format (e.g., "1.1")
-        indicatorCode = sectionKey.replace(/_/g, '.');
+        indicatorCode = sectionKey.replace(/_/g, ".");
       }
-      
+
       // Determine update reason based on status
       const targetSection = newFormData[category]?.[sectionKey];
       const indicatorStatus = targetSection?.status || null;
-      
+
       // Always calculate score if indicator has status OR has data
       // This ensures scores are updated whenever an indicator is modified
       const hasData = this.hasSectionData(targetSection, sectionKey, category);
       const shouldCalculateScore = indicatorStatus || hasData;
-      
+
       if (!shouldCalculateScore) {
-        this.logger.log(`⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`);
+        this.logger.log(
+          `⏭️ Skipping indicator ${indicatorCode} - no status and no meaningful data`
+        );
       } else {
-        let updateReason = 'INDICATOR_UPDATED';
-        if (indicatorStatus === 'SUBMITTED_TO_STATE') {
-          updateReason = 'INDICATOR_SUBMITTED';
-        } else if (indicatorStatus === 'RESUBMITTED') {
-          updateReason = 'INDICATOR_RESUBMITTED';
-        } else if (indicatorStatus === 'REVERTED') {
-          updateReason = 'INDICATOR_REVERTED';
+        let updateReason = "INDICATOR_UPDATED";
+        if (indicatorStatus === "SUBMITTED_TO_STATE") {
+          updateReason = "INDICATOR_SUBMITTED";
+        } else if (indicatorStatus === "RESUBMITTED") {
+          updateReason = "INDICATOR_RESUBMITTED";
+        } else if (indicatorStatus === "REVERTED") {
+          updateReason = "INDICATOR_REVERTED";
+        } else if (indicatorStatus === "SAVE_AS_DRAFT") {
+          updateReason = "INDICATOR_SAVED_AS_DRAFT";
         }
 
         this.logger.log(
-          `🧮 Calculating score for indicator ${indicatorCode} (status: ${indicatorStatus || 'none'}, hasData: ${hasData}, reason: ${updateReason})`
+          `🧮 Calculating score for indicator ${indicatorCode} (status: ${indicatorStatus || "none"}, hasData: ${hasData}, reason: ${updateReason})`
         );
 
         // Calculate and save indicator score with history tracking
@@ -4600,7 +4746,7 @@ export class SubmissionService {
           updateReason,
           indicatorStatus
         );
-        
+
         this.logger.log(
           `✅ Calculated and saved score (with history) for indicator ${indicatorCode} in submission ${submissionId}: ${calculatedScore.score}/${calculatedScore.maxScore}`
         );
