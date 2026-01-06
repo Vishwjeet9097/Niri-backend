@@ -8,6 +8,7 @@ import { IndicatorDetail } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField } from '../entities/input-field.entity';
 import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
+import { Form } from '../entities/form.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { MinistrySubmissionData } from '../entities/ministry-submission-data.ent
       IndicatorSubsection,
       InputField,
       MinistrySubmissionData,
+      Form,
     ]),
   ],
   controllers: [MinistryFormSubmissionController],

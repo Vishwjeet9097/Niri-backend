@@ -21,6 +21,7 @@ export enum UIComponent {
   FILE = "File",
   CHECKBOXES = "Checkbox",
   TEXT_AREA = "Text Area",
+  RADIO_BUTTON = "Radio Button",
 }
 
 @Entity("ministry_input_fields")

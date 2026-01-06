@@ -14,6 +14,11 @@ export class MinistryDashboardController {
     private readonly ministryDashboardService: MinistryDashboardService,
   ) {}
 
+  @Get('progress/:ministryUserId')
+  async getProgressBarData(@Param('ministryUserId') ministryUserId: string) {
+    return this.ministryDashboardService.getProgressBarData(ministryUserId);
+  }
+
   @Get(':userId')
   async getDashboardData(@Param('userId') userId: string) {
     return this.ministryDashboardService.getDashboardData(userId);

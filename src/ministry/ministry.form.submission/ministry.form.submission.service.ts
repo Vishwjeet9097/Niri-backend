@@ -7,7 +7,10 @@ import { IndicatorDetail } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField, DataType } from '../entities/input-field.entity';
 import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
+import { Form, FormStatus } from '../entities/form.entity';
 import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
+import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indicator-status.dto';
+import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 
 @Injectable()
 export class MinistryFormSubmissionService {
@@ -24,6 +27,8 @@ export class MinistryFormSubmissionService {
     private readonly inputFieldRepository: Repository<InputField>,
     @InjectRepository(MinistrySubmissionData)
     private readonly ministrySubmissionDataRepository: Repository<MinistrySubmissionData>,
+    @InjectRepository(Form)
+    private readonly formRepository: Repository<Form>,
   ) {}
 
   /**
@@ -227,5 +232,160 @@ export class MinistryFormSubmissionService {
     }
 
     return submissionData;
+  }
+
+  /**
+   * Update submission indicator status
+   */
+  async updateSubmissionIndicatorStatus(
+    dto: UpdateSubmissionIndicatorStatusDto,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: any;
+  }> {
+    try {
+      // Check if submission indicator exists
+      const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+        where: { id: dto.submissionIndicatorId },
+      });
+
+      if (!submissionIndicator) {
+        throw new NotFoundException(
+          `Submission indicator with id ${dto.submissionIndicatorId} not found`,
+        );
+      }
+
+      // Update the status
+      await this.ministrySubmissionIndicatorRepository.update(
+        { id: dto.submissionIndicatorId },
+        { status: dto.status },
+      );
+
+      return {
+        status: true,
+        message: 'Submission indicator status updated successfully',
+        data: {
+          submissionIndicatorId: dto.submissionIndicatorId,
+          newStatus: dto.status,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to update submission indicator status: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Update form status based on user role
+   */
+  async updateFormStatus(
+    dto: UpdateFormStatusDto,
+    userId: string,
+    userRole: string,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: any;
+  }> {
+    try {
+      let form: Form | null = null;
+      let formId: string;
+
+      // Role-based form finding logic
+      if (userRole === 'MINISTRY_APPROVER') {
+        // For Ministry Approver: Find form associated with user (ministry_user = userId)
+        if (dto.formId) {
+          form = await this.formRepository.findOne({
+            where: {
+              id: dto.formId,
+              ministryUser: userId,
+            },
+          });
+        } else {
+          // If formId not provided, find any form for this ministry user
+          form = await this.formRepository.findOne({
+            where: {
+              ministryUser: userId,
+            },
+          });
+        }
+
+        if (!form) {
+          throw new NotFoundException(
+            `Form not found for ministry user ${userId}`,
+          );
+        }
+        formId = form.id;
+      } else if (userRole === 'MOSPI_REVIEWER') {
+        // For Mospi Reviewer: Find form with reviewer = userId
+        if (dto.formId) {
+          form = await this.formRepository.findOne({
+            where: {
+              id: dto.formId,
+              reviewer: userId,
+            },
+          });
+        } else {
+          // If formId not provided, find any form for this reviewer
+          form = await this.formRepository.findOne({
+            where: {
+              reviewer: userId,
+            },
+          });
+        }
+
+        if (!form) {
+          throw new NotFoundException(
+            `Form not found for reviewer ${userId}`,
+          );
+        }
+        formId = form.id;
+      } else if (userRole === 'MOSPI_APPROVER') {
+        // For Mospi Approver: Update status based on formId
+        if (!dto.formId) {
+          throw new BadRequestException('Form ID is required for MOSPI_APPROVER');
+        }
+
+        form = await this.formRepository.findOne({
+          where: { id: dto.formId },
+        });
+
+        if (!form) {
+          throw new NotFoundException(`Form with id ${dto.formId} not found`);
+        }
+        formId = dto.formId;
+      } else {
+        throw new BadRequestException(
+          `Form status update not allowed for role: ${userRole}`,
+        );
+      }
+
+      // Update the status
+      await this.formRepository.update(
+        { id: formId },
+        { status: dto.status },
+      );
+
+      return {
+        status: true,
+        message: 'Form status updated successfully',
+        data: {
+          formId: formId,
+          newStatus: dto.status,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to update form status: ${error.message}`,
+      );
+    }
   }
 }

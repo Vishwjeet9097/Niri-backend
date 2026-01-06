@@ -126,12 +126,20 @@ export class MinistryDashboardService {
       },
     });
 
+    // Total Submitted: assigned_to = userId and status is not null
+    const total_submitted = await this.ministrySubmissionIndicatorRepository
+      .createQueryBuilder('indicator')
+      .where('indicator.assignedTo = :userId', { userId })
+      .andWhere('indicator.status IS NOT NULL')
+      .getCount();
+
     return {
       totalAllocated,
       pending,
       underReview,
       approved,
       sentBack,
+      total_submitted,
     };
   }
 
@@ -140,17 +148,45 @@ export class MinistryDashboardService {
    * Get data from submission indicator where ministry_user = user id
    */
   private async getMinistryApproverDashboard(userId: string): Promise<any> {
-    // Accepted from nodal: user id != user id (state user id != ministry user id) and status is ACCEPTED_BY_STATE
-    // This means indicators where ministry_user = userId but the state user (assigned_to) is different and status is ACCEPTED_BY_STATE
-    const acceptedFromNodal = await this.ministrySubmissionIndicatorRepository
+    // Total indicators: where ministry_user = userId
+    const total_indicators = await this.ministrySubmissionIndicatorRepository.count({
+      where: {
+        ministryUser: userId,
+      },
+    });
+
+    // Total indicator submitted: status is not null and not DRAFT
+    const total_indicator_submitted = await this.ministrySubmissionIndicatorRepository
+      .createQueryBuilder('indicator')
+      .where('indicator.ministryUser = :userId', { userId })
+      .andWhere('indicator.status IS NOT NULL')
+      .andWhere('indicator.status != :draftStatus', { draftStatus: SubmissionIndicatorStatus.DRAFT })
+      .getCount();
+
+    // Total assigned to ministry approver: ministry_user = userId
+    const total_assigned_ministry_approver = await this.ministrySubmissionIndicatorRepository.count({
+      where: {
+        ministryUser: userId,
+      },
+    });
+
+    // Total indicator nodal ministry: assigned_to != userId and ministry_user = userId (indicators from nodal for this ministry)
+    const total_indicator_nodal_ministry = await this.ministrySubmissionIndicatorRepository
       .createQueryBuilder('indicator')
       .where('indicator.ministryUser = :userId', { userId })
       .andWhere('indicator.assignedTo != :userId', { userId })
-      .andWhere('indicator.status = :status', { status: SubmissionIndicatorStatus.ACCEPTED_BY_STATE })
       .getCount();
 
-    // Pending Submission: Not assigned to any user (assigned_to is null) and status is DRAFT
-    const pendingSubmission = await this.ministrySubmissionIndicatorRepository
+    // Total accepted: status is ACCEPTED_BY_STATE or ACCEPTED_BY_MOSPI
+    const total_accepted = await this.ministrySubmissionIndicatorRepository.count({
+      where: {
+        ministryUser: userId,
+        status: In([SubmissionIndicatorStatus.ACCEPTED_BY_STATE, SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI]),
+      },
+    });
+
+    // Total pending submission: status is null or DRAFT
+    const total_pending_submission = await this.ministrySubmissionIndicatorRepository
       .createQueryBuilder('indicator')
       .where('indicator.ministryUser = :userId', { userId })
       .andWhere('(indicator.status IS NULL OR indicator.status = :draftStatus)', {
@@ -158,20 +194,20 @@ export class MinistryDashboardService {
       })
       .getCount();
 
-    // Returned to Nodal: user id is not of state (assigned_to != userId) and status is RETURNED_FROM_STATE
-    const returnedToNodal = await this.ministrySubmissionIndicatorRepository
-      .createQueryBuilder('indicator')
-      .where('indicator.ministryUser = :userId', { userId })
-      .andWhere('indicator.assignedTo != :userId', { userId })
-      .andWhere('indicator.status = :status', { status: SubmissionIndicatorStatus.RETURNED_FROM_STATE })
-      .getCount();
+    // Total return nodal: status is RETURNED_FROM_STATE
+    const total_return_nodal = await this.ministrySubmissionIndicatorRepository.count({
+      where: {
+        ministryUser: userId,
+        status: SubmissionIndicatorStatus.RETURNED_FROM_STATE,
+      },
+    });
 
-    // Submitted to mospi: submission_form has ministry_user = user id and status is SUBMITTED_TO_MOSPI
+    // Submitted to mospi: submission_form has ministry_user = user id and status is SUBMITTED_TO_MOSPI_REVIEWER or SUBMITTED_TO_MOSPI_APPROVER
     // Then all indicators from submission_indicator which have ministry_user = user id
     const formsSubmittedToMospi = await this.formRepository.find({
       where: {
         ministryUser: userId,
-        status: FormStatus.SUBMITTED_TO_MOSPI,
+        status: In([FormStatus.SUBMITTED_TO_MOSPI_REVIEWER, FormStatus.SUBMITTED_TO_MOSPI_APPROVER]),
       },
     });
 
@@ -216,21 +252,17 @@ export class MinistryDashboardService {
       },
     });
 
-    // TOTAL: ministry_user = user id
-    const total = await this.ministrySubmissionIndicatorRepository.count({
-      where: {
-        ministryUser: userId,
-      },
-    });
-
     return {
-      acceptedFromNodal,
-      pendingSubmission,
-      returnedToNodal,
+      total_indicators,
+      total_indicator_submitted,
+      total_assigned_ministry_approver,
+      total_indicator_nodal_ministry,
+      total_accepted,
+      total_pending_submission,
+      total_return_nodal,
       submittedToMospi,
       approvedByMospi,
       returnedFromMospi,
-      total,
     };
   }
 
@@ -312,6 +344,49 @@ export class MinistryDashboardService {
       returnedToState,
       total,
     };
+  }
+
+  /**
+   * Get progress bar data for ministry user
+   * Returns accepted count and total count
+   */
+  async getProgressBarData(ministryUserId: string): Promise<{
+    status: boolean;
+    data: {
+      accepted: number;
+      total: number;
+    };
+    message: string;
+  }> {
+    try {
+      // Accepted: status ACCEPTED_BY_STATE where ministry_user = userId
+      const accepted = await this.ministrySubmissionIndicatorRepository.count({
+        where: {
+          ministryUser: ministryUserId,
+          status: SubmissionIndicatorStatus.ACCEPTED_BY_STATE,
+        },
+      });
+
+      // Total: where ministry_user = userId
+      const total = await this.ministrySubmissionIndicatorRepository.count({
+        where: {
+          ministryUser: ministryUserId,
+        },
+      });
+
+      return {
+        status: true,
+        data: {
+          accepted,
+          total,
+        },
+        message: 'Progress bar data retrieved successfully',
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve progress bar data',
+      );
+    }
   }
 }
 
