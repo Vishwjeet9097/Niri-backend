@@ -902,12 +902,22 @@ private hasSubmittedIndicators(formData: any): boolean {
 
       for (const sectionKey of sectionKeys) {
         const section = categoryData[sectionKey];
-        if (section && typeof section === 'object' && section.status) {
-          const status = String(section.status).toUpperCase();
+        if (section && typeof section === 'object') {
+          // Check section.status
+          if (section.status) {
+            const status = String(section.status).toUpperCase();
+            if (submittedStatuses.includes(status)) {
+              return true;
+            }
+          }
           
-          // If we find at least one indicator with a submitted status, return true
-          if (submittedStatuses.includes(status)) {
-            return true;
+          // ALSO check mospi_status (for approved indicators)
+          if (section.mospi_status) {
+            const mospiStatus = String(section.mospi_status).toUpperCase();
+            // Only count ACCEPTED mospi_status as submitted (not REVERTED)
+            if (mospiStatus === 'ACCEPTED') {
+              return true;
+            }
           }
         }
       }
