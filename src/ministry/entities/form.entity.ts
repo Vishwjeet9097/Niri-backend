@@ -6,6 +6,13 @@ import {
   Column,
 } from "typeorm";
 
+export enum FormStatus {
+  DRAFT = "DRAFT",
+  SUBMITTED_TO_MOSPI = "SUBMITTED_TO_MOSPI",
+  RETURNED_FROM_MOSPI = "RETURNED_FROM_MOSPI",
+  ACCEPTED_BY_MOSPI = "ACCEPTED_BY_MOSPI",
+}
+
 @Entity("ministry_form")
 export class Form {
   @PrimaryGeneratedColumn("uuid")
@@ -22,6 +29,15 @@ export class Form {
 
   @Column({ name: "ministry_user", type: "varchar", length: 255, nullable: true })
   ministryUser: string;
+
+  @Column({
+    name: "status",
+    type: "enum",
+    enum: FormStatus,
+    // default: FormStatus.DRAFT,
+    nullable: true,
+  })
+  status: FormStatus | null;
   
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;

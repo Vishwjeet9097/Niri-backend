@@ -23,6 +23,7 @@ import { UlbModule } from "./modules/ulb/ulb.module";
 import { MinistryFormCreateModule } from './ministry/ministry.form.create/ministry.form.create.module';
 import { MinistryFormRetrieveModule } from './ministry/ministry.form.retrieve/ministry.form.retrieve.module';
 import { MinistryFormSubmissionModule } from './ministry/ministry.form.submission/ministry.form.submission.module';
+import { MinistryDashboardModule } from './ministry/ministry.dashboard/ministry.dashboard.module';
 import { MinistryModule } from "./modules/ministry/ministry.module";
 
 @Module({
@@ -54,6 +55,7 @@ import { MinistryModule } from "./modules/ministry/ministry.module";
     MinistryFormCreateModule,
     MinistryFormRetrieveModule,
     MinistryFormSubmissionModule,
+    MinistryDashboardModule,
     MinistryModule
   ],
   controllers: [AppController],
