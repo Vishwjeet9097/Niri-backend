@@ -135,11 +135,11 @@ export class MinistryDashboardService {
 
     return {
       totalAllocated,
+      totalSubmitted: total_submitted,
       pending,
       underReview,
       approved,
       sentBack,
-      total_submitted,
     };
   }
 
@@ -163,10 +163,10 @@ export class MinistryDashboardService {
       .andWhere('indicator.status != :draftStatus', { draftStatus: SubmissionIndicatorStatus.DRAFT })
       .getCount();
 
-    // Total assigned to ministry approver: ministry_user = userId
+    // Total assigned to ministry approver: assigned_to = userId
     const total_assigned_ministry_approver = await this.ministrySubmissionIndicatorRepository.count({
       where: {
-        ministryUser: userId,
+        assignedTo: userId,
       },
     });
 
@@ -253,13 +253,13 @@ export class MinistryDashboardService {
     });
 
     return {
-      total_indicators,
-      total_indicator_submitted,
-      total_assigned_ministry_approver,
-      total_indicator_nodal_ministry,
-      total_accepted,
-      total_pending_submission,
-      total_return_nodal,
+      totalIndicators: total_indicators,
+      totalIndicatorSubmitted: total_indicator_submitted,
+      totalAssignedMinistryApprover: total_assigned_ministry_approver,
+      totalIndicatorNodalMinistry: total_indicator_nodal_ministry,
+      totalAccepted: total_accepted,
+      totalPendingSubmission: total_pending_submission,
+      totalReturnNodal: total_return_nodal,
       submittedToMospi,
       approvedByMospi,
       returnedFromMospi,
@@ -280,12 +280,17 @@ export class MinistryDashboardService {
 
     if (forms.length === 0) {
       return {
+        fullSubmission: 0,
         accepted: 0,
         underReview: 0,
-        returnedToState: 0,
         total: 0,
       };
     }
+
+    // Full Submission: total assigned forms (reviewer = userId) and status is not null
+    const fullSubmission = forms.filter(
+      (form) => form.status !== null,
+    ).length;
 
     // Accepted: status ACCEPTED_BY_MOSPI
     const accepted = forms.filter(
@@ -297,18 +302,13 @@ export class MinistryDashboardService {
       (form) => form.status === null || form.status === FormStatus.DRAFT,
     ).length;
 
-    // Returned to state: status RETURNED_FROM_MOSPI
-    const returnedToState = forms.filter(
-      (form) => form.status === FormStatus.RETURNED_FROM_MOSPI,
-    ).length;
-
     // Total: count of forms
     const total = forms.length;
 
     return {
+      fullSubmission,
       accepted,
       underReview,
-      returnedToState,
       total,
     };
   }
@@ -330,18 +330,18 @@ export class MinistryDashboardService {
       (form) => form.status === null || form.status === FormStatus.DRAFT,
     ).length;
 
-    // Returned to state: status RETURNED_FROM_MOSPI
-    const returnedToState = allForms.filter(
+    // Returned to ministry: status RETURNED_FROM_MOSPI
+    const returnedToMinistry = allForms.filter(
       (form) => form.status === FormStatus.RETURNED_FROM_MOSPI,
     ).length;
 
     // Total: count of all forms
-    const total = 17;
+    const total = allForms.length;
 
     return {
       accepted,
       underReview,
-      returnedToState,
+      returnedToMinistry,
       total,
     };
   }
