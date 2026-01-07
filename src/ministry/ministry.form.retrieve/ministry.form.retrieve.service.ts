@@ -33,6 +33,7 @@ export class MinistryFormRetrieveService {
     status: boolean;
     data: any[];
     message: string;
+    submissionId?: string;
   }> {
     try {
       // Step 1: Get submission by userId (get the most recent one if multiple exist)
@@ -47,11 +48,14 @@ export class MinistryFormRetrieveService {
         );
       }
 
-      const submissionId = submission.id;
+      // Use UUID for querying (ministry_submission_indicator.submission_id references ministry_submission.id)
+      const submissionUuid = submission.id;
+      // Use SUB- format for file paths and API response
+      const submissionId = submission.submissionId;
 
       // Step 2: Get all indicators mapped to this submission
       const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
-        where: { submissionId: submission.id },
+        where: { submissionId: submissionUuid },
       });
 
       //console.log('submissionIndicators', submissionIndicators);
@@ -61,6 +65,7 @@ export class MinistryFormRetrieveService {
           status: true,
           data: [],
           message: 'No indicators mapped to this submission',
+          submissionId: submissionId, // Use SUB- format for file paths
         };
       }
 
@@ -173,6 +178,7 @@ export class MinistryFormRetrieveService {
         status: true,
         data: result,
         message: `Retrieved ${indicators.length} indicator(s) for submission`,
+        submissionId: submissionId, // Use SUB- format for file paths (not UUID)
       };
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -193,6 +199,7 @@ export class MinistryFormRetrieveService {
     status: boolean;
     data: any[];
     message: string;
+    submissionId?: string;
   }> {
     try {
       // Step 1: Get submission by userId (get the most recent one if multiple exist)
@@ -207,11 +214,14 @@ export class MinistryFormRetrieveService {
         );
       }
 
-      const submissionId = submission.id;
+      // Use UUID for querying (ministry_submission_indicator.submission_id references ministry_submission.id)
+      const submissionUuid = submission.id;
+      // Use SUB- format for file paths and API response
+      const submissionId = submission.submissionId;
 
       // Step 2: Get all indicators mapped to this submission
       // If forReview is true, filter by status not null
-      const whereCondition: any = { submissionId: submissionId };
+      const whereCondition: any = { submissionId: submissionUuid };
       if (forReview === true) {
         whereCondition.status = Not(IsNull());
       }
@@ -225,6 +235,7 @@ export class MinistryFormRetrieveService {
           status: true,
           data: [],
           message: 'No indicators mapped to this submission',
+          submissionId: submissionId, // Use SUB- format for file paths
         };
       }
 
@@ -320,10 +331,95 @@ export class MinistryFormRetrieveService {
           const subsectionArray = indicatorSubsections.map((subsection) => {
             const subsectionInputs = inputFieldsBySection[subsection.id] || [];
             
-            // Add submittedData to each input
+            // Get all submitted data for this subsection, grouped by field
+            const fieldDataMap = new Map<string, MinistrySubmissionData[]>();
+            if (submissionIndicatorId) {
+              subsectionInputs.forEach((input) => {
+                const dataKey = `${submissionIndicatorId}_${input.id}`;
+                const submittedData = submissionDataMap.get(dataKey);
+                if (submittedData) {
+                  if (!fieldDataMap.has(input.id)) {
+                    fieldDataMap.set(input.id, []);
+                  }
+                  fieldDataMap.get(input.id)!.push(submittedData);
+                }
+              });
+            }
+            
+            // Reconstruct rows: if multiple values exist for any field, we have multiple rows
+            // Group by timestamp (values in the same row have similar timestamps)
+            const allSubmittedData: MinistrySubmissionData[] = [];
+            fieldDataMap.forEach((dataArray) => {
+              allSubmittedData.push(...dataArray);
+            });
+            
+            // Sort by createdAt to maintain order
+            allSubmittedData.sort((a, b) => 
+              a.createdAt.getTime() - b.createdAt.getTime()
+            );
+            
+            // Group into rows: each row should have one value per field
+            // If we have N fields and M total values, we have M/N rows (assuming equal distribution)
+            const numFields = subsectionInputs.length;
+            const numValues = allSubmittedData.length;
+            const numRows = numFields > 0 ? Math.floor(numValues / numFields) : 0;
+            
+            const submittedItems: any[] = [];
+            
+            if (numRows > 0) {
+              // Group by timestamp buckets (values with same/similar timestamp = same row)
+              const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
+              allSubmittedData.forEach((data) => {
+                const timestamp = Math.floor(data.createdAt.getTime() / 100); // Group by 100ms
+                if (!timestampGroups.has(timestamp)) {
+                  timestampGroups.set(timestamp, []);
+                }
+                timestampGroups.get(timestamp)!.push(data);
+              });
+              
+              // Convert groups to rows
+              const sortedGroups = Array.from(timestampGroups.entries())
+                .sort((a, b) => a[0] - b[0]);
+              
+              sortedGroups.forEach(([_, groupData]) => {
+                const row: any = {};
+                groupData.forEach((data) => {
+                  // Extract value based on data type
+                  let value: any = null;
+                  if (data.valueText !== null) value = data.valueText;
+                  else if (data.valueNumber !== null) value = data.valueNumber;
+                  else if (data.valueDate !== null) value = data.valueDate;
+                  else if (data.valueJson !== null) value = data.valueJson;
+                  
+                  row[data.inputFieldId] = value;
+                });
+                
+                // Only add row if it has at least one value
+                if (Object.keys(row).length > 0) {
+                  submittedItems.push(row);
+                }
+              });
+            } else if (numValues > 0) {
+              // Single row case: all values belong to one row
+              const row: any = {};
+              allSubmittedData.forEach((data) => {
+                let value: any = null;
+                if (data.valueText !== null) value = data.valueText;
+                else if (data.valueNumber !== null) value = data.valueNumber;
+                else if (data.valueDate !== null) value = data.valueDate;
+                else if (data.valueJson !== null) value = data.valueJson;
+                
+                row[data.inputFieldId] = value;
+              });
+              submittedItems.push(row);
+            }
+            
+            // Add submittedData to each input (for backward compatibility)
             const inputsWithData = subsectionInputs.map((input) => {
-              const dataKey = submissionIndicatorId ? `${submissionIndicatorId}_${input.id}` : null;
-              const submittedData = dataKey ? submissionDataMap.get(dataKey) : null;
+              // Find the first occurrence of this field in submitted data
+              const submittedData = allSubmittedData.find(
+                (data) => data.inputFieldId === input.id
+              );
               
               return {
                 ...input,
@@ -339,6 +435,7 @@ export class MinistryFormRetrieveService {
             return {
               [subsection.name]: {
                 inputs: inputsWithData,
+                submittedItems: submittedItems.length > 0 ? submittedItems : undefined,
               },
             };
           });
@@ -384,11 +481,22 @@ export class MinistryFormRetrieveService {
         });
       });
 
-      return {
+      const response = {
         status: true,
         data: result,
         message: `Retrieved ${indicators.length} indicator(s) with submitted data for submission`,
+        submissionId: submissionId, // Use SUB- format for file paths (not UUID)
       };
+      
+      // CRITICAL: Log to verify submissionId is being returned
+      console.log('[getSubmissionDetailsWithData] Returning response with submissionId:', {
+        hasSubmissionId: !!response.submissionId,
+        submissionId: response.submissionId,
+        submissionIdType: typeof response.submissionId,
+        responseKeys: Object.keys(response)
+      });
+      
+      return response;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -396,6 +504,40 @@ export class MinistryFormRetrieveService {
       throw new BadRequestException(
         error.message || 'Failed to retrieve submission details with data',
       );
+    }
+  }
+
+  /**
+   * Get submissionId from submissionIndicatorId
+   * This is a workaround endpoint to get submissionId when it's not in the main response
+   */
+  async getSubmissionIdFromIndicator(submissionIndicatorId: string): Promise<{
+    submissionId: string | null;
+  }> {
+    try {
+      const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+        where: { id: submissionIndicatorId },
+      });
+
+      if (!submissionIndicator) {
+        return { submissionId: null };
+      }
+
+      // submissionIndicator.submissionId is the UUID (ministry_submission.id)
+      // We need to get the ministry_submission record to get the SUB- format submissionId
+      const ministrySubmission = await this.ministrySubmissionRepository.findOne({
+        where: { id: submissionIndicator.submissionId },
+      });
+
+      if (!ministrySubmission) {
+        return { submissionId: null };
+      }
+
+      // Return the SUB- format submissionId for file paths
+      return { submissionId: ministrySubmission.submissionId };
+    } catch (error) {
+      console.error('[getSubmissionIdFromIndicator] Error:', error);
+      return { submissionId: null };
     }
   }
 }
