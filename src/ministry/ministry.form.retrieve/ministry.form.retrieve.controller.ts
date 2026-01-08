@@ -4,9 +4,12 @@ import {
   Param,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { MinistryFormRetrieveService } from './ministry.form.retrieve.service';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
+import { RolesGuard, Roles } from '../../modules/auth/guards/roles.guard';
+import { UserRole } from '../../entities/user.entity';
 
 @Controller('ministry/form/retrieve')
 @UseGuards(JwtAuthGuard)
@@ -61,5 +64,30 @@ export class MinistryFormRetrieveController {
     });
     
     return response;
+  }
+
+  @Get('all-submissions')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.MINISTRY_APPROVER, UserRole.ADMIN, UserRole.MOSPI_APPROVER)
+  async getAllSubmissions(@Request() req) {
+    try {
+      const result = await this.ministryFormRetrieveService.getAllMinistrySubmissions();
+      return result;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  @Get('submissions/current-user')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.MINISTRY_APPROVER, UserRole.ADMIN, UserRole.MOSPI_APPROVER)
+  async getSubmissionsForCurrentUser(@Request() req) {
+    try {
+      const userId = req.user.id;
+      const result = await this.ministryFormRetrieveService.getSubmissionsForCurrentUser(userId);
+      return result;
+    } catch (error) {
+      throw error;
+    }
   }
 }

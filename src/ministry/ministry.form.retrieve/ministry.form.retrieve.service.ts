@@ -7,6 +7,8 @@ import { IndicatorDetail } from '../entities/indicator-detail.entity';
 import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField } from '../entities/input-field.entity';
 import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
+import { User } from '../../entities/user.entity';
+import { Ministry } from '../../entities/ministry.entity';
 
 @Injectable()
 export class MinistryFormRetrieveService {
@@ -23,6 +25,10 @@ export class MinistryFormRetrieveService {
     private readonly inputFieldRepository: Repository<InputField>,
     @InjectRepository(MinistrySubmissionData)
     private readonly ministrySubmissionDataRepository: Repository<MinistrySubmissionData>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(Ministry)
+    private readonly ministryRepository: Repository<Ministry>,
   ) {}
 
   /**
@@ -538,6 +544,552 @@ export class MinistryFormRetrieveService {
     } catch (error) {
       console.error('[getSubmissionIdFromIndicator] Error:', error);
       return { submissionId: null };
+    }
+  }
+
+  /**
+   * Get all ministry submissions for review
+   * Returns a single submission with all indicators grouped by user
+   * Since all indicators are submitted to the same submission ID
+   */
+  async getAllMinistrySubmissions(): Promise<{
+    status: boolean;
+    data: any;
+    message: string;
+  }> {
+    try {
+      // Get the latest ministry submission (most recent one)
+      // Use find() with take(1) instead of findOne() without where clause
+      const submissions = await this.ministrySubmissionRepository.find({
+        order: { updatedAt: 'DESC' },
+        take: 1,
+      });
+
+      if (!submissions || submissions.length === 0) {
+        return {
+          status: true,
+          data: null,
+          message: 'No ministry submission found',
+        };
+      }
+
+      const submission = submissions[0];
+
+      // Get all indicators for this submission
+      const submissionUuid = submission.id;
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: { submissionId: submissionUuid },
+      });
+
+      if (submissionIndicators.length === 0) {
+        return {
+          status: true,
+          data: {
+            id: submission.id,
+            submissionId: submission.submissionId,
+            userId: submission.userId,
+            formId: submission.formId,
+            status: submission.status,
+            createdAt: submission.createdAt,
+            updatedAt: submission.updatedAt,
+            indicators: [],
+            users: [],
+          },
+          message: 'No indicators found for this submission',
+        };
+      }
+
+      // Get all unique user IDs from ministryUser field in submission indicators
+      const userIds = new Set<string>();
+      submissionIndicators.forEach((si) => {
+        if (si.ministryUser) {
+          userIds.add(si.ministryUser);
+        }
+        // Also include assignedTo if it's a user ID
+        if (si.assignedTo) {
+          userIds.add(si.assignedTo);
+        }
+      });
+
+      // Get user details
+      const users = await this.userRepository.find({
+        where: { id: In(Array.from(userIds)) },
+      });
+
+      const userMap = new Map<string, User>();
+      users.forEach(user => {
+        userMap.set(user.id, user);
+      });
+
+      // Get ministry names for all users who have ministryId
+      const ministryIds = [...new Set(users.filter(u => u.ministryId).map(u => u.ministryId))];
+      console.log('[getAllMinistrySubmissions] Fetching ministries for IDs:', ministryIds);
+      
+      // Try to find ministries by ID (UUID) first
+      let ministries = ministryIds.length > 0 
+        ? await this.ministryRepository.find({
+            where: { id: In(ministryIds) },
+          })
+        : [];
+      
+      // If some ministries not found by UUID, try by name
+      const foundIds = new Set(ministries.map(m => m.id));
+      const notFoundIds = ministryIds.filter(id => !foundIds.has(id));
+      
+      if (notFoundIds.length > 0) {
+        console.log('[getAllMinistrySubmissions] Some ministries not found by UUID, trying by name:', notFoundIds);
+        const ministriesByName = await this.ministryRepository.find({
+          where: { name: In(notFoundIds) },
+        });
+        ministries = [...ministries, ...ministriesByName];
+      }
+      
+      const ministryMap = new Map<string, string>();
+      ministries.forEach(ministry => {
+        ministryMap.set(ministry.id, ministry.name);
+        // Also map by name in case ministryId is stored as name
+        ministryMap.set(ministry.name, ministry.name);
+      });
+      
+      console.log('[getAllMinistrySubmissions] Ministry map created with', ministryMap.size, 'entries');
+
+      // Get all indicator details
+      const indicatorIds = submissionIndicators.map((si) => si.indicatorId);
+      const indicators = await this.indicatorDetailRepository.find({
+        where: { id: In(indicatorIds) },
+        order: { sequence: 'ASC', sNo: 'ASC' },
+      });
+
+      // Get subsections and input fields for indicators
+      const subsections = await this.indicatorSubsectionRepository.find({
+        where: { indicatorId: In(indicatorIds), status: true },
+        order: { sequence: 'ASC', name: 'ASC' },
+      });
+
+      const indicatorInputFields = await this.inputFieldRepository.find({
+        where: { sectionId: In(indicatorIds) },
+        order: { sequence: 'ASC', label: 'ASC' },
+      });
+
+      const subsectionIds = subsections.map((sub) => sub.id);
+      const subsectionInputFields = await this.inputFieldRepository.find({
+        where: { sectionId: In(subsectionIds) },
+        order: { sequence: 'ASC', label: 'ASC' },
+      });
+
+      // Get all submission data
+      const submissionIndicatorIds = submissionIndicators.map((si) => si.id);
+      const allSubmissionData = await this.ministrySubmissionDataRepository.find({
+        where: { submissionIndicatorId: In(submissionIndicatorIds) },
+      });
+
+      // Use the existing getSubmissionDetailsWithData structure but group by user
+      // First, get all unique users who have submitted indicators
+      const userIndicatorMap = new Map<string, string[]>(); // userId -> submissionIndicatorIds
+      
+      submissionIndicators.forEach((submissionIndicator) => {
+        // Use assignedTo as the primary user identifier (this is the user who submitted)
+        const userId = submissionIndicator.assignedTo || submissionIndicator.ministryUser;
+        if (!userId) return;
+
+        if (!userIndicatorMap.has(userId)) {
+          userIndicatorMap.set(userId, []);
+        }
+        userIndicatorMap.get(userId)!.push(submissionIndicator.id);
+      });
+
+      // For each user, get their indicators using the existing structure
+      const usersWithIndicators = await Promise.all(
+        Array.from(userIndicatorMap.entries()).map(async ([userId, submissionIndicatorIds]) => {
+          // Get submission indicators for this user
+          const userSubmissionIndicators = submissionIndicators.filter((si) => 
+            submissionIndicatorIds.includes(si.id)
+          );
+
+          // Build the indicator structure similar to getSubmissionDetailsWithData
+          // Group by category
+          const categoryMap = new Map<string, any[]>();
+
+          userSubmissionIndicators.forEach((submissionIndicator) => {
+            const indicator = indicators.find((ind) => ind.id === submissionIndicator.indicatorId);
+            if (!indicator) return;
+
+            const categoryName = indicator.category || 'General';
+            if (!categoryMap.has(categoryName)) {
+              categoryMap.set(categoryName, []);
+            }
+
+            // Get subsections for this indicator
+            const indicatorSubsections = subsections.filter((sub) => sub.indicatorId === indicator.id);
+            
+            // Get input fields for this indicator
+            const indicatorFields = indicatorInputFields.filter((field) => field.sectionId === indicator.id);
+            
+            // Get submission data for this indicator
+            const indicatorSubmissionData = allSubmissionData.filter(
+              (data) => data.submissionIndicatorId === submissionIndicator.id
+            );
+            const submissionDataMap = new Map<string, MinistrySubmissionData>();
+            indicatorSubmissionData.forEach((data) => {
+              submissionDataMap.set(data.inputFieldId, data);
+            });
+
+            // Build section structure
+            const sectionData: any = {
+              sNo: indicator.sNo,
+              sequence: indicator.sequence,
+              submissionIndicatorId: submissionIndicator.id,
+              status: submissionIndicator.status,
+              inputs: indicatorFields.map((field) => ({
+                ...field,
+                submittedData: submissionDataMap.get(field.id) || null,
+              })),
+              subsection: indicatorSubsections.map((subsection) => {
+                const subsectionFields = subsectionInputFields.filter((field) => field.sectionId === subsection.id);
+                
+                // Get subsection submission data and group by createdAt (within 100ms) to reconstruct rows
+                const subsectionData = indicatorSubmissionData.filter((data) => {
+                  const field = subsectionFields.find((f) => f.id === data.inputFieldId);
+                  return field !== undefined;
+                });
+
+                // Group subsection data by createdAt proximity (within 100ms) to form rows
+                const rows: any[] = [];
+                const processedTimestamps = new Set<string>();
+
+                subsectionData.forEach((data) => {
+                  const timestamp = data.createdAt.getTime();
+                  const timestampKey = `${Math.floor(timestamp / 100)}`; // Group by 100ms
+
+                  if (!processedTimestamps.has(timestampKey)) {
+                    processedTimestamps.add(timestampKey);
+                    const rowData: any = {};
+                    subsectionFields.forEach((field) => {
+                      const fieldData = subsectionData.find(
+                        (d) => d.inputFieldId === field.id && 
+                               Math.floor(d.createdAt.getTime() / 100) === Math.floor(timestamp / 100)
+                      );
+                      if (fieldData) {
+                        // Extract value based on data type
+                        let value: any = null;
+                        if (field.dataType === 'number') {
+                          value = fieldData.valueNumber;
+                        } else if (field.dataType === 'file') {
+                          value = fieldData.valueJson;
+                        } else {
+                          if (fieldData.valueText !== null) value = fieldData.valueText;
+                          else if (fieldData.valueNumber !== null) value = fieldData.valueNumber;
+                          else if (fieldData.valueDate !== null) value = fieldData.valueDate;
+                          else if (fieldData.valueJson !== null) value = fieldData.valueJson;
+                        }
+                        rowData[field.id] = value;
+                      }
+                    });
+                    if (Object.keys(rowData).length > 0) {
+                      rows.push(rowData);
+                    }
+                  }
+                });
+
+                return {
+                  [subsection.name]: {
+                    inputs: subsectionFields,
+                    submittedItems: rows,
+                  },
+                };
+              }),
+            };
+
+            categoryMap.get(categoryName)!.push({
+              [indicator.name]: sectionData,
+            });
+          });
+
+          // Convert category map to array format
+          const categoryArray = Array.from(categoryMap.entries()).map(([categoryName, sections]) => ({
+            [categoryName]: sections,
+          }));
+
+          return {
+            userId: userId,
+            indicators: categoryArray,
+          };
+        })
+      );
+
+      // Add user details to each user's indicators
+      const usersWithIndicatorsAndDetails = await Promise.all(
+        usersWithIndicators.map(async (userData) => {
+          const user = userMap.get(userData.userId);
+          let ministryName: string | null = null;
+          if (user?.ministryId) {
+            // Try to get from map by ID first
+            ministryName = ministryMap.get(user.ministryId) || null;
+            
+            // If not found in map, try to fetch directly
+            if (!ministryName) {
+              console.log('[getAllMinistrySubmissions] Ministry not in map, fetching directly for:', user.ministryId);
+              let ministry = await this.ministryRepository.findOne({
+                where: { id: user.ministryId },
+              });
+              
+              if (!ministry) {
+                ministry = await this.ministryRepository.findOne({
+                  where: { name: user.ministryId },
+                });
+              }
+              
+              // Try case-insensitive search
+              if (!ministry) {
+                const allMinistries = await this.ministryRepository.find();
+                ministry = allMinistries.find(m => 
+                  m.name.toLowerCase() === user.ministryId.toLowerCase() ||
+                  m.id.toLowerCase() === user.ministryId.toLowerCase()
+                ) || null;
+              }
+              
+              if (ministry) {
+                ministryName = ministry.name;
+                // Add to map for future lookups
+                ministryMap.set(ministry.id, ministry.name);
+                ministryMap.set(ministry.name, ministry.name);
+              } else {
+                // Fallback: If ministryId looks like a name (not UUID format), use it as the name
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.ministryId);
+                if (!isUUID && user.ministryId) {
+                  console.log('[getAllMinistrySubmissions] Using ministryId as name (not a UUID):', user.ministryId);
+                  // Capitalize first letter of each word
+                  ministryName = user.ministryId
+                    .split(/[\s._-]+/)
+                    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                    .join(' ');
+                }
+              }
+            }
+          }
+          return {
+            userId: userData.userId,
+            user: user ? {
+              id: user.id,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              email: user.email,
+              ministryId: user.ministryId,
+              ministryName: ministryName,
+            } : null,
+            indicators: userData.indicators || [],
+          };
+        })
+      );
+
+      return {
+        status: true,
+        data: {
+          id: submission.id,
+          submissionId: submission.submissionId,
+          userId: submission.userId,
+          formId: submission.formId,
+          status: submission.status,
+          createdAt: submission.createdAt,
+          updatedAt: submission.updatedAt,
+          users: usersWithIndicatorsAndDetails,
+          totalIndicators: submissionIndicators.length,
+          submittedIndicators: submissionIndicators.filter((si) => si.status !== null).length,
+        },
+        message: 'Retrieved ministry submission with all indicators successfully',
+      };
+    } catch (error) {
+      console.error('[getAllMinistrySubmissions] Error:', error);
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve all ministry submissions',
+      );
+    }
+  }
+
+  /**
+   * Get submissions for the current logged-in user
+   * Returns all submissions where the user has submitted indicators
+   */
+  async getSubmissionsForCurrentUser(userId: string): Promise<{
+    status: boolean;
+    data: any[];
+    message: string;
+  }> {
+    try {
+      // Get all submission indicators where this user has submitted (assignedTo or ministryUser = userId)
+      const userSubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: [
+          { assignedTo: userId },
+          { ministryUser: userId },
+        ],
+      });
+
+      if (userSubmissionIndicators.length === 0) {
+        return {
+          status: true,
+          data: [],
+          message: 'No submissions found for this user',
+        };
+      }
+
+      // Get unique submission IDs
+      const submissionUuids = [...new Set(userSubmissionIndicators.map((si) => si.submissionId))];
+      
+      // Get all submissions
+      const submissions = await this.ministrySubmissionRepository.find({
+        where: { id: In(submissionUuids) },
+        order: { updatedAt: 'DESC' },
+      });
+
+      if (submissions.length === 0) {
+        return {
+          status: true,
+          data: [],
+          message: 'No submissions found for this user',
+        };
+      }
+
+      // Get user details
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+      });
+
+      // Query ministries table explicitly to get ministry name using ministryId
+      let ministryName: string | null = null;
+      if (user?.ministryId) {
+        console.log('[getSubmissionsForCurrentUser] Querying ministries table for ministryId:', user.ministryId);
+        
+        // Query 1: Query ministries table by ID (UUID) - SELECT * FROM ministries WHERE id = :ministryId
+        let ministry = await this.ministryRepository.findOne({
+          where: { id: user.ministryId },
+        });
+        
+        // Query 2: If not found by UUID, query ministries table by name - SELECT * FROM ministries WHERE name = :ministryId
+        if (!ministry) {
+          console.log('[getSubmissionsForCurrentUser] Ministry not found by UUID in ministries table, querying by name...');
+          ministry = await this.ministryRepository.findOne({
+            where: { name: user.ministryId },
+          });
+        }
+        
+        // Query 3: If still not found, query all ministries and do case-insensitive match
+        if (!ministry) {
+          console.log('[getSubmissionsForCurrentUser] Querying all ministries from ministries table for case-insensitive match...');
+          const allMinistries = await this.ministryRepository.find();
+          ministry = allMinistries.find(m => 
+            m.name.toLowerCase() === user.ministryId.toLowerCase() ||
+            m.id.toLowerCase() === user.ministryId.toLowerCase()
+          ) || null;
+        }
+        
+        if (ministry) {
+          // Successfully retrieved ministry name from ministries table
+          ministryName = ministry.name;
+          console.log('[getSubmissionsForCurrentUser] ✅ Successfully queried ministries table - Found ministry name:', ministryName, 'from ministry ID:', ministry.id);
+        } else {
+          console.warn('[getSubmissionsForCurrentUser] ❌ Ministry not found in ministries table for ministryId:', user.ministryId);
+          // Log all available ministries from ministries table for debugging
+          const allMinistries = await this.ministryRepository.find();
+          console.warn('[getSubmissionsForCurrentUser] All ministries in ministries table:', allMinistries.map(m => ({ id: m.id, name: m.name })));
+          console.warn('[getSubmissionsForCurrentUser] User ministryId type:', typeof user.ministryId, 'Value:', user.ministryId);
+          
+          // Fallback: If ministryId looks like a name (not UUID format), use it as the name
+          // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars with dashes)
+          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.ministryId);
+          if (!isUUID && user.ministryId) {
+            console.log('[getSubmissionsForCurrentUser] Using ministryId as name (not a UUID):', user.ministryId);
+            // Capitalize first letter of each word
+            ministryName = user.ministryId
+              .split(/[\s._-]+/)
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ');
+          }
+        }
+      } else {
+        console.log('[getSubmissionsForCurrentUser] User has no ministryId - skipping ministries table query');
+      }
+
+      // For each submission, get the indicators submitted by this user
+      const submissionsWithData = await Promise.all(
+        submissions.map(async (submission) => {
+          // Get indicators for this submission that belong to this user
+          const userIndicatorsForSubmission = userSubmissionIndicators.filter(
+            (si) => si.submissionId === submission.id
+          );
+
+          // Get submission details with data for this user
+          try {
+            const submissionDetails = await this.getSubmissionDetailsWithData(
+              userId,
+              false // forReview = false to get all data
+            );
+
+            // Filter indicators to only show those submitted by this user
+            const userIndicators = submissionDetails.data || [];
+
+            return {
+              id: submission.id,
+              submissionId: submission.submissionId,
+              userId: submission.userId,
+              formId: submission.formId,
+              status: submission.status,
+              createdAt: submission.createdAt,
+              updatedAt: submission.updatedAt,
+              user: user ? {
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                ministryId: user.ministryId,
+                ministryName: ministryName,
+              } : null,
+              indicators: userIndicators,
+              totalIndicators: userIndicatorsForSubmission.length,
+              submittedIndicators: userIndicatorsForSubmission.filter((si) => si.status !== null).length,
+            };
+          } catch (error) {
+            // If getSubmissionDetailsWithData fails, return basic info
+            return {
+              id: submission.id,
+              submissionId: submission.submissionId,
+              userId: submission.userId,
+              formId: submission.formId,
+              status: submission.status,
+              createdAt: submission.createdAt,
+              updatedAt: submission.updatedAt,
+              user: user ? {
+                id: user.id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                ministryId: user.ministryId,
+                ministryName: ministryName,
+              } : null,
+              indicators: [],
+              totalIndicators: userIndicatorsForSubmission.length,
+              submittedIndicators: userIndicatorsForSubmission.filter((si) => si.status !== null).length,
+            };
+          }
+        })
+      );
+
+      // Debug: Log the response structure before returning
+      console.log('[getSubmissionsForCurrentUser] ✅ Returning response with', submissionsWithData.length, 'submissions');
+      if (submissionsWithData.length > 0) {
+        console.log('[getSubmissionsForCurrentUser] First submission user:', submissionsWithData[0]?.user);
+        console.log('[getSubmissionsForCurrentUser] First submission ministryName:', submissionsWithData[0]?.user?.ministryName);
+      }
+
+      return {
+        status: true,
+        data: submissionsWithData,
+        message: 'Retrieved submissions for current user successfully',
+      };
+    } catch (error) {
+      console.error('[getSubmissionsForCurrentUser] Error:', error);
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve submissions for current user',
+      );
     }
   }
 }
