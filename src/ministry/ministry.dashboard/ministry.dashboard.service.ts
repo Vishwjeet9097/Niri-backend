@@ -348,13 +348,14 @@ export class MinistryDashboardService {
 
   /**
    * Get progress bar data for ministry user
-   * Returns accepted count and total count
+   * Returns accepted count, total count, and form id
    */
   async getProgressBarData(ministryUserId: string): Promise<{
     status: boolean;
     data: {
       accepted: number;
       total: number;
+      formId: string | null;
     };
     message: string;
   }> {
@@ -374,11 +375,20 @@ export class MinistryDashboardService {
         },
       });
 
+      // Get form id for this ministry user
+      const form = await this.formRepository.findOne({
+        where: {
+          ministryUser: ministryUserId,
+        },
+        select: ['id'],
+      });
+
       return {
         status: true,
         data: {
           accepted,
           total,
+          formId: form?.id || null,
         },
         message: 'Progress bar data retrieved successfully',
       };
@@ -387,6 +397,203 @@ export class MinistryDashboardService {
         error.message || 'Failed to retrieve progress bar data',
       );
     }
+  }
+
+  /**
+   * Get submission details based on user role
+   */
+  async getSubmissionDetails(userId: string): Promise<{
+    status: boolean;
+    data: any;
+    message: string;
+  }> {
+    try {
+      // Get user to determine role
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'role'],
+      });
+
+      if (!user) {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+
+      // Route to appropriate service based on role
+      switch (user.role) {
+        case UserRole.NODAL_OFFICER:
+          return {
+            status: true,
+            data: await this.getNodalSubmissionDetails(userId),
+            message: 'Nodal submission details retrieved successfully',
+          };
+
+        case UserRole.MINISTRY_APPROVER:
+          return {
+            status: true,
+            data: await this.getMinistrySubmissionDetails(userId),
+            message: 'Ministry submission details retrieved successfully',
+          };
+
+        case UserRole.MOSPI_REVIEWER:
+          return {
+            status: true,
+            data: await this.getMospiReviewerSubmissionDetails(userId),
+            message: 'Mospi Reviewer submission details retrieved successfully',
+          };
+
+        case UserRole.MOSPI_APPROVER:
+          return {
+            status: true,
+            data: await this.getMospiApproverSubmissionDetails(userId),
+            message: 'Mospi Approver submission details retrieved successfully',
+          };
+
+        default:
+          throw new BadRequestException(
+            `Submission details not available for role: ${user.role}`,
+          );
+      }
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve submission details',
+      );
+    }
+  }
+
+  /**
+   * Get submission details for Nodal user
+   * Find submission by user id and return its data
+   */
+  private async getNodalSubmissionDetails(userId: string): Promise<any> {
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { userId: userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!submission) {
+      return {
+        submission: null,
+        message: 'No submission found for this user',
+      };
+    }
+
+    return {
+      submission: submission,
+      submissionId: submission.id,
+    };
+  }
+
+  /**
+   * Get submission details for Ministry Approver
+   * Find form by ministry user, then get all submissions for that form
+   */
+  private async getMinistrySubmissionDetails(userId: string): Promise<any> {
+    // Find forms associated with ministry user
+    const forms = await this.formRepository.find({
+      where: {
+        ministryUser: userId,
+      },
+    });
+
+    if (forms.length === 0) {
+      return {
+        forms: [],
+        submissions: [],
+        message: 'No forms found for this ministry user',
+      };
+    }
+
+    const formIds = forms.map((f) => f.id);
+
+    // Get all submissions for these forms
+    const submissions = await this.ministrySubmissionRepository.find({
+      where: {
+        formId: In(formIds),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    return {
+      forms: forms,
+      submissions: submissions,
+    };
+  }
+
+  /**
+   * Get submission details for Mospi Reviewer
+   * Get associated form, then get submissions where isConsolidated is true
+   */
+  private async getMospiReviewerSubmissionDetails(userId: string): Promise<any> {
+    // Get forms where reviewer = userId
+    const forms = await this.formRepository.find({
+      where: {
+        reviewer: userId,
+      },
+    });
+
+    if (forms.length === 0) {
+      return {
+        forms: [],
+        submissions: [],
+        message: 'No forms found for this reviewer',
+      };
+    }
+
+    const formIds = forms.map((f) => f.id);
+
+    // Get submissions for these forms where isConsolidated is true
+    const submissions = await this.ministrySubmissionRepository.find({
+      where: {
+        formId: In(formIds),
+        isConsolidated: true,
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    return {
+      forms: forms,
+      submissions: submissions,
+    };
+  }
+
+  /**
+   * Get submission details for Mospi Approver
+   * Get all submissions where isConsolidated is true
+   */
+  private async getMospiApproverSubmissionDetails(userId: string): Promise<any> {
+    // Get all submissions where isConsolidated is true
+    const submissions = await this.ministrySubmissionRepository.find({
+      where: {
+        isConsolidated: true,
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (submissions.length === 0) {
+      return {
+        forms: [],
+        submissions: [],
+        message: 'No consolidated submissions found',
+      };
+    }
+
+    // Get unique form IDs from submissions
+    const formIds = [...new Set(submissions.map((s) => s.formId))];
+
+    // Get forms for these submissions
+    const forms = await this.formRepository.find({
+      where: {
+        id: In(formIds),
+      },
+    });
+
+    return {
+      forms: forms,
+      submissions: submissions,
+    };
   }
 }
 

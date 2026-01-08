@@ -33,6 +33,9 @@ export class MinistrySubmission {
   })
   status: SubmissionStatus;
 
+  @Column({ name: "is_consolidated", type: "boolean", default: false, nullable: true })
+  isConsolidated: boolean;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 
