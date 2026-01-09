@@ -596,11 +596,11 @@ export class IndicatorService {
       section3_2: "3.2",
       section3_3: "3.3",
       section3_4: "3.4",
-      section4_2: "4.1",
-      section4_3: "4.2",
-      section4_4: "4.3",
-      section4_5: "4.4",
-      section4_6: "4.5",
+      section4_1: "4.1",
+      section4_2: "4.2",
+      section4_3: "4.3",
+      section4_4: "4.4",
+      section4_5: "4.5",
     };
 
     // CHANGED: Get ALL submissions from STATE_APPROVERs (INCLUDING DRAFT)
