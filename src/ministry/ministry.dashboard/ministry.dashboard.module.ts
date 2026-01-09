@@ -6,6 +6,7 @@ import { MinistrySubmissionIndicator } from '../entities/ministry-submission-ind
 import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { Form } from '../entities/form.entity';
 import { User } from '../../entities/user.entity';
+import { Ministry } from '../../entities/ministry.entity';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { User } from '../../entities/user.entity';
       MinistrySubmission,
       Form,
       User,
+      Ministry,
     ]),
   ],
   controllers: [MinistryDashboardController],

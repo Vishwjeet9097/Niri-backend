@@ -29,9 +29,10 @@ export class MinistrySubmission {
   @Column({
     type: "enum",
     enum: SubmissionStatus,
-    default: SubmissionStatus.DRAFT,
+    nullable: true,
+    default: null,
   })
-  status: SubmissionStatus;
+  status: SubmissionStatus | null;
 
   @Column({ name: "is_consolidated", type: "boolean", default: false, nullable: true })
   isConsolidated: boolean;

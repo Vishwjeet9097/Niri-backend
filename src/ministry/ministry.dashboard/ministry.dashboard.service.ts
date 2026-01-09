@@ -6,6 +6,7 @@ import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { Form, FormStatus } from '../entities/form.entity';
 import { User, UserRole } from '../../entities/user.entity';
 import { SubmissionStatus } from '../../entities/submission.entity';
+import { Ministry } from '../../entities/ministry.entity';
 
 @Injectable()
 export class MinistryDashboardService {
@@ -18,6 +19,8 @@ export class MinistryDashboardService {
     private readonly formRepository: Repository<Form>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Ministry)
+    private readonly ministryRepository: Repository<Ministry>,
   ) {}
 
   /**
@@ -464,8 +467,78 @@ export class MinistryDashboardService {
   }
 
   /**
+   * Helper function to get user details with ministry name mapping
+   * Reusable function for all submission detail methods
+   */
+  private async getUserDetailsWithMinistry(userId: string): Promise<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    ministryId: string;
+    ministryName: string | null;
+  } | null> {
+    // Get user details
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    // Query ministries table to get ministry name
+    let ministryName: string | null = null;
+    if (user.ministryId) {
+      // Query 1: Query ministries table by ID (UUID)
+      let ministry = await this.ministryRepository.findOne({
+        where: { id: user.ministryId },
+      });
+      
+      // Query 2: If not found by UUID, query ministries table by name
+      if (!ministry) {
+        ministry = await this.ministryRepository.findOne({
+          where: { name: user.ministryId },
+        });
+      }
+      
+      // Query 3: If still not found, query all ministries and do case-insensitive match
+      if (!ministry) {
+        const allMinistries = await this.ministryRepository.find();
+        ministry = allMinistries.find(m => 
+          m.name.toLowerCase() === user.ministryId.toLowerCase() ||
+          m.id.toLowerCase() === user.ministryId.toLowerCase()
+        ) || null;
+      }
+      
+      if (ministry) {
+        ministryName = ministry.name;
+      } else {
+        // Fallback: If ministryId looks like a name (not UUID format), use it as the name
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.ministryId);
+        if (!isUUID && user.ministryId) {
+          // Capitalize first letter of each word
+          ministryName = user.ministryId
+            .split(/[\s._-]+/)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+        }
+      }
+    }
+
+    return {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      ministryId: user.ministryId,
+      ministryName: ministryName,
+    };
+  }
+
+  /**
    * Get submission details for Nodal user
-   * Find submission by user id and return its data
+   * Find submission by user id and return its data with user details
    */
   private async getNodalSubmissionDetails(userId: string): Promise<any> {
     const submission = await this.ministrySubmissionRepository.findOne({
@@ -477,12 +550,25 @@ export class MinistryDashboardService {
       return {
         submission: null,
         message: 'No submission found for this user',
+        user: null,
       };
     }
 
+    // Get user details using helper function
+    const user = await this.getUserDetailsWithMinistry(userId);
+
     return {
-      submission: submission,
-      submissionId: submission.id,
+      submission: {
+        id: submission.id,
+        submissionId: submission.submissionId,
+        userId: submission.userId,
+        formId: submission.formId,
+        status: submission.status,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+      },
+      submissionId: submission.submissionId, // SUB- format
+      user: user,
     };
   }
 
@@ -508,17 +594,44 @@ export class MinistryDashboardService {
 
     const formIds = forms.map((f) => f.id);
 
-    // Get all submissions for these forms
+    // Get all submissions for these forms where status is not null
     const submissions = await this.ministrySubmissionRepository.find({
       where: {
         formId: In(formIds),
+        status: Not(IsNull()),
       },
       order: { createdAt: 'DESC' },
     });
 
+    // Get unique user IDs from submissions
+    const userIds = [...new Set(submissions.map((s) => s.userId))];
+    
+    // Get user details for all users
+    const userDetailsMap = new Map<string, any>();
+    await Promise.all(
+      userIds.map(async (uid) => {
+        const userDetails = await this.getUserDetailsWithMinistry(uid);
+        if (userDetails) {
+          userDetailsMap.set(uid, userDetails);
+        }
+      })
+    );
+
+    // Map submissions with user details
+    const submissionsWithUserDetails = submissions.map((submission) => ({
+      id: submission.id,
+      submissionId: submission.submissionId,
+      userId: submission.userId,
+      formId: submission.formId,
+      status: submission.status,
+      createdAt: submission.createdAt,
+      updatedAt: submission.updatedAt,
+      user: userDetailsMap.get(submission.userId) || null,
+    }));
+
     return {
       forms: forms,
-      submissions: submissions,
+      submissions: submissionsWithUserDetails,
     };
   }
 
@@ -553,9 +666,35 @@ export class MinistryDashboardService {
       order: { createdAt: 'DESC' },
     });
 
+    // Get unique user IDs from submissions
+    const userIds = [...new Set(submissions.map((s) => s.userId))];
+    
+    // Get user details for all users
+    const userDetailsMap = new Map<string, any>();
+    await Promise.all(
+      userIds.map(async (uid) => {
+        const userDetails = await this.getUserDetailsWithMinistry(uid);
+        if (userDetails) {
+          userDetailsMap.set(uid, userDetails);
+        }
+      })
+    );
+
+    // Map submissions with user details
+    const submissionsWithUserDetails = submissions.map((submission) => ({
+      id: submission.id,
+      submissionId: submission.submissionId,
+      userId: submission.userId,
+      formId: submission.formId,
+      status: submission.status,
+      createdAt: submission.createdAt,
+      updatedAt: submission.updatedAt,
+      user: userDetailsMap.get(submission.userId) || null,
+    }));
+
     return {
       forms: forms,
-      submissions: submissions,
+      submissions: submissionsWithUserDetails,
     };
   }
 
@@ -590,9 +729,35 @@ export class MinistryDashboardService {
       },
     });
 
+    // Get unique user IDs from submissions
+    const userIds = [...new Set(submissions.map((s) => s.userId))];
+    
+    // Get user details for all users
+    const userDetailsMap = new Map<string, any>();
+    await Promise.all(
+      userIds.map(async (uid) => {
+        const userDetails = await this.getUserDetailsWithMinistry(uid);
+        if (userDetails) {
+          userDetailsMap.set(uid, userDetails);
+        }
+      })
+    );
+
+    // Map submissions with user details
+    const submissionsWithUserDetails = submissions.map((submission) => ({
+      id: submission.id,
+      submissionId: submission.submissionId,
+      userId: submission.userId,
+      formId: submission.formId,
+      status: submission.status,
+      createdAt: submission.createdAt,
+      updatedAt: submission.updatedAt,
+      user: userDetailsMap.get(submission.userId) || null,
+    }));
+
     return {
       forms: forms,
-      submissions: submissions,
+      submissions: submissionsWithUserDetails,
     };
   }
 }
