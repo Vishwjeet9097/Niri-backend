@@ -19,9 +19,15 @@ export class MinistryDashboardController {
     return this.ministryDashboardService.getProgressBarData(ministryUserId);
   }
 
+  @Get('submission-details/:userId')
+  async getSubmissionDetails(@Param('userId') userId: string) {
+    return this.ministryDashboardService.getSubmissionDetails(userId);
+  }
+
   @Get(':userId')
   async getDashboardData(@Param('userId') userId: string) {
     return this.ministryDashboardService.getDashboardData(userId);
   }
+
 }
 

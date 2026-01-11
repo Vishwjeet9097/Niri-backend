@@ -8,6 +8,7 @@ import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField, DataType } from '../entities/input-field.entity';
 import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
 import { Form, FormStatus } from '../entities/form.entity';
+import { SubmissionStatus } from '../../entities/submission.entity';
 import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
 import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indicator-status.dto';
 import { UpdateFormStatusDto } from './dto/update-form-status.dto';
@@ -371,12 +372,35 @@ export class MinistryFormSubmissionService {
         { status: dto.status },
       );
 
+      // If user is MINISTRY_APPROVER, create a ministry submission with isConsolidated = true
+      let createdSubmission = null;
+      if (userRole === 'MINISTRY_APPROVER' && form) {
+        // Generate submissionId: SUB-{year}-{randomNum}
+        const year = new Date().getFullYear();
+        const randomNum = Math.floor(Math.random() * 1000000)
+          .toString()
+          .padStart(6, '0');
+        const submissionId = `SUB-${year}-${randomNum}`;
+
+        // Create ministry submission
+        const newSubmission = this.ministrySubmissionRepository.create({
+          submissionId: submissionId,
+          formId: formId,
+          userId: form.ministryUser, // Use form's ministry user id
+          status: SubmissionStatus.DRAFT,
+          isConsolidated: true,
+        });
+
+        createdSubmission = await this.ministrySubmissionRepository.save(newSubmission);
+      }
+
       return {
         status: true,
         message: 'Form status updated successfully',
         data: {
           formId: formId,
           newStatus: dto.status,
+          submission: createdSubmission,
         },
       };
     } catch (error) {
