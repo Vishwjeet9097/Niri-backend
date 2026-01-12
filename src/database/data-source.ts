@@ -8,6 +8,7 @@ import { InputField } from "../ministry/entities/input-field.entity";
 import { MinistrySubmission } from "../ministry/entities/ministry-submission.entity";
 import { MinistrySubmissionIndicator } from "../ministry/entities/ministry-submission-indicator.entity";
 import { MinistrySubmissionData } from "../ministry/entities/ministry-submission-data.entity";
+import { MinistrySubmissionComment } from "../ministry/entities/ministry-submission-comment.entity";
 
 config();
 
@@ -35,6 +36,7 @@ export const AppDataSource = new DataSource({
     MinistrySubmission,
     MinistrySubmissionIndicator,
     MinistrySubmissionData,
+    MinistrySubmissionComment,
   ],
   migrations: ["src/migrations/*.ts"],
   synchronize: false,

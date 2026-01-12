@@ -9,6 +9,8 @@ import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField } from '../entities/input-field.entity';
 import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
 import { Form } from '../entities/form.entity';
+import { MinistrySubmissionComment } from '../entities/ministry-submission-comment.entity';
+import { User } from '../../entities/user.entity';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { Form } from '../entities/form.entity';
       InputField,
       MinistrySubmissionData,
       Form,
+      MinistrySubmissionComment,
+      User,
     ]),
   ],
   controllers: [MinistryFormSubmissionController],

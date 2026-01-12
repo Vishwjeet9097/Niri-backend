@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { MinistrySubmissionIndicator, SubmissionIndicatorStatus } from '../entities/ministry-submission-indicator.entity';
 import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { IndicatorDetail } from '../entities/indicator-detail.entity';
@@ -9,9 +9,12 @@ import { InputField, DataType } from '../entities/input-field.entity';
 import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
 import { Form, FormStatus } from '../entities/form.entity';
 import { SubmissionStatus } from '../../entities/submission.entity';
+import { MinistrySubmissionComment } from '../entities/ministry-submission-comment.entity';
+import { User } from '../../entities/user.entity';
 import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
 import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indicator-status.dto';
 import { UpdateFormStatusDto } from './dto/update-form-status.dto';
+import { CreateCommentDto } from './dto/create-comment.dto';
 
 @Injectable()
 export class MinistryFormSubmissionService {
@@ -30,6 +33,10 @@ export class MinistryFormSubmissionService {
     private readonly ministrySubmissionDataRepository: Repository<MinistrySubmissionData>,
     @InjectRepository(Form)
     private readonly formRepository: Repository<Form>,
+    @InjectRepository(MinistrySubmissionComment)
+    private readonly ministrySubmissionCommentRepository: Repository<MinistrySubmissionComment>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   /**
@@ -409,6 +416,137 @@ export class MinistryFormSubmissionService {
       }
       throw new BadRequestException(
         `Failed to update form status: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Create a comment for a submission indicator
+   */
+  async createComment(
+    dto: CreateCommentDto,
+    userId: string,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: any;
+  }> {
+    try {
+      // Step 1: Verify that the submission indicator exists
+      const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+        where: { id: dto.submissionIndicatorId },
+      });
+
+      if (!submissionIndicator) {
+        throw new NotFoundException(
+          `Submission indicator with id ${dto.submissionIndicatorId} not found`,
+        );
+      }
+
+      // Step 2: Create the comment
+      const comment = this.ministrySubmissionCommentRepository.create({
+        submissionIndicatorId: dto.submissionIndicatorId,
+        userId: userId,
+        text: dto.text,
+      });
+
+      // Step 3: Save the comment
+      const savedComment = await this.ministrySubmissionCommentRepository.save(comment);
+
+      return {
+        status: true,
+        message: 'Comment created successfully',
+        data: {
+          id: savedComment.id,
+          submissionIndicatorId: savedComment.submissionIndicatorId,
+          userId: savedComment.userId,
+          text: savedComment.text,
+          createdAt: savedComment.createdAt,
+          updatedAt: savedComment.updatedAt,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to create comment: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Get all comments for a submission indicator, sorted by createdAt
+   */
+  async getCommentsBySubmissionIndicator(submissionIndicatorId: string): Promise<{
+    status: boolean;
+    message: string;
+    data: any[];
+  }> {
+    try {
+      // Step 1: Verify that the submission indicator exists
+      const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+        where: { id: submissionIndicatorId },
+      });
+
+      if (!submissionIndicator) {
+        throw new NotFoundException(
+          `Submission indicator with id ${submissionIndicatorId} not found`,
+        );
+      }
+
+      // Step 2: Get all comments for this submission indicator, sorted by createdAt (ascending - oldest first)
+      const comments = await this.ministrySubmissionCommentRepository.find({
+        where: { submissionIndicatorId: submissionIndicatorId },
+        order: { createdAt: 'ASC' },
+      });
+
+      // Step 3: Get unique user IDs from comments
+      const userIds = [...new Set(comments.map((comment) => comment.userId))];
+
+      // Step 4: Fetch user details for all users
+      const users = userIds.length > 0
+        ? await this.userRepository.find({
+            where: { id: In(userIds) },
+            select: ['id', 'firstName', 'lastName', 'email', 'role', 'ministryId'],
+          })
+        : [];
+
+      // Step 5: Create a map of userId -> user details
+      const userMap = new Map<string, User>();
+      users.forEach((user) => {
+        userMap.set(user.id, user);
+      });
+
+      // Step 6: Format the response with user details
+      const formattedComments = comments.map((comment) => ({
+        id: comment.id,
+        submissionIndicatorId: comment.submissionIndicatorId,
+        userId: comment.userId,
+        text: comment.text,
+        createdAt: comment.createdAt,
+        updatedAt: comment.updatedAt,
+        user: userMap.get(comment.userId) ? {
+          id: userMap.get(comment.userId)!.id,
+          firstName: userMap.get(comment.userId)!.firstName,
+          lastName: userMap.get(comment.userId)!.lastName,
+          email: userMap.get(comment.userId)!.email,
+          role: userMap.get(comment.userId)!.role,
+          ministryId: userMap.get(comment.userId)!.ministryId,
+        } : null,
+      }));
+
+      return {
+        status: true,
+        message: `Retrieved ${formattedComments.length} comment(s) for submission indicator`,
+        data: formattedComments,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to retrieve comments: ${error.message}`,
       );
     }
   }

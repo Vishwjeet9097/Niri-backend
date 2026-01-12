@@ -90,4 +90,9 @@ export class MinistryFormRetrieveController {
       throw error;
     }
   }
+
+  @Get('preview/:ministryUserId')
+  async getPreviewByMinistryUser(@Param('ministryUserId') ministryUserId: string) {
+    return this.ministryFormRetrieveService.getPreviewByMinistryUser(ministryUserId);
+  }
 }

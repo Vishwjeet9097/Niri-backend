@@ -548,6 +548,285 @@ export class MinistryFormRetrieveService {
   }
 
   /**
+   * Preview API: Get all indicator details with inputs and submitted data for a ministry user
+   * Retrieves all indicators where ministryUser = ministryUserId and status is not null
+   */
+  async getPreviewByMinistryUser(ministryUserId: string): Promise<{
+    status: boolean;
+    data: any[];
+    message: string;
+  }> {
+    try {
+      // Step 1: Get all submission indicators where ministryUser = ministryUserId and status is not null
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          ministryUser: ministryUserId,
+          status: Not(IsNull()),
+        },
+      });
+
+      if (submissionIndicators.length === 0) {
+        return {
+          status: true,
+          data: [],
+          message: 'No indicators found with submitted status for this ministry user',
+        };
+      }
+
+      const indicatorIds = submissionIndicators.map((si) => si.indicatorId);
+
+      // Create a map of indicatorId -> submissionIndicatorId
+      const submissionIndicatorMap = new Map<string, string>();
+      // Create a map of indicatorId -> status
+      const indicatorStatusMap = new Map<string, string | null>();
+      submissionIndicators.forEach((si) => {
+        submissionIndicatorMap.set(si.indicatorId, si.id);
+        indicatorStatusMap.set(si.indicatorId, si.status);
+      });
+
+      // Step 2: Get indicator details
+      const indicators = await this.indicatorDetailRepository.find({
+        where: { id: In(indicatorIds) },
+        order: { sequence: 'ASC', sNo: 'ASC' },
+      });
+
+      // Step 3: Get subsections for all indicators
+      const subsections = await this.indicatorSubsectionRepository.find({
+        where: { indicatorId: In(indicatorIds), status: true },
+        order: { sequence: 'ASC', name: 'ASC' },
+      });
+
+      // Step 4: Get input fields for indicators (direct)
+      const indicatorInputFields = await this.inputFieldRepository.find({
+        where: { sectionId: In(indicatorIds) },
+        order: { sequence: 'ASC', label: 'ASC' },
+      });
+
+      // Step 5: Get subsection IDs and their input fields
+      const subsectionIds = subsections.map((sub) => sub.id);
+      const subsectionInputFields = await this.inputFieldRepository.find({
+        where: { sectionId: In(subsectionIds) },
+        order: { sequence: 'ASC', label: 'ASC' },
+      });
+
+      // Step 6: Get all submission data for these submission indicators
+      const submissionIndicatorIds = submissionIndicators.map((si) => si.id);
+      const allSubmissionData = await this.ministrySubmissionDataRepository.find({
+        where: { submissionIndicatorId: In(submissionIndicatorIds) },
+      });
+
+      // Step 7: Create a map of (submissionIndicatorId, inputFieldId) -> submission data
+      const submissionDataMap = new Map<string, MinistrySubmissionData>();
+      allSubmissionData.forEach((data) => {
+        const key = `${data.submissionIndicatorId}_${data.inputFieldId}`;
+        submissionDataMap.set(key, data);
+      });
+
+      // Step 8: Group subsections by indicator
+      const subsectionsByIndicator: Record<string, IndicatorSubsection[]> = {};
+      subsections.forEach((subsection) => {
+        if (!subsectionsByIndicator[subsection.indicatorId]) {
+          subsectionsByIndicator[subsection.indicatorId] = [];
+        }
+        subsectionsByIndicator[subsection.indicatorId].push(subsection);
+      });
+
+      // Step 9: Group input fields by section
+      const inputFieldsBySection: Record<string, InputField[]> = {};
+      [...indicatorInputFields, ...subsectionInputFields].forEach((inputField) => {
+        if (!inputFieldsBySection[inputField.sectionId]) {
+          inputFieldsBySection[inputField.sectionId] = [];
+        }
+        inputFieldsBySection[inputField.sectionId].push(inputField);
+      });
+
+      // Step 10: Group indicators by category
+      const indicatorsByCategory: Record<string, IndicatorDetail[]> = {};
+      indicators.forEach((indicator) => {
+        const category = indicator.category;
+        if (!indicatorsByCategory[category]) {
+          indicatorsByCategory[category] = [];
+        }
+        indicatorsByCategory[category].push(indicator);
+      });
+
+      // Step 11: Build the response structure with submitted data
+      const result: any[] = [];
+
+      Object.keys(indicatorsByCategory).forEach((categoryName) => {
+        const categoryIndicators = indicatorsByCategory[categoryName];
+
+        const indicatorArray = categoryIndicators.map((indicator) => {
+          // Get subsections for this indicator
+          const indicatorSubsections = subsectionsByIndicator[indicator.id] || [];
+          const submissionIndicatorId = submissionIndicatorMap.get(indicator.id);
+
+          // Build subsection array with inputs and submitted data
+          const subsectionArray = indicatorSubsections.map((subsection) => {
+            const subsectionInputs = inputFieldsBySection[subsection.id] || [];
+            
+            // Get all submitted data for this subsection, grouped by field
+            const fieldDataMap = new Map<string, MinistrySubmissionData[]>();
+            if (submissionIndicatorId) {
+              subsectionInputs.forEach((input) => {
+                const dataKey = `${submissionIndicatorId}_${input.id}`;
+                const submittedData = submissionDataMap.get(dataKey);
+                if (submittedData) {
+                  if (!fieldDataMap.has(input.id)) {
+                    fieldDataMap.set(input.id, []);
+                  }
+                  fieldDataMap.get(input.id)!.push(submittedData);
+                }
+              });
+            }
+            
+            // Reconstruct rows: if multiple values exist for any field, we have multiple rows
+            // Group by timestamp (values in the same row have similar timestamps)
+            const allSubmittedData: MinistrySubmissionData[] = [];
+            fieldDataMap.forEach((dataArray) => {
+              allSubmittedData.push(...dataArray);
+            });
+            
+            // Sort by createdAt to maintain order
+            allSubmittedData.sort((a, b) => 
+              a.createdAt.getTime() - b.createdAt.getTime()
+            );
+            
+            // Group into rows: each row should have one value per field
+            const numFields = subsectionInputs.length;
+            const numValues = allSubmittedData.length;
+            const numRows = numFields > 0 ? Math.floor(numValues / numFields) : 0;
+            
+            const submittedItems: any[] = [];
+            
+            if (numRows > 0) {
+              // Group by timestamp buckets (values with same/similar timestamp = same row)
+              const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
+              allSubmittedData.forEach((data) => {
+                const timestamp = Math.floor(data.createdAt.getTime() / 100); // Group by 100ms
+                if (!timestampGroups.has(timestamp)) {
+                  timestampGroups.set(timestamp, []);
+                }
+                timestampGroups.get(timestamp)!.push(data);
+              });
+              
+              // Convert groups to rows
+              const sortedGroups = Array.from(timestampGroups.entries())
+                .sort((a, b) => a[0] - b[0]);
+              
+              sortedGroups.forEach(([_, groupData]) => {
+                const row: any = {};
+                groupData.forEach((data) => {
+                  // Extract value based on data type
+                  let value: any = null;
+                  if (data.valueText !== null) value = data.valueText;
+                  else if (data.valueNumber !== null) value = data.valueNumber;
+                  else if (data.valueDate !== null) value = data.valueDate;
+                  else if (data.valueJson !== null) value = data.valueJson;
+                  
+                  row[data.inputFieldId] = value;
+                });
+                
+                // Only add row if it has at least one value
+                if (Object.keys(row).length > 0) {
+                  submittedItems.push(row);
+                }
+              });
+            } else if (numValues > 0) {
+              // Single row case: all values belong to one row
+              const row: any = {};
+              allSubmittedData.forEach((data) => {
+                let value: any = null;
+                if (data.valueText !== null) value = data.valueText;
+                else if (data.valueNumber !== null) value = data.valueNumber;
+                else if (data.valueDate !== null) value = data.valueDate;
+                else if (data.valueJson !== null) value = data.valueJson;
+                
+                row[data.inputFieldId] = value;
+              });
+              submittedItems.push(row);
+            }
+            
+            // Add submittedData to each input (for backward compatibility)
+            const inputsWithData = subsectionInputs.map((input) => {
+              // Find the first occurrence of this field in submitted data
+              const submittedData = allSubmittedData.find(
+                (data) => data.inputFieldId === input.id
+              );
+              
+              return {
+                ...input,
+                submittedData: submittedData ? {
+                  valueText: submittedData.valueText,
+                  valueNumber: submittedData.valueNumber,
+                  valueDate: submittedData.valueDate,
+                  valueJson: submittedData.valueJson,
+                } : null,
+              };
+            });
+
+            return {
+              [subsection.name]: {
+                inputs: inputsWithData,
+                submittedItems: submittedItems.length > 0 ? submittedItems : undefined,
+              },
+            };
+          });
+
+          // Get direct inputs for this indicator
+          const indicatorInputs = inputFieldsBySection[indicator.id] || [];
+          
+          // Add submittedData to each input
+          const inputsWithData = indicatorInputs.map((input) => {
+            const dataKey = submissionIndicatorId ? `${submissionIndicatorId}_${input.id}` : null;
+            const submittedData = dataKey ? submissionDataMap.get(dataKey) : null;
+            
+            return {
+              ...input,
+              submittedData: submittedData ? {
+                valueText: submittedData.valueText,
+                valueNumber: submittedData.valueNumber,
+                valueDate: submittedData.valueDate,
+                valueJson: submittedData.valueJson,
+              } : null,
+            };
+          });
+
+          // Get status for this indicator
+          const indicatorStatus = indicatorStatusMap.get(indicator.id) || null;
+
+          // Build indicator object
+          return {
+            [indicator.name]: {
+              sNo: indicator.sNo,
+              sequence: indicator.sequence,
+              submissionIndicatorId: submissionIndicatorId || null,
+              status: indicatorStatus,
+              inputs: inputsWithData,
+              subsection: subsectionArray,
+            },
+          };
+        });
+
+        // Add category object to result
+        result.push({
+          [categoryName]: indicatorArray,
+        });
+      });
+
+      return {
+        status: true,
+        data: result,
+        message: `Retrieved ${indicators.length} indicator(s) with submitted data for ministry user`,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve preview data for ministry user',
+      );
+    }
+  }
+
+  /**
    * Get all ministry submissions for review
    * Returns a single submission with all indicators grouped by user
    * Since all indicators are submitted to the same submission ID

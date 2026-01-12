@@ -1,8 +1,9 @@
-import { Controller, Post, Put, Body, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Put, Get, Body, Param, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { MinistryFormSubmissionService } from './ministry.form.submission.service';
 import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
 import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indicator-status.dto';
 import { UpdateFormStatusDto } from './dto/update-form-status.dto';
+import { CreateCommentDto } from './dto/create-comment.dto';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
 
 @Controller('ministry/form/submission')
@@ -30,5 +31,16 @@ export class MinistryFormSubmissionController {
       req.user.id,
       req.user.role,
     );
+  }
+
+  @Post('comment')
+  @HttpCode(HttpStatus.CREATED)
+  async createComment(@Body() dto: CreateCommentDto, @Request() req) {
+    return this.ministryFormSubmissionService.createComment(dto, req.user.id);
+  }
+
+  @Get('comment/:submissionIndicatorId')
+  async getCommentsBySubmissionIndicator(@Param('submissionIndicatorId') submissionIndicatorId: string) {
+    return this.ministryFormSubmissionService.getCommentsBySubmissionIndicator(submissionIndicatorId);
   }
 }
