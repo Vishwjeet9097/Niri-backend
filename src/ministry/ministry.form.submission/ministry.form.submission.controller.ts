@@ -17,6 +17,12 @@ export class MinistryFormSubmissionController {
     return this.ministryFormSubmissionService.submitMinistryData(dto);
   }
 
+  @Put('data')
+  @HttpCode(HttpStatus.OK)
+  async updateMinistryData(@Body() dto: SubmitMinistryDataDto) {
+    return this.ministryFormSubmissionService.updateMinistryData(dto);
+  }
+
   @Put('indicator/status')
   @HttpCode(HttpStatus.OK)
   async updateSubmissionIndicatorStatus(@Body() dto: UpdateSubmissionIndicatorStatusDto) {

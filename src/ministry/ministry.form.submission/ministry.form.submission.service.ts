@@ -243,6 +243,235 @@ export class MinistryFormSubmissionService {
   }
 
   /**
+   * Update or create MinistrySubmissionData entity based on data type
+   * Updates existing record if found, otherwise creates new one
+   */
+  private async updateOrCreateSubmissionData(
+    submissionIndicatorId: string,
+    inputFieldId: string,
+    dataType: DataType,
+    value: any,
+  ): Promise<MinistrySubmissionData> {
+    // Try to find existing record
+    const existingData = await this.ministrySubmissionDataRepository.findOne({
+      where: {
+        submissionIndicatorId: submissionIndicatorId,
+        inputFieldId: inputFieldId,
+      },
+    });
+
+    let submissionData: MinistrySubmissionData;
+    
+    if (existingData) {
+      // Update existing record
+      submissionData = existingData;
+    } else {
+      // Create new record
+      submissionData = new MinistrySubmissionData();
+      submissionData.submissionIndicatorId = submissionIndicatorId;
+      submissionData.inputFieldId = inputFieldId;
+    }
+    
+    // Set value based on data type
+    switch (dataType) {
+      case DataType.NUMBER:
+        submissionData.valueNumber = value != null ? Number(value) : null;
+        submissionData.valueText = null;
+        submissionData.valueDate = null;
+        submissionData.valueJson = null;
+        break;
+
+      case DataType.FILE:
+        // For file input, save in value_json
+        if (value != null) {
+          if (typeof value === 'string') {
+            try {
+              submissionData.valueJson = JSON.parse(value);
+            } catch (e) {
+              // If parsing fails, store as string in JSON format
+              submissionData.valueJson = value;
+            }
+          } else {
+            submissionData.valueJson = value;
+          }
+        } else {
+          submissionData.valueJson = null;
+        }
+        submissionData.valueText = null;
+        submissionData.valueNumber = null;
+        submissionData.valueDate = null;
+        break;
+
+      case DataType.STRING:
+      default:
+        // Check if it's a date string
+        if (value && typeof value === 'string') {
+          const dateRegex = /^\d{4}-\d{2}-\d{2}/;
+          if (dateRegex.test(value)) {
+            submissionData.valueDate = new Date(value);
+            submissionData.valueText = null;
+          } else {
+            submissionData.valueText = value;
+            submissionData.valueDate = null;
+          }
+        } else {
+          submissionData.valueText = value != null ? String(value) : null;
+          submissionData.valueDate = null;
+        }
+        submissionData.valueNumber = null;
+        submissionData.valueJson = null;
+        break;
+    }
+
+    return submissionData;
+  }
+
+  /**
+   * Update ministry form data
+   * Updates existing submission data or creates new if not exists
+   * Uses the same process as submitMinistryData but updates instead of creates
+   */
+  async updateMinistryData(dto: SubmitMinistryDataDto): Promise<{
+    status: boolean;
+    message: string;
+    data?: any;
+  }> {
+    try {
+      // Step 1: Get submission indicator details
+      const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+        where: { id: dto.submissionIndicatorId },
+      });
+
+      if (!submissionIndicator) {
+        throw new NotFoundException(
+          `Submission indicator with id ${dto.submissionIndicatorId} not found`,
+        );
+      }
+
+      const { submissionId, indicatorId } = submissionIndicator;
+
+      // Step 2: Get indicator details and all its input fields
+      const indicator = await this.indicatorDetailRepository.findOne({
+        where: { id: indicatorId },
+      });
+
+      if (!indicator) {
+        throw new NotFoundException(`Indicator with id ${indicatorId} not found`);
+      }
+
+      // Get all input fields for the indicator
+      const indicatorInputFields = await this.inputFieldRepository.find({
+        where: { sectionId: indicatorId },
+      });
+
+      // Step 3: Get subindicators (subsections) related to the indicator
+      const subsections = await this.indicatorSubsectionRepository.find({
+        where: { indicatorId: indicatorId, status: true },
+        order: { sequence: 'ASC' },
+      });
+
+      // Get input fields for each subsection
+      const subsectionInputFieldsMap = new Map<string, InputField[]>();
+      for (const subsection of subsections) {
+        const inputFields = await this.inputFieldRepository.find({
+          where: { sectionId: subsection.id },
+        });
+        subsectionInputFieldsMap.set(subsection.id, inputFields);
+      }
+
+      // Step 4: Process and update/create inputs data
+      const dataToSave: MinistrySubmissionData[] = [];
+
+      // Process inputs array
+      for (const input of dto.data.inputs) {
+        const inputField = indicatorInputFields.find((field) => field.id === input.inputId);
+        
+        if (!inputField) {
+          throw new NotFoundException(
+            `Input field with id ${input.inputId} not found for indicator ${indicatorId}`,
+          );
+        }
+
+        const submissionData = await this.updateOrCreateSubmissionData(
+          dto.submissionIndicatorId,
+          input.inputId,
+          inputField.dataType,
+          input.value,
+        );
+
+        dataToSave.push(submissionData);
+      }
+
+      // Step 5: Process subsection data (array inside array)
+      // subsection is an array of arrays: [[{inputId, value}, ...], [{inputId, value}, ...]]
+      for (const subsectionArray of dto.data.subsection) {
+        for (const subsectionInput of subsectionArray) {
+          // Find which subsection this input belongs to
+          let foundSubsection: IndicatorSubsection | null = null;
+          let foundInputField: InputField | null = null;
+
+          for (const subsection of subsections) {
+            const subsectionInputFields = subsectionInputFieldsMap.get(subsection.id) || [];
+            const inputField = subsectionInputFields.find(
+              (field) => field.id === subsectionInput.inputId,
+            );
+
+            if (inputField) {
+              foundSubsection = subsection;
+              foundInputField = inputField;
+              break;
+            }
+          }
+
+          if (!foundInputField) {
+            throw new NotFoundException(
+              `Input field with id ${subsectionInput.inputId} not found in any subsection`,
+            );
+          }
+
+          const submissionData = await this.updateOrCreateSubmissionData(
+            dto.submissionIndicatorId,
+            subsectionInput.inputId,
+            foundInputField.dataType,
+            subsectionInput.value,
+          );
+
+          dataToSave.push(submissionData);
+        }
+      }
+
+      // Step 6: Save all data to database (updates existing, creates new)
+      const saved = await this.ministrySubmissionDataRepository.save(dataToSave);
+
+      // Step 7: Update submission indicator status to DRAFT (if not already)
+      if (submissionIndicator.status !== SubmissionIndicatorStatus.DRAFT) {
+        await this.ministrySubmissionIndicatorRepository.update(
+          { id: dto.submissionIndicatorId },
+          { status: SubmissionIndicatorStatus.DRAFT }
+        );
+      }
+
+      return {
+        status: true,
+        message: 'Ministry submission data updated successfully',
+        data: {
+          submissionIndicatorId: dto.submissionIndicatorId,
+          submissionId,
+          indicatorId,
+          updatedCount: saved.length,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to update ministry submission data: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Update submission indicator status
    */
   async updateSubmissionIndicatorStatus(
