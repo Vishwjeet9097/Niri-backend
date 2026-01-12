@@ -5,6 +5,7 @@ import { Submission, SubmissionStatus } from '../../entities/submission.entity';
 import { FinalScore } from '../../entities/final-score.entity';
 import { IndicatorScore } from '../../entities/indicator-score.entity';
 import { IndicatorScoreHistory } from '../../entities/indicator-score-history.entity';
+import { ManualScoreUpdate } from '../../entities/manual-score-update.entity';
 import { UserRole } from '../../entities/user.entity';
 
 export interface ScoreCalculation {
@@ -13,6 +14,7 @@ export interface ScoreCalculation {
   weight: number;
   score: number;
   maxScore: number;
+  source?: 'system' | 'manual'; // Optional field to track score source
 }
 
 export interface ScoreBreakdown {
@@ -65,6 +67,8 @@ export class ScoringService {
     private indicatorScoreRepository: Repository<IndicatorScore>,
     @InjectRepository(IndicatorScoreHistory)
     private indicatorScoreHistoryRepository: Repository<IndicatorScoreHistory>,
+    @InjectRepository(ManualScoreUpdate)
+    private manualScoreUpdateRepository: Repository<ManualScoreUpdate>,
   ) {}
 
   async calculateScore(submissionId: string, userId: string, skipStatusCheck: boolean = false): Promise<ScoreBreakdown> {
@@ -193,6 +197,7 @@ export class ScoringService {
 
   /**
    * Sum existing indicator scores instead of recalculating
+   * Uses manual updated scores if available (only the latest one per indicator), otherwise uses system-generated scores
    */
   private async sumIndicatorScores(
     submissionId: string,
@@ -200,7 +205,32 @@ export class ScoringService {
     userId: string,
     indicatorScores: IndicatorScore[]
   ): Promise<ScoreBreakdown> {
-    const calculations: ScoreCalculation[] = indicatorScores.map(is => is.calculation);
+    this.logger.log(`🔍 Summing indicator scores for submission ${submissionId}...`);
+    
+    // Fetch all manual score updates for this submission, ordered by creation date (newest first)
+    const manualScoreUpdates = await this.manualScoreUpdateRepository.find({
+      where: { submissionId },
+      order: { createdAt: 'DESC' },
+    });
+
+    // Create a map of indicatorCode -> LATEST manual updated score only
+    // Since we ordered by createdAt DESC, the first occurrence of each indicatorCode is the latest
+    const latestManualScoreMap = new Map<string, ManualScoreUpdate>();
+    manualScoreUpdates.forEach(update => {
+      // Only add if we haven't seen this indicatorCode yet (ensures we only keep the latest)
+      if (!latestManualScoreMap.has(update.indicatorCode)) {
+        latestManualScoreMap.set(update.indicatorCode, update);
+        this.logger.log(
+          `📝 Using latest manual updated score for indicator ${update.indicatorCode}: ${update.manualUpdatedScore} (updated at ${update.createdAt})`
+        );
+      }
+    });
+
+    this.logger.log(
+      `📊 Found ${latestManualScoreMap.size} indicators with manual score updates (latest only) out of ${indicatorScores.length} total indicators`
+    );
+
+    const calculations: ScoreCalculation[] = [];
     
     // Group by category
     const categoryScores = {
@@ -212,15 +242,50 @@ export class ScoringService {
 
     let totalScore = 0;
     let maxPossibleScore = 1000; // Total is always 1000 (250+250+250+250)
+    let manualScoresUsed = 0;
+    let systemScoresUsed = 0;
 
     indicatorScores.forEach(is => {
-      const score = parseFloat(is.score.toString());
-      totalScore += score;
+      // Check if latest manual updated score exists for this indicator
+      const latestManualUpdate = latestManualScoreMap.get(is.indicatorCode);
+      
+      let scoreToUse: number;
+      let maxScoreToUse: number;
+      let scoreSource: 'system' | 'manual';
+
+      if (latestManualUpdate) {
+        // Use the LATEST manual updated score for this indicator
+        scoreToUse = parseFloat(latestManualUpdate.manualUpdatedScore.toString());
+        maxScoreToUse = parseFloat(latestManualUpdate.maxScore.toString());
+        scoreSource = 'manual';
+        manualScoresUsed++;
+        this.logger.log(
+          `✅ Using LATEST manual updated score for indicator ${is.indicatorCode}: ${scoreToUse} (system score was ${is.score})`
+        );
+      } else {
+        // Use system-generated score (no manual update exists for this indicator)
+        scoreToUse = parseFloat(is.score.toString());
+        maxScoreToUse = parseFloat(is.maxScore.toString());
+        scoreSource = 'system';
+        systemScoresUsed++;
+      }
+
+      totalScore += scoreToUse;
       
       // Add to category totals
       if (categoryScores[is.category]) {
-        categoryScores[is.category].score += score;
+        categoryScores[is.category].score += scoreToUse;
       }
+
+      // Update calculation object to reflect the score used
+      const calculation: ScoreCalculation = {
+        ...is.calculation,
+        score: scoreToUse,
+        maxScore: maxScoreToUse,
+        // Add metadata to indicate source
+        source: scoreSource,
+      };
+      calculations.push(calculation);
     });
 
     const percentage = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 100 : 0;
@@ -252,7 +317,7 @@ export class ScoringService {
           percentage: Math.round((categoryScores.infraEnablers.score / 250) * 100 * 100) / 100,
         }
       },
-      methodology: 'NIRI Scoring Methodology v2.0 - Sum of individual indicator scores',
+      methodology: 'NIRI Scoring Methodology v2.0 - Sum of individual indicator scores (using latest manual updated scores where available)',
     };
 
     // Save to final_scores table
@@ -268,7 +333,9 @@ export class ScoringService {
     });
 
     await this.finalScoreRepository.save(finalScore);
-    this.logger.log(`✅ Final score saved: ${scoreBreakdown.totalScore} points (${scoreBreakdown.percentage}%)`);
+    this.logger.log(
+      `✅ Final score saved: ${scoreBreakdown.totalScore} points (${scoreBreakdown.percentage}%) - Used ${manualScoresUsed} latest manual updated scores, ${systemScoresUsed} system scores`
+    );
 
     return scoreBreakdown;
   }
@@ -758,6 +825,7 @@ export class ScoringService {
       case '2.1': {
         const section2_1Raw = formData.infraDevelopment?.section2_1;
         let section2_1: any[] = [];
+        let hasOverarchingPolicy: string | undefined;
         
         if (Array.isArray(section2_1Raw)) {
           section2_1 = section2_1Raw;
@@ -767,15 +835,10 @@ export class ScoringService {
           } else {
             section2_1 = this.normalizeToArray(section2_1Raw);
           }
+          hasOverarchingPolicy = section2_1Raw.hasOverarchingPolicy;
         }
         
-        const hasOverarching = section2_1.some(item => 
-          item && item.sector && (
-            item.sector.toLowerCase() === 'overarching' || 
-            item.sector.toLowerCase().includes('overarching')
-          )
-        );
-        
+        // Count entries with files (valid entries)
         const sectorsWithDoc2_1 = section2_1.filter(item => {
           if (!item) return false;
           const hasFiles = item.files && (
@@ -785,7 +848,29 @@ export class ScoringService {
           return hasFiles;
         }).length;
         
-        const score = (hasOverarching && sectorsWithDoc2_1 > 0) ? 50 : Math.min(sectorsWithDoc2_1 * 10, 50);
+        // If "yes" (has overarching policy), use existing logic
+        if (hasOverarchingPolicy === 'yes') {
+          const hasOverarching = section2_1.some(item => 
+            item && item.sector && (
+              item.sector.toLowerCase() === 'overarching' || 
+              item.sector.toLowerCase().includes('overarching')
+            )
+          );
+          const score = (hasOverarching && sectorsWithDoc2_1 > 0) ? 50 : 0;
+          return {
+            indicator: '2.1 Availability of Infrastructure Act/Policy',
+            value: sectorsWithDoc2_1,
+            weight: 0.05,
+            score,
+            maxScore: 50,
+          };
+        }
+        
+        // If "no" (no overarching policy), apply new logic:
+        // If less than 3 entries, give 0 marks
+        // If 3 or more entries, give 10 marks per entry (capped at 50)
+        const score = sectorsWithDoc2_1 < 3 ? 0 : Math.min(sectorsWithDoc2_1 * 10, 50);
+        
         return {
           indicator: '2.1 Availability of Infrastructure Act/Policy',
           value: sectorsWithDoc2_1,
@@ -861,18 +946,10 @@ export class ScoringService {
       }
       case '2.4': {
         const section2_4Raw = formData.infraDevelopment?.section2_4;
-        let section2_4: any[] = [];
         let section2_4WebsiteLink: string | undefined;
         let hasInvestmentReady: string | undefined;
         
-        if (Array.isArray(section2_4Raw)) {
-          section2_4 = section2_4Raw;
-        } else if (section2_4Raw && typeof section2_4Raw === 'object') {
-          if (Array.isArray(section2_4Raw.investmentReadyArray)) {
-            section2_4 = section2_4Raw.investmentReadyArray;
-          } else {
-            section2_4 = this.normalizeToArray(section2_4Raw);
-          }
+        if (section2_4Raw && typeof section2_4Raw === 'object') {
           section2_4WebsiteLink = section2_4Raw.websiteLink;
           hasInvestmentReady = section2_4Raw.hasInvestmentReady;
         }
@@ -888,25 +965,15 @@ export class ScoringService {
           };
         }
         
-        // If "yes" or not specified, calculate score based on entries
+        // If "yes", check for website link
+        // If website link is present, give full marks (50)
+        // If website link is not present, give 0 marks
         const hasSectionWebsiteLink = this.isNonEmpty(section2_4WebsiteLink);
+        const score = hasSectionWebsiteLink ? 50 : 0;
         
-        const validProjectsWithDocs = hasSectionWebsiteLink 
-          ? section2_4.length
-          : section2_4.filter(item => {
-              if (!item) return false;
-              const hasProjectName = this.isNonEmpty(item.projectName);
-              const hasSector = this.isNonEmpty(item.sector);
-              const hasStatus = this.isNonEmpty(item.status);
-              const hasInvestmentType = this.isNonEmpty(item.investmentType);
-              const hasProjectSize = item.projectSize && parseFloat(String(item.projectSize)) > 0;
-              return hasProjectName && hasSector && hasStatus && hasInvestmentType && hasProjectSize;
-            }).length;
-        
-        const score = Math.min(validProjectsWithDocs * 10, 50);
         return {
           indicator: '2.4 Investment Ready Project Pipeline',
-          value: validProjectsWithDocs,
+          value: hasSectionWebsiteLink ? 1 : 0,
           weight: 0.05,
           score,
           maxScore: 50,
@@ -914,29 +981,15 @@ export class ScoringService {
       }
       case '2.5': {
         const section2_5Raw = formData.infraDevelopment?.section2_5;
-        let section2_5: any[] = [];
+        let section2_5WebsiteLink: string | undefined;
         let hasAssetMonetization: string | undefined;
         
-        if (Array.isArray(section2_5Raw)) {
-          section2_5 = section2_5Raw;
-        } else if (section2_5Raw && typeof section2_5Raw === 'object') {
-          if (Array.isArray(section2_5Raw.assetMonetizationArray)) {
-            section2_5 = section2_5Raw.assetMonetizationArray;
-          } else {
-            section2_5 = this.normalizeToArray(section2_5Raw);
-          }
+        if (section2_5Raw && typeof section2_5Raw === 'object') {
+          section2_5WebsiteLink = section2_5Raw.websiteLink;
           hasAssetMonetization = section2_5Raw.hasAssetMonetization;
         }
         
-        // Check for valid entries first
-        const validAssetsProjects = section2_5.filter(item => 
-          item && 
-          this.isNonEmpty(item.projectName) &&
-          this.isNonEmpty(item.sector) &&
-          item.estimatedMonetization && parseFloat(String(item.estimatedMonetization)) > 0
-        ).length;
-        
-        // If "no" explicitly set, return 0 marks
+        // If "no", return 0 marks
         if (hasAssetMonetization === 'no') {
           return {
             indicator: '2.5 Asset Monetization Pipeline',
@@ -947,12 +1000,15 @@ export class ScoringService {
           };
         }
         
-        // If "yes" or not specified but has valid entries, calculate score
-        // If no valid entries, return 0 (treat as "no")
-        const score = validAssetsProjects > 0 ? Math.min(validAssetsProjects * 10, 50) : 0;
+        // If "yes", check for website link
+        // If website link is present, give full marks (50)
+        // If website link is not present, give 0 marks
+        const hasSectionWebsiteLink = this.isNonEmpty(section2_5WebsiteLink);
+        const score = hasSectionWebsiteLink ? 50 : 0;
+        
         return {
           indicator: '2.5 Asset Monetization Pipeline',
-          value: validAssetsProjects,
+          value: hasSectionWebsiteLink ? 1 : 0,
           weight: 0.05,
           score,
           maxScore: 50,
@@ -1154,11 +1210,52 @@ export class ScoringService {
           }
         }
         
-        const participants = section4_5.length;
-        const score = Math.min(participants * 1, 50);
+        // Get current financial year
+        const currentFY = this.getCurrentFinancialYear();
+        
+        // Filter entries that belong to current financial year
+        const validParticipants = section4_5.filter(entry => {
+          if (!entry || !entry.trainingPeriod) return false;
+          
+          // Parse trainingPeriod (format: MM/YY)
+          const trainingPeriod = String(entry.trainingPeriod).trim();
+          if (!trainingPeriod.includes('/') || trainingPeriod.length !== 5) {
+            return false;
+          }
+          
+          const [monthStr, yearStr] = trainingPeriod.split('/');
+          const month = parseInt(monthStr, 10);
+          const yearShort = parseInt(yearStr, 10);
+          
+          if (isNaN(month) || isNaN(yearShort) || month < 1 || month > 12) {
+            return false;
+          }
+          
+          // Convert YY to full year (assuming 2000-2099 range)
+          const fullYear = 2000 + yearShort;
+          
+          // Determine financial year for this training period
+          // FY runs from April (04) to March (03)
+          let entryFY: string;
+          if (month >= 4) {
+            // April onwards belongs to current year - next year
+            const nextYearShort = ((fullYear + 1) % 100).toString().padStart(2, '0');
+            entryFY = `${fullYear}-${nextYearShort}`;
+          } else {
+            // Jan-Mar belongs to previous year - current year
+            const prevYear = fullYear - 1;
+            const currYearShort = (fullYear % 100).toString().padStart(2, '0');
+            entryFY = `${prevYear}-${currYearShort}`;
+          }
+          
+          // Only count if it matches current financial year
+          return entryFY === currentFY;
+        }).length;
+        
+        const score = Math.min(validParticipants * 1, 50);
         return {
           indicator: '4.5 Capacity Building - Officer Participation',
-          value: participants,
+          value: validParticipants,
           weight: 0.05,
           score,
           maxScore: 50,
@@ -1202,6 +1299,27 @@ export class ScoringService {
     if (typeof value === 'number') return String(value);
     if (typeof value === 'string') return value.trim();
     return String(value);
+  }
+
+  /**
+   * Get current financial year in format "YYYY-YY" (e.g., "2025-26")
+   * Financial Year runs from April (04) to March (03)
+   */
+  private getCurrentFinancialYear(): string {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1; // getMonth() returns 0-11, so add 1
+
+    // If April (4) or later, FY = currentYear-(nextYear % 100)
+    // Else FY = (previousYear)-(currentYear % 100)
+    if (month >= 4) {
+      const nextYearShort = ((year + 1) % 100).toString().padStart(2, '0');
+      return `${year}-${nextYearShort}`;
+    } else {
+      const prevYear = year - 1;
+      const currYearShort = (year % 100).toString().padStart(2, '0');
+      return `${prevYear}-${currYearShort}`;
+    }
   }
 
   /**
@@ -1481,5 +1599,90 @@ export class ScoringService {
     this.logger.log(`Score calculation complete: ${calculated} calculated, ${failed} failed`);
 
     return { calculated, failed, errors };
+  }
+
+  /**
+   * Save a manual score update (separate from automatic score calculation)
+   * This does NOT modify the system-generated score in indicator_scores table
+   */
+  async saveManualScoreUpdate(
+    submissionId: string,
+    indicatorCode: string,
+    category: string,
+    updatedScore: number,
+    maxScore: number,
+    updateReason: string,
+    userId: string
+  ): Promise<ManualScoreUpdate> {
+    this.logger.log(
+      `💾 Saving manual score update for indicator ${indicatorCode} in submission ${submissionId}`
+    );
+
+    // Validate that updated score does not exceed maximum score
+    if (updatedScore > maxScore) {
+      throw new Error(
+        `Updated score (${updatedScore}) cannot exceed maximum score (${maxScore}) for indicator ${indicatorCode}`
+      );
+    }
+
+    // Validate that updated score is not negative
+    if (updatedScore < 0) {
+      throw new Error(`Updated score cannot be negative`);
+    }
+
+    // Get the current system-generated score (this is NOT modified)
+    const currentScore = await this.getIndicatorScore(submissionId, indicatorCode);
+    const systemScore = currentScore ? parseFloat(currentScore.score.toString()) : 0;
+
+    // Create manual update record
+    const manualUpdate = this.manualScoreUpdateRepository.create({
+      submissionId,
+      indicatorCode,
+      category,
+      systemScore,
+      manualUpdatedScore: updatedScore,
+      maxScore,
+      updateReason,
+      updatedBy: userId,
+    });
+
+    const savedUpdate = await this.manualScoreUpdateRepository.save(manualUpdate);
+
+    this.logger.log(
+      `✅ Saved manual score update for indicator ${indicatorCode}: ` +
+      `System Score: ${systemScore} → Manual Updated Score: ${updatedScore} ` +
+      `(Reason: ${updateReason}) at ${savedUpdate.createdAt}`
+    );
+
+    return savedUpdate;
+  }
+
+  /**
+   * Get manual score update history for an indicator
+   */
+  async getManualScoreUpdateHistory(
+    submissionId: string,
+    indicatorCode: string
+  ): Promise<ManualScoreUpdate[]> {
+    return await this.manualScoreUpdateRepository.find({
+      where: { submissionId, indicatorCode },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Get the latest manual score update for an indicator
+   */
+  async getLatestManualScoreUpdate(
+    submissionId: string,
+    indicatorCode: string
+  ): Promise<ManualScoreUpdate | null> {
+    const updates = await this.manualScoreUpdateRepository.find({
+      where: { submissionId, indicatorCode },
+      order: { createdAt: 'DESC' },
+      take: 1,
+    });
+
+    return updates.length > 0 ? updates[0] : null;
   }
 }

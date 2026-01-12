@@ -1,8 +1,9 @@
-import { Controller, Get, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { ScoringService } from './scoring.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { UserRole } from '../../entities/user.entity';
+import { ManualScoreUpdateDto } from './dto/manual-score-update.dto';
 
 @Controller('scoring')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -150,6 +151,86 @@ export class ScoringController {
       status: true,
       data: score,
       message: score ? 'Indicator score retrieved successfully' : 'No score found for this indicator',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Post('manual-update')
+  @Roles(UserRole.MOSPI_APPROVER)
+  async saveManualScoreUpdate(
+    @Body() dto: ManualScoreUpdateDto,
+    @Request() req
+  ) {
+    try {
+      // Additional validation: check if updated score exceeds max score
+      if (dto.updatedScore > dto.maxScore) {
+        throw new BadRequestException(
+          `Updated score (${dto.updatedScore}) cannot exceed maximum score (${dto.maxScore})`
+        );
+      }
+
+      const manualUpdate = await this.scoringService.saveManualScoreUpdate(
+        dto.submissionId,
+        dto.indicatorCode,
+        dto.category,
+        dto.updatedScore,
+        dto.maxScore,
+        dto.updateReason,
+        req.user.id
+      );
+
+      return {
+        status: true,
+        data: manualUpdate,
+        message: 'Manual score update saved successfully',
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(error.message || 'Failed to save manual score update');
+    }
+  }
+
+  @Get('manual-update/:submissionId/:indicatorCode')
+  @Roles(UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getManualScoreUpdateHistory(
+    @Param('submissionId') submissionId: string,
+    @Param('indicatorCode') indicatorCode: string,
+    @Request() req
+  ) {
+    const history = await this.scoringService.getManualScoreUpdateHistory(
+      submissionId,
+      indicatorCode
+    );
+
+    return {
+      status: true,
+      data: history,
+      message: 'Manual score update history retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('manual-update/:submissionId/:indicatorCode/latest')
+  @Roles(UserRole.MOSPI_APPROVER, UserRole.ADMIN)
+  async getLatestManualScoreUpdate(
+    @Param('submissionId') submissionId: string,
+    @Param('indicatorCode') indicatorCode: string,
+    @Request() req
+  ) {
+    const latestUpdate = await this.scoringService.getLatestManualScoreUpdate(
+      submissionId,
+      indicatorCode
+    );
+
+    return {
+      status: true,
+      data: latestUpdate,
+      message: latestUpdate 
+        ? 'Latest manual score update retrieved successfully' 
+        : 'No manual score update found',
       timestamp: new Date().toISOString(),
     };
   }
