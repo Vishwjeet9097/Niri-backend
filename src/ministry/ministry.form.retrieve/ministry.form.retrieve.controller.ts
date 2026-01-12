@@ -35,13 +35,13 @@ export class MinistryFormRetrieveController {
     return this.ministryFormRetrieveService.getSubmissionIdFromIndicator(submissionIndicatorId);
   }
 
-  @Get('submission-with-data/:userId')
+  @Get('submission-with-data/:submissionId')
   async getSubmissionDetailsWithData(
-    @Param('userId') userId: string,
+    @Param('submissionId') submissionId: string,
     @Query('forReview') forReview?: string,
   ) {
     const forReviewBool = forReview === 'true';
-    const result = await this.ministryFormRetrieveService.getSubmissionDetailsWithData(userId, forReviewBool);
+    const result = await this.ministryFormRetrieveService.getSubmissionDetailsWithData(submissionId, forReviewBool);
     
     // CRITICAL: Log to verify submissionId is in the result
     console.log('[Controller] Service returned result:', {
@@ -94,5 +94,12 @@ export class MinistryFormRetrieveController {
   @Get('preview/:ministryUserId')
   async getPreviewByMinistryUser(@Param('ministryUserId') ministryUserId: string) {
     return this.ministryFormRetrieveService.getPreviewByMinistryUser(ministryUserId);
+  }
+
+  @Get('submission-with-data/consolidated/:submissionId')
+  async getConsolidatedSubmissionDetailsWithData(
+    @Param('submissionId') submissionId: string,
+  ) {
+    return this.ministryFormRetrieveService.getConsolidatedSubmissionDetailsWithData(submissionId);
   }
 }

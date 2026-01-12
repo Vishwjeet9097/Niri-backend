@@ -330,7 +330,7 @@ export class MinistryDashboardService {
 
     // Under review: status is null or DRAFT
     const underReview = allForms.filter(
-      (form) => form.status === null || form.status === FormStatus.DRAFT,
+      (form) =>  form.status === FormStatus.SUBMITTED_TO_MOSPI_APPROVER,
     ).length;
 
     // Returned to ministry: status RETURNED_FROM_MOSPI
@@ -636,6 +636,43 @@ export class MinistryDashboardService {
   }
 
   /**
+   * Helper function to get form status label based on form status and user role
+   */
+  private getFormStatusLabel(formStatus: FormStatus | null, userRole: UserRole): string | null {
+    if (!formStatus) {
+      return null;
+    }
+
+    if (formStatus === FormStatus.ACCEPTED_BY_MOSPI) {
+      return 'ACCEPTED';
+    }
+
+    if (formStatus === FormStatus.RETURNED_FROM_MOSPI) {
+      // Only show "Returned to Ministry" for MOSPI_APPROVER
+      if (userRole === UserRole.MOSPI_APPROVER) {
+        return 'Returned to Ministry';
+      }
+      return null;
+    }
+
+    // UNDER REVIEW statuses
+    if (userRole === UserRole.MOSPI_REVIEWER) {
+      if (formStatus === FormStatus.SUBMITTED_TO_MOSPI_REVIEWER) {
+        return 'UNDER REVIEW';
+      }
+    }
+
+    if (userRole === UserRole.MOSPI_APPROVER) {
+      if (formStatus === FormStatus.SUBMITTED_TO_MOSPI_APPROVER || 
+          formStatus === FormStatus.SUBMITTED_TO_MOSPI_REVIEWER) {
+        return 'UNDER REVIEW';
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Get submission details for Mospi Reviewer
    * Get associated form, then get submissions where isConsolidated is true
    */
@@ -680,32 +717,76 @@ export class MinistryDashboardService {
       })
     );
 
-    // Map submissions with user details
-    const submissionsWithUserDetails = submissions.map((submission) => ({
-      id: submission.id,
-      submissionId: submission.submissionId,
-      userId: submission.userId,
-      formId: submission.formId,
-      status: submission.status,
-      createdAt: submission.createdAt,
-      updatedAt: submission.updatedAt,
-      user: userDetailsMap.get(submission.userId) || null,
+    // Create form map with status labels
+    const formMap = new Map<string, Form>();
+    forms.forEach((form) => {
+      formMap.set(form.id, form);
+    });
+
+    // Map submissions with user details and form status
+    const submissionsWithUserDetails = submissions.map((submission) => {
+      const form = formMap.get(submission.formId);
+      const formStatusLabel = this.getFormStatusLabel(form?.status || null, UserRole.MOSPI_REVIEWER);
+
+      return {
+        id: submission.id,
+        submissionId: submission.submissionId,
+        userId: submission.userId,
+        formId: submission.formId,
+        status: submission.status,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+        user: userDetailsMap.get(submission.userId) || null,
+        formStatus: form?.status || null,
+        formStatusLabel: formStatusLabel,
+      };
+    });
+
+    // Map forms with status labels
+    const formsWithStatus = forms.map((form) => ({
+      id: form.id,
+      year: form.year,
+      ministry: form.ministry,
+      reviewer: form.reviewer,
+      ministryUser: form.ministryUser,
+      status: form.status,
+      formStatusLabel: this.getFormStatusLabel(form.status, UserRole.MOSPI_REVIEWER),
+      createdAt: form.createdAt,
+      updatedAt: form.updatedAt,
     }));
 
     return {
-      forms: forms,
+      forms: formsWithStatus,
       submissions: submissionsWithUserDetails,
     };
   }
 
   /**
    * Get submission details for Mospi Approver
-   * Get all submissions where isConsolidated is true
+   * First get all forms with specified statuses, then get consolidated submissions for those forms
    */
   private async getMospiApproverSubmissionDetails(userId: string): Promise<any> {
-    // Get all submissions where isConsolidated is true
+    // Step 1: Get all forms with status matching the specified conditions
+    const forms = await this.formRepository.find({
+      where: {
+        status: In([FormStatus.SUBMITTED_TO_MOSPI_APPROVER, FormStatus.ACCEPTED_BY_MOSPI, FormStatus.RETURNED_FROM_MOSPI])
+      },
+    });
+
+    if (forms.length === 0) {
+      return {
+        submissions: [],
+        message: 'No forms found with the specified statuses',
+      };
+    }
+
+    // Step 2: Get form IDs from the forms
+    const formIds = forms.map((form) => form.id);
+
+    // Step 3: Get all submissions where isConsolidated is true for these form IDs
     const submissions = await this.ministrySubmissionRepository.find({
       where: {
+        formId: In(formIds),
         isConsolidated: true,
       },
       order: { createdAt: 'DESC' },
@@ -713,21 +794,10 @@ export class MinistryDashboardService {
 
     if (submissions.length === 0) {
       return {
-        forms: [],
         submissions: [],
-        message: 'No consolidated submissions found',
+        message: 'No consolidated submissions found for the specified forms',
       };
     }
-
-    // Get unique form IDs from submissions
-    const formIds = [...new Set(submissions.map((s) => s.formId))];
-
-    // Get forms for these submissions
-    const forms = await this.formRepository.find({
-      where: {
-        id: In(formIds),
-      },
-    });
 
     // Get unique user IDs from submissions
     const userIds = [...new Set(submissions.map((s) => s.userId))];
@@ -743,20 +813,32 @@ export class MinistryDashboardService {
       })
     );
 
-    // Map submissions with user details
-    const submissionsWithUserDetails = submissions.map((submission) => ({
-      id: submission.id,
-      submissionId: submission.submissionId,
-      userId: submission.userId,
-      formId: submission.formId,
-      status: submission.status,
-      createdAt: submission.createdAt,
-      updatedAt: submission.updatedAt,
-      user: userDetailsMap.get(submission.userId) || null,
-    }));
+    // Create form map for status labels
+    const formMap = new Map<string, Form>();
+    forms.forEach((form) => {
+      formMap.set(form.id, form);
+    });
+
+    // Map submissions with user details and form status (include formId but not form data)
+    const submissionsWithUserDetails = submissions.map((submission) => {
+      const form = formMap.get(submission.formId);
+      const formStatusLabel = this.getFormStatusLabel(form?.status || null, UserRole.MOSPI_APPROVER);
+
+      return {
+        id: submission.id,
+        submissionId: submission.submissionId,
+        userId: submission.userId,
+        formId: submission.formId, // Include formId in response
+        status: submission.status,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+        user: userDetailsMap.get(submission.userId) || null,
+        formStatus: form?.status || null,
+        formStatusLabel: formStatusLabel,
+      };
+    });
 
     return {
-      forms: forms,
       submissions: submissionsWithUserDetails,
     };
   }

@@ -987,7 +987,8 @@ export class MinistryFormCreateService {
           submissionId,
           formId: existingForm.id,
           userId: userId,
-          status: SubmissionStatus.DRAFT,
+          //status: SubmissionStatus.DRAFT,
+          status: null,
         });
 
         const savedSubmission = await this.ministrySubmissionRepository.save(submission);

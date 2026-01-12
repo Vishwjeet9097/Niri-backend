@@ -198,32 +198,30 @@ export class MinistryFormRetrieveService {
 
   /**
    * Get submission details with indicators, subsections, input fields, and submitted data
-   * Retrieves submission by userId and includes submitted data from ministry_submission_data table
+   * Retrieves submission by submissionId and includes submitted data from ministry_submission_data table
    * If forReview is true, only returns indicators with status not null
    */
-  async getSubmissionDetailsWithData(userId: string, forReview?: boolean): Promise<{
+  async getSubmissionDetailsWithData(submissionId: string, forReview?: boolean): Promise<{
     status: boolean;
     data: any[];
     message: string;
     submissionId?: string;
   }> {
     try {
-      // Step 1: Get submission by userId (get the most recent one if multiple exist)
+      // Step 1: Get submission by submissionId (format: SUB-{year}-{randomNum})
       const submission = await this.ministrySubmissionRepository.findOne({
-        where: { userId: userId },
-        order: { createdAt: 'DESC' },
+        where: { id: submissionId },
       });
 
       if (!submission) {
         throw new NotFoundException(
-          `Submission not found for user ID ${userId}`,
+          `Submission not found for submission ID ${submissionId}`,
         );
       }
 
       // Use UUID for querying (ministry_submission_indicator.submission_id references ministry_submission.id)
       const submissionUuid = submission.id;
-      // Use SUB- format for file paths and API response
-      const submissionId = submission.submissionId;
+      // submissionId parameter is already in SUB- format (SUB-{year}-{randomNum})
 
       // Step 2: Get all indicators mapped to this submission
       // If forReview is true, filter by status not null
@@ -509,6 +507,358 @@ export class MinistryFormRetrieveService {
       }
       throw new BadRequestException(
         error.message || 'Failed to retrieve submission details with data',
+      );
+    }
+  }
+
+  /**
+   * Get consolidated submission details with data from all other submissions in the same form
+   * Checks if submission is consolidated, gets formId, then aggregates data from all other submissions
+   * Returns data in the same format as getSubmissionDetailsWithData but with submission details from the consolidated submission
+   */
+  async getConsolidatedSubmissionDetailsWithData(submissionId: string): Promise<{
+    status: boolean;
+    data: any[];
+    message: string;
+    submissionId?: string;
+    submission?: any;
+  }> {
+    try {
+      // Step 1: Get the consolidated submission by submissionId (UUID)
+      const consolidatedSubmission = await this.ministrySubmissionRepository.findOne({
+        where: { id: submissionId },
+      });
+
+      if (!consolidatedSubmission) {
+        throw new NotFoundException(
+          `Submission not found for submission ID ${submissionId}`,
+        );
+      }
+
+      // Step 2: Check if submission is consolidated
+      if (!consolidatedSubmission.isConsolidated) {
+        throw new BadRequestException(
+          `Submission ${submissionId} is not a consolidated submission`,
+        );
+      }
+
+      // Step 3: Get formId from the consolidated submission
+      const formId = consolidatedSubmission.formId;
+      if (!formId) {
+        throw new BadRequestException(
+          `Consolidated submission ${submissionId} does not have a formId`,
+        );
+      }
+
+      // Step 4: Get all other submissions for this formId (excluding the consolidated one)
+      const otherSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          id: Not(submissionId), // Exclude the consolidated submission
+        },
+      });
+
+      if (otherSubmissions.length === 0) {
+        return {
+          status: true,
+          data: [],
+          message: 'No other submissions found for this form',
+          submissionId: consolidatedSubmission.submissionId,
+          submission: {
+            id: consolidatedSubmission.id,
+            submissionId: consolidatedSubmission.submissionId,
+            userId: consolidatedSubmission.userId,
+            formId: consolidatedSubmission.formId,
+            status: consolidatedSubmission.status,
+            isConsolidated: consolidatedSubmission.isConsolidated,
+            createdAt: consolidatedSubmission.createdAt,
+            updatedAt: consolidatedSubmission.updatedAt,
+          },
+        };
+      }
+
+      // Step 5: Get all submission UUIDs from other submissions
+      const otherSubmissionUuids = otherSubmissions.map((s) => s.id);
+
+      // Step 6: Get all indicators mapped to these other submissions
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: { submissionId: In(otherSubmissionUuids) },
+      });
+
+      if (submissionIndicators.length === 0) {
+        return {
+          status: true,
+          data: [],
+          message: 'No indicators mapped to other submissions',
+          submissionId: consolidatedSubmission.submissionId,
+          submission: {
+            id: consolidatedSubmission.id,
+            submissionId: consolidatedSubmission.submissionId,
+            userId: consolidatedSubmission.userId,
+            formId: consolidatedSubmission.formId,
+            status: consolidatedSubmission.status,
+            isConsolidated: consolidatedSubmission.isConsolidated,
+            createdAt: consolidatedSubmission.createdAt,
+            updatedAt: consolidatedSubmission.updatedAt,
+          },
+        };
+      }
+
+      const indicatorIds = submissionIndicators.map((si) => si.indicatorId);
+
+      // Create a map of indicatorId -> array of submissionIndicatorIds (since multiple submissions can have same indicator)
+      const submissionIndicatorMap = new Map<string, string[]>();
+      const indicatorStatusMap = new Map<string, string | null>();
+      submissionIndicators.forEach((si) => {
+        if (!submissionIndicatorMap.has(si.indicatorId)) {
+          submissionIndicatorMap.set(si.indicatorId, []);
+        }
+        submissionIndicatorMap.get(si.indicatorId)!.push(si.id);
+        // Use the first status found (or most recent if needed)
+        if (!indicatorStatusMap.has(si.indicatorId)) {
+          indicatorStatusMap.set(si.indicatorId, si.status);
+        }
+      });
+
+      // Step 7: Get indicator details
+      const indicators = await this.indicatorDetailRepository.find({
+        where: { id: In(indicatorIds) },
+        order: { sequence: 'ASC', sNo: 'ASC' },
+      });
+
+      // Step 8: Get subsections for all indicators
+      const subsections = await this.indicatorSubsectionRepository.find({
+        where: { indicatorId: In(indicatorIds), status: true },
+        order: { sequence: 'ASC', name: 'ASC' },
+      });
+
+      // Step 9: Get input fields for indicators (direct)
+      const indicatorInputFields = await this.inputFieldRepository.find({
+        where: { sectionId: In(indicatorIds) },
+        order: { sequence: 'ASC', label: 'ASC' },
+      });
+
+      // Step 10: Get subsection IDs and their input fields
+      const subsectionIds = subsections.map((sub) => sub.id);
+      const subsectionInputFields = await this.inputFieldRepository.find({
+        where: { sectionId: In(subsectionIds) },
+        order: { sequence: 'ASC', label: 'ASC' },
+      });
+
+      // Step 11: Get all submission data for these submission indicators
+      const allSubmissionIndicatorIds = submissionIndicators.map((si) => si.id);
+      const allSubmissionData = await this.ministrySubmissionDataRepository.find({
+        where: { submissionIndicatorId: In(allSubmissionIndicatorIds) },
+      });
+
+      // Step 12: Create a map of (submissionIndicatorId, inputFieldId) -> submission data
+      const submissionDataMap = new Map<string, MinistrySubmissionData[]>();
+      allSubmissionData.forEach((data) => {
+        const key = `${data.submissionIndicatorId}_${data.inputFieldId}`;
+        if (!submissionDataMap.has(key)) {
+          submissionDataMap.set(key, []);
+        }
+        submissionDataMap.get(key)!.push(data);
+      });
+
+      // Step 13: Group subsections by indicator
+      const subsectionsByIndicator: Record<string, IndicatorSubsection[]> = {};
+      subsections.forEach((subsection) => {
+        if (!subsectionsByIndicator[subsection.indicatorId]) {
+          subsectionsByIndicator[subsection.indicatorId] = [];
+        }
+        subsectionsByIndicator[subsection.indicatorId].push(subsection);
+      });
+
+      // Step 14: Group input fields by section
+      const inputFieldsBySection: Record<string, InputField[]> = {};
+      [...indicatorInputFields, ...subsectionInputFields].forEach((inputField) => {
+        if (!inputFieldsBySection[inputField.sectionId]) {
+          inputFieldsBySection[inputField.sectionId] = [];
+        }
+        inputFieldsBySection[inputField.sectionId].push(inputField);
+      });
+
+      // Step 15: Group indicators by category
+      const indicatorsByCategory: Record<string, IndicatorDetail[]> = {};
+      indicators.forEach((indicator) => {
+        const category = indicator.category;
+        if (!indicatorsByCategory[category]) {
+          indicatorsByCategory[category] = [];
+        }
+        indicatorsByCategory[category].push(indicator);
+      });
+
+      // Step 16: Build the response structure with aggregated submitted data
+      const result: any[] = [];
+
+      Object.keys(indicatorsByCategory).forEach((categoryName) => {
+        const categoryIndicators = indicatorsByCategory[categoryName];
+
+        const indicatorArray = categoryIndicators.map((indicator) => {
+          // Get subsections for this indicator
+          const indicatorSubsections = subsectionsByIndicator[indicator.id] || [];
+          const submissionIndicatorIds = submissionIndicatorMap.get(indicator.id) || [];
+
+          // Build subsection array with inputs and submitted data
+          const subsectionArray = indicatorSubsections.map((subsection) => {
+            const subsectionInputs = inputFieldsBySection[subsection.id] || [];
+            
+            // Get all submitted data for this subsection from all submission indicators
+            const allSubmittedData: MinistrySubmissionData[] = [];
+            submissionIndicatorIds.forEach((submissionIndicatorId) => {
+              subsectionInputs.forEach((input) => {
+                const dataKey = `${submissionIndicatorId}_${input.id}`;
+                const dataArray = submissionDataMap.get(dataKey) || [];
+                allSubmittedData.push(...dataArray);
+              });
+            });
+            
+            // Sort by createdAt to maintain order
+            allSubmittedData.sort((a, b) => 
+              a.createdAt.getTime() - b.createdAt.getTime()
+            );
+            
+            // Group into rows by timestamp
+            const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
+            allSubmittedData.forEach((data) => {
+              const timestamp = Math.floor(data.createdAt.getTime() / 100); // Group by 100ms
+              if (!timestampGroups.has(timestamp)) {
+                timestampGroups.set(timestamp, []);
+              }
+              timestampGroups.get(timestamp)!.push(data);
+            });
+            
+            const submittedItems: any[] = [];
+            const sortedGroups = Array.from(timestampGroups.entries())
+              .sort((a, b) => a[0] - b[0]);
+            
+            sortedGroups.forEach(([_, groupData]) => {
+              const row: any = {};
+              groupData.forEach((data) => {
+                let value: any = null;
+                if (data.valueText !== null) value = data.valueText;
+                else if (data.valueNumber !== null) value = data.valueNumber;
+                else if (data.valueDate !== null) value = data.valueDate;
+                else if (data.valueJson !== null) value = data.valueJson;
+                
+                // If multiple values for same field, combine them (or use the latest)
+                if (row[data.inputFieldId] !== undefined) {
+                  // If already exists, keep the latest one
+                  const existingTimestamp = groupData.find(d => d.inputFieldId === data.inputFieldId && d !== data)?.createdAt;
+                  if (existingTimestamp && data.createdAt > existingTimestamp) {
+                    row[data.inputFieldId] = value;
+                  }
+                } else {
+                  row[data.inputFieldId] = value;
+                }
+              });
+              
+              if (Object.keys(row).length > 0) {
+                submittedItems.push(row);
+              }
+            });
+            
+            // Add submittedData to each input (for backward compatibility - use first occurrence)
+            const inputsWithData = subsectionInputs.map((input) => {
+              const submittedData = allSubmittedData.find(
+                (data) => data.inputFieldId === input.id
+              );
+              
+              return {
+                ...input,
+                submittedData: submittedData ? {
+                  valueText: submittedData.valueText,
+                  valueNumber: submittedData.valueNumber,
+                  valueDate: submittedData.valueDate,
+                  valueJson: submittedData.valueJson,
+                } : null,
+              };
+            });
+
+            return {
+              [subsection.name]: {
+                inputs: inputsWithData,
+                submittedItems: submittedItems.length > 0 ? submittedItems : undefined,
+              },
+            };
+          });
+
+          // Get direct inputs for this indicator
+          const indicatorInputs = inputFieldsBySection[indicator.id] || [];
+          
+          // Add submittedData to each input (aggregate from all submission indicators)
+          const inputsWithData = indicatorInputs.map((input) => {
+            // Get all data for this input from all submission indicators
+            const allDataForInput: MinistrySubmissionData[] = [];
+            submissionIndicatorIds.forEach((submissionIndicatorId) => {
+              const dataKey = `${submissionIndicatorId}_${input.id}`;
+              const dataArray = submissionDataMap.get(dataKey) || [];
+              allDataForInput.push(...dataArray);
+            });
+            
+            // Use the most recent data
+            const submittedData = allDataForInput.length > 0
+              ? allDataForInput.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+              : null;
+            
+            return {
+              ...input,
+              submittedData: submittedData ? {
+                valueText: submittedData.valueText,
+                valueNumber: submittedData.valueNumber,
+                valueDate: submittedData.valueDate,
+                valueJson: submittedData.valueJson,
+              } : null,
+            };
+          });
+
+          // Get status for this indicator (from first occurrence)
+          const indicatorStatus = indicatorStatusMap.get(indicator.id) || null;
+
+          // Build indicator object
+          return {
+            [indicator.name]: {
+              sNo: indicator.sNo,
+              sequence: indicator.sequence,
+              submissionIndicatorId: submissionIndicatorIds.length > 0 ? submissionIndicatorIds[0] : null, // Use first one
+              status: indicatorStatus,
+              inputs: inputsWithData,
+              subsection: subsectionArray,
+            },
+          };
+        });
+
+        // Add category object to result
+        result.push({
+          [categoryName]: indicatorArray,
+        });
+      });
+
+      const response = {
+        status: true,
+        data: result,
+        message: `Retrieved ${indicators.length} indicator(s) with aggregated data from ${otherSubmissions.length} submission(s)`,
+        submissionId: consolidatedSubmission.submissionId,
+        submission: {
+          id: consolidatedSubmission.id,
+          submissionId: consolidatedSubmission.submissionId,
+          userId: consolidatedSubmission.userId,
+          formId: consolidatedSubmission.formId,
+          status: consolidatedSubmission.status,
+          isConsolidated: consolidatedSubmission.isConsolidated,
+          createdAt: consolidatedSubmission.createdAt,
+          updatedAt: consolidatedSubmission.updatedAt,
+        },
+      };
+      
+      return response;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve consolidated submission details with data',
       );
     }
   }
