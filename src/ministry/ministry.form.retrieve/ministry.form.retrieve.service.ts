@@ -335,6 +335,12 @@ export class MinistryFormRetrieveService {
           const subsectionArray = indicatorSubsections.map((subsection) => {
             const subsectionInputs = inputFieldsBySection[subsection.id] || [];
             
+            // Create a map of inputFieldId -> InputField for easy access to dataType
+            const inputFieldMap = new Map<string, InputField>();
+            subsectionInputs.forEach((input) => {
+              inputFieldMap.set(input.id, input);
+            });
+            
             // Get all submitted data for this subsection, grouped by field
             const fieldDataMap = new Map<string, MinistrySubmissionData[]>();
             if (submissionIndicatorId) {
@@ -363,14 +369,9 @@ export class MinistryFormRetrieveService {
             );
             
             // Group into rows: each row should have one value per field
-            // If we have N fields and M total values, we have M/N rows (assuming equal distribution)
-            const numFields = subsectionInputs.length;
-            const numValues = allSubmittedData.length;
-            const numRows = numFields > 0 ? Math.floor(numValues / numFields) : 0;
+            const submittedItems: any[][] = [];
             
-            const submittedItems: any[] = [];
-            
-            if (numRows > 0) {
+            if (allSubmittedData.length > 0) {
               // Group by timestamp buckets (values with same/similar timestamp = same row)
               const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
               allSubmittedData.forEach((data) => {
@@ -386,53 +387,32 @@ export class MinistryFormRetrieveService {
                 .sort((a, b) => a[0] - b[0]);
               
               sortedGroups.forEach(([_, groupData]) => {
-                const row: any = {};
+                const row: any[] = [];
                 groupData.forEach((data) => {
-                  // Extract value based on data type
-                  let value: any = null;
-                  if (data.valueText !== null) value = data.valueText;
-                  else if (data.valueNumber !== null) value = data.valueNumber;
-                  else if (data.valueDate !== null) value = data.valueDate;
-                  else if (data.valueJson !== null) value = data.valueJson;
-                  
-                  row[data.inputFieldId] = value;
+                  const inputField = inputFieldMap.get(data.inputFieldId);
+                  if (inputField) {
+                    row.push({
+                      inputId: data.inputFieldId,
+                      dataType: inputField.dataType,
+                      valueText: data.valueText,
+                      valueNumber: data.valueNumber,
+                      valueDate: data.valueDate,
+                      valueJson: data.valueJson,
+                    });
+                  }
                 });
                 
                 // Only add row if it has at least one value
-                if (Object.keys(row).length > 0) {
+                if (row.length > 0) {
                   submittedItems.push(row);
                 }
               });
-            } else if (numValues > 0) {
-              // Single row case: all values belong to one row
-              const row: any = {};
-              allSubmittedData.forEach((data) => {
-                let value: any = null;
-                if (data.valueText !== null) value = data.valueText;
-                else if (data.valueNumber !== null) value = data.valueNumber;
-                else if (data.valueDate !== null) value = data.valueDate;
-                else if (data.valueJson !== null) value = data.valueJson;
-                
-                row[data.inputFieldId] = value;
-              });
-              submittedItems.push(row);
             }
             
-            // Add submittedData to each input (for backward compatibility)
+            // For subsections, don't include submittedData in inputs - only in submittedItems
             const inputsWithData = subsectionInputs.map((input) => {
-              // Find the first occurrence of this field in submitted data
-              const submittedData = allSubmittedData.find(
-                (data) => data.inputFieldId === input.id
-              );
-              
               return {
                 ...input,
-                submittedData: submittedData ? {
-                  valueText: submittedData.valueText,
-                  valueNumber: submittedData.valueNumber,
-                  valueDate: submittedData.valueDate,
-                  valueJson: submittedData.valueJson,
-                } : null,
               };
             });
 
@@ -704,6 +684,12 @@ export class MinistryFormRetrieveService {
           const subsectionArray = indicatorSubsections.map((subsection) => {
             const subsectionInputs = inputFieldsBySection[subsection.id] || [];
             
+            // Create a map of inputFieldId -> InputField for easy access to dataType
+            const inputFieldMap = new Map<string, InputField>();
+            subsectionInputs.forEach((input) => {
+              inputFieldMap.set(input.id, input);
+            });
+            
             // Get all submitted data for this subsection from all submission indicators
             const allSubmittedData: MinistrySubmissionData[] = [];
             submissionIndicatorIds.forEach((submissionIndicatorId) => {
@@ -729,50 +715,35 @@ export class MinistryFormRetrieveService {
               timestampGroups.get(timestamp)!.push(data);
             });
             
-            const submittedItems: any[] = [];
+            const submittedItems: any[][] = [];
             const sortedGroups = Array.from(timestampGroups.entries())
               .sort((a, b) => a[0] - b[0]);
             
             sortedGroups.forEach(([_, groupData]) => {
-              const row: any = {};
+              const row: any[] = [];
               groupData.forEach((data) => {
-                let value: any = null;
-                if (data.valueText !== null) value = data.valueText;
-                else if (data.valueNumber !== null) value = data.valueNumber;
-                else if (data.valueDate !== null) value = data.valueDate;
-                else if (data.valueJson !== null) value = data.valueJson;
-                
-                // If multiple values for same field, combine them (or use the latest)
-                if (row[data.inputFieldId] !== undefined) {
-                  // If already exists, keep the latest one
-                  const existingTimestamp = groupData.find(d => d.inputFieldId === data.inputFieldId && d !== data)?.createdAt;
-                  if (existingTimestamp && data.createdAt > existingTimestamp) {
-                    row[data.inputFieldId] = value;
-                  }
-                } else {
-                  row[data.inputFieldId] = value;
+                const inputField = inputFieldMap.get(data.inputFieldId);
+                if (inputField) {
+                  row.push({
+                    inputId: data.inputFieldId,
+                    dataType: inputField.dataType,
+                    valueText: data.valueText,
+                    valueNumber: data.valueNumber,
+                    valueDate: data.valueDate,
+                    valueJson: data.valueJson,
+                  });
                 }
               });
               
-              if (Object.keys(row).length > 0) {
+              if (row.length > 0) {
                 submittedItems.push(row);
               }
             });
             
-            // Add submittedData to each input (for backward compatibility - use first occurrence)
+            // For subsections, don't include submittedData in inputs - only in submittedItems
             const inputsWithData = subsectionInputs.map((input) => {
-              const submittedData = allSubmittedData.find(
-                (data) => data.inputFieldId === input.id
-              );
-              
               return {
                 ...input,
-                submittedData: submittedData ? {
-                  valueText: submittedData.valueText,
-                  valueNumber: submittedData.valueNumber,
-                  valueDate: submittedData.valueDate,
-                  valueJson: submittedData.valueJson,
-                } : null,
               };
             });
 
@@ -1015,6 +986,12 @@ export class MinistryFormRetrieveService {
           const subsectionArray = indicatorSubsections.map((subsection) => {
             const subsectionInputs = inputFieldsBySection[subsection.id] || [];
             
+            // Create a map of inputFieldId -> InputField for easy access to dataType
+            const inputFieldMap = new Map<string, InputField>();
+            subsectionInputs.forEach((input) => {
+              inputFieldMap.set(input.id, input);
+            });
+            
             // Get all submitted data for this subsection, grouped by field
             const fieldDataMap = new Map<string, MinistrySubmissionData[]>();
             if (submissionIndicatorId) {
@@ -1043,13 +1020,9 @@ export class MinistryFormRetrieveService {
             );
             
             // Group into rows: each row should have one value per field
-            const numFields = subsectionInputs.length;
-            const numValues = allSubmittedData.length;
-            const numRows = numFields > 0 ? Math.floor(numValues / numFields) : 0;
+            const submittedItems: any[][] = [];
             
-            const submittedItems: any[] = [];
-            
-            if (numRows > 0) {
+            if (allSubmittedData.length > 0) {
               // Group by timestamp buckets (values with same/similar timestamp = same row)
               const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
               allSubmittedData.forEach((data) => {
@@ -1065,53 +1038,32 @@ export class MinistryFormRetrieveService {
                 .sort((a, b) => a[0] - b[0]);
               
               sortedGroups.forEach(([_, groupData]) => {
-                const row: any = {};
+                const row: any[] = [];
                 groupData.forEach((data) => {
-                  // Extract value based on data type
-                  let value: any = null;
-                  if (data.valueText !== null) value = data.valueText;
-                  else if (data.valueNumber !== null) value = data.valueNumber;
-                  else if (data.valueDate !== null) value = data.valueDate;
-                  else if (data.valueJson !== null) value = data.valueJson;
-                  
-                  row[data.inputFieldId] = value;
+                  const inputField = inputFieldMap.get(data.inputFieldId);
+                  if (inputField) {
+                    row.push({
+                      inputId: data.inputFieldId,
+                      dataType: inputField.dataType,
+                      valueText: data.valueText,
+                      valueNumber: data.valueNumber,
+                      valueDate: data.valueDate,
+                      valueJson: data.valueJson,
+                    });
+                  }
                 });
                 
                 // Only add row if it has at least one value
-                if (Object.keys(row).length > 0) {
+                if (row.length > 0) {
                   submittedItems.push(row);
                 }
               });
-            } else if (numValues > 0) {
-              // Single row case: all values belong to one row
-              const row: any = {};
-              allSubmittedData.forEach((data) => {
-                let value: any = null;
-                if (data.valueText !== null) value = data.valueText;
-                else if (data.valueNumber !== null) value = data.valueNumber;
-                else if (data.valueDate !== null) value = data.valueDate;
-                else if (data.valueJson !== null) value = data.valueJson;
-                
-                row[data.inputFieldId] = value;
-              });
-              submittedItems.push(row);
             }
             
-            // Add submittedData to each input (for backward compatibility)
+            // For subsections, don't include submittedData in inputs - only in submittedItems
             const inputsWithData = subsectionInputs.map((input) => {
-              // Find the first occurrence of this field in submitted data
-              const submittedData = allSubmittedData.find(
-                (data) => data.inputFieldId === input.id
-              );
-              
               return {
                 ...input,
-                submittedData: submittedData ? {
-                  valueText: submittedData.valueText,
-                  valueNumber: submittedData.valueNumber,
-                  valueDate: submittedData.valueDate,
-                  valueJson: submittedData.valueJson,
-                } : null,
               };
             });
 
