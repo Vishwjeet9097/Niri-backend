@@ -40,6 +40,7 @@ export class MinistryFormRetrieveService {
     data: any[];
     message: string;
     submissionId?: string;
+    id?: string; // UUID of the submission (needed for submission-with-data endpoint)
   }> {
     try {
       // Step 1: Get submission by userId (get the most recent one if multiple exist)
@@ -72,6 +73,7 @@ export class MinistryFormRetrieveService {
           data: [],
           message: 'No indicators mapped to this submission',
           submissionId: submissionId, // Use SUB- format for file paths
+          id: submissionUuid, // UUID for calling submission-with-data endpoint
         };
       }
 
@@ -185,6 +187,7 @@ export class MinistryFormRetrieveService {
         data: result,
         message: `Retrieved ${indicators.length} indicator(s) for submission`,
         submissionId: submissionId, // Use SUB- format for file paths (not UUID)
+        id: submissionUuid, // UUID for calling submission-with-data endpoint
       };
     } catch (error) {
       if (error instanceof NotFoundException) {

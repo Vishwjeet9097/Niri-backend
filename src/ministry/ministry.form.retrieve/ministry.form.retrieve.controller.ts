@@ -21,10 +21,12 @@ export class MinistryFormRetrieveController {
   @Get('submission/:userId')
   async getSubmissionDetails(@Param('userId') userId: string) {
     const result = await this.ministryFormRetrieveService.getSubmissionDetails(userId);
-    // Ensure submissionId is included
+    // Ensure submissionId and id (UUID) are included
     console.log('[Controller] getSubmissionDetails returning:', {
       hasSubmissionId: !!result?.submissionId,
       submissionId: result?.submissionId,
+      hasId: !!result?.id,
+      id: result?.id,
       resultKeys: result ? Object.keys(result) : 'null'
     });
     return result;
