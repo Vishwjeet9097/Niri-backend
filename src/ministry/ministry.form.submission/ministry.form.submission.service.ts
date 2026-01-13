@@ -60,11 +60,6 @@ export class MinistryFormSubmissionService {
         );
       }
 
-      // Check if status is already DRAFT - if yes, return error
-      if (submissionIndicator.status === SubmissionIndicatorStatus.DRAFT) {
-        throw new BadRequestException('Data already submitted. Status is already DRAFT.');
-      }
-
       const { submissionId, indicatorId } = submissionIndicator;
 
       // Step 2: Get indicator details and all its input fields
@@ -164,10 +159,11 @@ export class MinistryFormSubmissionService {
       // Step 6: Save all data to database
       const saved = await this.ministrySubmissionDataRepository.save(savedData);
 
-      // Step 7: Update submission indicator status to DRAFT
+      // Step 7: Update submission indicator status (use status from DTO or default to DRAFT)
+      const statusToUpdate = dto.status || SubmissionIndicatorStatus.DRAFT;
       await this.ministrySubmissionIndicatorRepository.update(
         { id: dto.submissionIndicatorId },
-        { status: SubmissionIndicatorStatus.DRAFT }
+        { status: statusToUpdate }
       );
 
       return {
@@ -465,13 +461,12 @@ export class MinistryFormSubmissionService {
       // Step 6: Save all data to database (updates existing, creates new)
       const saved = await this.ministrySubmissionDataRepository.save(dataToSave);
 
-      // Step 7: Update submission indicator status to DRAFT (if not already)
-      if (submissionIndicator.status !== SubmissionIndicatorStatus.DRAFT) {
-        await this.ministrySubmissionIndicatorRepository.update(
-          { id: dto.submissionIndicatorId },
-          { status: SubmissionIndicatorStatus.DRAFT }
-        );
-      }
+      // Step 7: Update submission indicator status (use status from DTO or default to DRAFT)
+      const statusToUpdate = dto.status || SubmissionIndicatorStatus.DRAFT;
+      await this.ministrySubmissionIndicatorRepository.update(
+        { id: dto.submissionIndicatorId },
+        { status: statusToUpdate }
+      );
 
       return {
         status: true,

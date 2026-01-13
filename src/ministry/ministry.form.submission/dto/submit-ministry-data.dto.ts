@@ -1,5 +1,6 @@
-import { IsString, IsObject, IsArray, ValidateNested, IsNotEmpty } from 'class-validator';
+import { IsString, IsObject, IsArray, ValidateNested, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SubmissionIndicatorStatus } from '../../entities/ministry-submission-indicator.entity';
 
 class InputDataDto {
   @IsString()
@@ -28,6 +29,10 @@ export class SubmitMinistryDataDto {
   @ValidateNested()
   @Type(() => DataDto)
   data: DataDto;
+
+  @IsOptional()
+  @IsEnum(SubmissionIndicatorStatus)
+  status?: SubmissionIndicatorStatus;
 }
 
 

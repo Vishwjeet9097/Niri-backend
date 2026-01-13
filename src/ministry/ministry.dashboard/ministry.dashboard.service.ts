@@ -105,27 +105,27 @@ export class MinistryDashboardService {
       },
     });
 
-    // Under Review: Status is DRAFT or SUBMITTED_TO_STATE
+    // Under Review: Status is DRAFT or SUBMITTED_TO_MINISTRY
     const underReview = await this.ministrySubmissionIndicatorRepository.count({
       where: {
         assignedTo: userId,
-        status: In([SubmissionIndicatorStatus.DRAFT, SubmissionIndicatorStatus.SUBMITTED_TO_STATE]),
+        status: In([SubmissionIndicatorStatus.DRAFT, SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY]),
       },
     });
 
-    // Approved: Status is ACCEPTED_BY_STATE or ACCEPTED_BY_MOSPI
+    // Approved: Status is ACCEPTED_BY_MINISTRY or ACCEPTED_BY_MOSPI
     const approved = await this.ministrySubmissionIndicatorRepository.count({
       where: {
         assignedTo: userId,
-        status: In([SubmissionIndicatorStatus.ACCEPTED_BY_STATE, SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI]),
+        status: In([SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY, SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI]),
       },
     });
 
-    // Sent Back: Status is RETURNED_FROM_STATE
+    // Sent Back: Status is RETURNED_FROM_MINISTRY
     const sentBack = await this.ministrySubmissionIndicatorRepository.count({
       where: {
         assignedTo: userId,
-        status: SubmissionIndicatorStatus.RETURNED_FROM_STATE,
+        status: SubmissionIndicatorStatus.RETURNED_FROM_MINISTRY,
       },
     });
 
@@ -180,11 +180,11 @@ export class MinistryDashboardService {
       .andWhere('indicator.assignedTo != :userId', { userId })
       .getCount();
 
-    // Total accepted: status is ACCEPTED_BY_STATE or ACCEPTED_BY_MOSPI
+    // Total accepted: status is ACCEPTED_BY_MINISTRY or ACCEPTED_BY_MOSPI
     const total_accepted = await this.ministrySubmissionIndicatorRepository.count({
       where: {
         ministryUser: userId,
-        status: In([SubmissionIndicatorStatus.ACCEPTED_BY_STATE, SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI]),
+        status: In([SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY, SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI]),
       },
     });
 
@@ -197,11 +197,11 @@ export class MinistryDashboardService {
       })
       .getCount();
 
-    // Total return nodal: status is RETURNED_FROM_STATE
+    // Total return nodal: status is RETURNED_FROM_MINISTRY
     const total_return_nodal = await this.ministrySubmissionIndicatorRepository.count({
       where: {
         ministryUser: userId,
-        status: SubmissionIndicatorStatus.RETURNED_FROM_STATE,
+        status: SubmissionIndicatorStatus.RETURNED_FROM_MINISTRY,
       },
     });
 
@@ -363,11 +363,11 @@ export class MinistryDashboardService {
     message: string;
   }> {
     try {
-      // Accepted: status ACCEPTED_BY_STATE where ministry_user = userId
+      // Accepted: status ACCEPTED_BY_MINISTRY where ministry_user = userId
       const accepted = await this.ministrySubmissionIndicatorRepository.count({
         where: {
           ministryUser: ministryUserId,
-          status: SubmissionIndicatorStatus.ACCEPTED_BY_STATE,
+          status: SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY,
         },
       });
 
