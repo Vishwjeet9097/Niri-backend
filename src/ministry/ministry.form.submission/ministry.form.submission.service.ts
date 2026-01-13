@@ -121,7 +121,10 @@ export class MinistryFormSubmissionService {
 
       // Step 5: Process subsection data (array inside array)
       // subsection is an array of arrays: [[{inputId, value}, ...], [{inputId, value}, ...]]
-      for (const subsectionArray of dto.data.subsection) {
+      // Each array represents a row, assign sequence: first array = 1, second = 2, etc.
+      dto.data.subsection.forEach((subsectionArray, arrayIndex) => {
+        const sequence = arrayIndex + 1; // Sequence starts from 1
+        
         for (const subsectionInput of subsectionArray) {
           // Find which subsection this input belongs to
           let foundSubsection: IndicatorSubsection | null = null;
@@ -151,11 +154,12 @@ export class MinistryFormSubmissionService {
             subsectionInput.inputId,
             foundInputField.dataType,
             subsectionInput.value,
+            sequence, // Assign sequence number for this row
           );
 
           savedData.push(submissionData);
         }
-      }
+      });
 
       // Step 6: Save all data to database
       const saved = await this.ministrySubmissionDataRepository.save(savedData);
@@ -194,10 +198,12 @@ export class MinistryFormSubmissionService {
     inputFieldId: string,
     dataType: DataType,
     value: any,
+    sequence?: number | null,
   ): MinistrySubmissionData {
     const submissionData = new MinistrySubmissionData();
     submissionData.submissionIndicatorId = submissionIndicatorId;
     submissionData.inputFieldId = inputFieldId;
+    submissionData.sequence = sequence ?? null;
     
     // Set value based on data type
     switch (dataType) {
@@ -251,13 +257,21 @@ export class MinistryFormSubmissionService {
     inputFieldId: string,
     dataType: DataType,
     value: any,
+    sequence?: number | null,
   ): Promise<MinistrySubmissionData> {
-    // Try to find existing record
+    // Try to find existing record - match by submissionIndicatorId, inputFieldId, and sequence (if provided)
+    const whereCondition: any = {
+      submissionIndicatorId: submissionIndicatorId,
+      inputFieldId: inputFieldId,
+    };
+    
+    // If sequence is provided, also match by sequence to find the correct row
+    if (sequence != null) {
+      whereCondition.sequence = sequence;
+    }
+    
     const existingData = await this.ministrySubmissionDataRepository.findOne({
-      where: {
-        submissionIndicatorId: submissionIndicatorId,
-        inputFieldId: inputFieldId,
-      },
+      where: whereCondition,
     });
 
     let submissionData: MinistrySubmissionData;
@@ -271,6 +285,9 @@ export class MinistryFormSubmissionService {
       submissionData.submissionIndicatorId = submissionIndicatorId;
       submissionData.inputFieldId = inputFieldId;
     }
+    
+    // Set sequence (always update sequence even for existing records)
+    submissionData.sequence = sequence ?? null;
     
     // Set value based on data type
     switch (dataType) {
@@ -404,7 +421,11 @@ export class MinistryFormSubmissionService {
 
       // Step 5: Process subsection data (array inside array)
       // subsection is an array of arrays: [[{inputId, value}, ...], [{inputId, value}, ...]]
-      for (const subsectionArray of dto.data.subsection) {
+      // Each array represents a row, assign sequence: first array = 1, second = 2, etc.
+      for (let arrayIndex = 0; arrayIndex < dto.data.subsection.length; arrayIndex++) {
+        const subsectionArray = dto.data.subsection[arrayIndex];
+        const sequence = arrayIndex + 1; // Sequence starts from 1
+        
         for (const subsectionInput of subsectionArray) {
           // Find which subsection this input belongs to
           let foundSubsection: IndicatorSubsection | null = null;
@@ -434,6 +455,7 @@ export class MinistryFormSubmissionService {
             subsectionInput.inputId,
             foundInputField.dataType,
             subsectionInput.value,
+            sequence, // Assign sequence number for this row
           );
 
           dataToSave.push(submissionData);

@@ -341,73 +341,60 @@ export class MinistryFormRetrieveService {
               inputFieldMap.set(input.id, input);
             });
             
-            // Get all submitted data for this subsection, grouped by field
-            const fieldDataMap = new Map<string, MinistrySubmissionData[]>();
-            if (submissionIndicatorId) {
-              subsectionInputs.forEach((input) => {
-                const dataKey = `${submissionIndicatorId}_${input.id}`;
-                const submittedData = submissionDataMap.get(dataKey);
-                if (submittedData) {
-                  if (!fieldDataMap.has(input.id)) {
-                    fieldDataMap.set(input.id, []);
-                  }
-                  fieldDataMap.get(input.id)!.push(submittedData);
-                }
-              });
-            }
-            
-            // Reconstruct rows: if multiple values exist for any field, we have multiple rows
-            // Group by timestamp (values in the same row have similar timestamps)
-            const allSubmittedData: MinistrySubmissionData[] = [];
-            fieldDataMap.forEach((dataArray) => {
-              allSubmittedData.push(...dataArray);
+            // Get all submitted data for this subsection from allSubmissionData
+            // Filter by submissionIndicatorId and inputFieldIds in this subsection
+            const subsectionInputIds = subsectionInputs.map((input) => input.id);
+            const allSubmittedDataForSubsection = allSubmissionData.filter((data) => {
+              return data.submissionIndicatorId === submissionIndicatorId && 
+                     subsectionInputIds.includes(data.inputFieldId);
             });
             
-            // Sort by createdAt to maintain order
-            allSubmittedData.sort((a, b) => 
-              a.createdAt.getTime() - b.createdAt.getTime()
-            );
+            // Group by sequence: each sequence number gets its own array
+            const sequenceGroups: Map<number | null, MinistrySubmissionData[]> = new Map();
+            allSubmittedDataForSubsection.forEach((data) => {
+              const sequence = data.sequence;
+              if (!sequenceGroups.has(sequence)) {
+                sequenceGroups.set(sequence, []);
+              }
+              sequenceGroups.get(sequence)!.push(data);
+            });
             
-            // Group into rows: each row should have one value per field
+            // Convert to submittedItems array: [[all data with seq 1], [all data with seq 2], ...]
             const submittedItems: any[][] = [];
             
-            if (allSubmittedData.length > 0) {
-              // Group by timestamp buckets (values with same/similar timestamp = same row)
-              const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
-              allSubmittedData.forEach((data) => {
-                const timestamp = Math.floor(data.createdAt.getTime() / 100); // Group by 100ms
-                if (!timestampGroups.has(timestamp)) {
-                  timestampGroups.set(timestamp, []);
-                }
-                timestampGroups.get(timestamp)!.push(data);
+            // Sort sequences (null sequences last)
+            const sortedSequences = Array.from(sequenceGroups.entries())
+              .sort((a, b) => {
+                // Sort null sequences last
+                if (a[0] === null && b[0] !== null) return 1;
+                if (a[0] !== null && b[0] === null) return -1;
+                if (a[0] === null && b[0] === null) return 0;
+                // Sort by sequence number
+                return (a[0] as number) - (b[0] as number);
               });
-              
-              // Convert groups to rows
-              const sortedGroups = Array.from(timestampGroups.entries())
-                .sort((a, b) => a[0] - b[0]);
-              
-              sortedGroups.forEach(([_, groupData]) => {
-                const row: any[] = [];
-                groupData.forEach((data) => {
-                  const inputField = inputFieldMap.get(data.inputFieldId);
-                  if (inputField) {
-                    row.push({
-                      inputId: data.inputFieldId,
-                      dataType: inputField.dataType,
-                      valueText: data.valueText,
-                      valueNumber: data.valueNumber,
-                      valueDate: data.valueDate,
-                      valueJson: data.valueJson,
-                    });
-                  }
-                });
-                
-                // Only add row if it has at least one value
-                if (row.length > 0) {
-                  submittedItems.push(row);
+            
+            // For each sequence group, create an array with all data items
+            sortedSequences.forEach(([sequence, groupData]) => {
+              const row: any[] = [];
+              groupData.forEach((data) => {
+                const inputField = inputFieldMap.get(data.inputFieldId);
+                if (inputField) {
+                  row.push({
+                    inputId: data.inputFieldId,
+                    dataType: inputField.dataType,
+                    valueText: data.valueText,
+                    valueNumber: data.valueNumber,
+                    valueDate: data.valueDate,
+                    valueJson: data.valueJson,
+                  });
                 }
               });
-            }
+              
+              // Only add row if it has at least one value
+              if (row.length > 0) {
+                submittedItems.push(row);
+              }
+            });
             
             // For subsections, don't include submittedData in inputs - only in submittedItems
             const inputsWithData = subsectionInputs.map((input) => {
@@ -690,36 +677,40 @@ export class MinistryFormRetrieveService {
               inputFieldMap.set(input.id, input);
             });
             
-            // Get all submitted data for this subsection from all submission indicators
-            const allSubmittedData: MinistrySubmissionData[] = [];
-            submissionIndicatorIds.forEach((submissionIndicatorId) => {
-              subsectionInputs.forEach((input) => {
-                const dataKey = `${submissionIndicatorId}_${input.id}`;
-                const dataArray = submissionDataMap.get(dataKey) || [];
-                allSubmittedData.push(...dataArray);
-              });
+            // Get all submitted data for this subsection from allSubmissionData
+            // Filter by submissionIndicatorIds and inputFieldIds in this subsection
+            const subsectionInputIds = subsectionInputs.map((input) => input.id);
+            const allSubmittedDataForSubsection = allSubmissionData.filter((data) => {
+              return submissionIndicatorIds.includes(data.submissionIndicatorId) && 
+                     subsectionInputIds.includes(data.inputFieldId);
             });
             
-            // Sort by createdAt to maintain order
-            allSubmittedData.sort((a, b) => 
-              a.createdAt.getTime() - b.createdAt.getTime()
-            );
-            
-            // Group into rows by timestamp
-            const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
-            allSubmittedData.forEach((data) => {
-              const timestamp = Math.floor(data.createdAt.getTime() / 100); // Group by 100ms
-              if (!timestampGroups.has(timestamp)) {
-                timestampGroups.set(timestamp, []);
+            // Group by sequence: each sequence number gets its own array
+            const sequenceGroups: Map<number | null, MinistrySubmissionData[]> = new Map();
+            allSubmittedDataForSubsection.forEach((data) => {
+              const sequence = data.sequence;
+              if (!sequenceGroups.has(sequence)) {
+                sequenceGroups.set(sequence, []);
               }
-              timestampGroups.get(timestamp)!.push(data);
+              sequenceGroups.get(sequence)!.push(data);
             });
             
+            // Convert to submittedItems array: [[all data with seq 1], [all data with seq 2], ...]
             const submittedItems: any[][] = [];
-            const sortedGroups = Array.from(timestampGroups.entries())
-              .sort((a, b) => a[0] - b[0]);
             
-            sortedGroups.forEach(([_, groupData]) => {
+            // Sort sequences (null sequences last)
+            const sortedSequences = Array.from(sequenceGroups.entries())
+              .sort((a, b) => {
+                // Sort null sequences last
+                if (a[0] === null && b[0] !== null) return 1;
+                if (a[0] !== null && b[0] === null) return -1;
+                if (a[0] === null && b[0] === null) return 0;
+                // Sort by sequence number
+                return (a[0] as number) - (b[0] as number);
+              });
+            
+            // For each sequence group, create an array with all data items
+            sortedSequences.forEach(([sequence, groupData]) => {
               const row: any[] = [];
               groupData.forEach((data) => {
                 const inputField = inputFieldMap.get(data.inputFieldId);
@@ -992,73 +983,60 @@ export class MinistryFormRetrieveService {
               inputFieldMap.set(input.id, input);
             });
             
-            // Get all submitted data for this subsection, grouped by field
-            const fieldDataMap = new Map<string, MinistrySubmissionData[]>();
-            if (submissionIndicatorId) {
-              subsectionInputs.forEach((input) => {
-                const dataKey = `${submissionIndicatorId}_${input.id}`;
-                const submittedData = submissionDataMap.get(dataKey);
-                if (submittedData) {
-                  if (!fieldDataMap.has(input.id)) {
-                    fieldDataMap.set(input.id, []);
-                  }
-                  fieldDataMap.get(input.id)!.push(submittedData);
-                }
-              });
-            }
-            
-            // Reconstruct rows: if multiple values exist for any field, we have multiple rows
-            // Group by timestamp (values in the same row have similar timestamps)
-            const allSubmittedData: MinistrySubmissionData[] = [];
-            fieldDataMap.forEach((dataArray) => {
-              allSubmittedData.push(...dataArray);
+            // Get all submitted data for this subsection from allSubmissionData
+            // Filter by submissionIndicatorId and inputFieldIds in this subsection
+            const subsectionInputIds = subsectionInputs.map((input) => input.id);
+            const allSubmittedDataForSubsection = allSubmissionData.filter((data) => {
+              return data.submissionIndicatorId === submissionIndicatorId && 
+                     subsectionInputIds.includes(data.inputFieldId);
             });
             
-            // Sort by createdAt to maintain order
-            allSubmittedData.sort((a, b) => 
-              a.createdAt.getTime() - b.createdAt.getTime()
-            );
+            // Group by sequence: each sequence number gets its own array
+            const sequenceGroups: Map<number | null, MinistrySubmissionData[]> = new Map();
+            allSubmittedDataForSubsection.forEach((data) => {
+              const sequence = data.sequence;
+              if (!sequenceGroups.has(sequence)) {
+                sequenceGroups.set(sequence, []);
+              }
+              sequenceGroups.get(sequence)!.push(data);
+            });
             
-            // Group into rows: each row should have one value per field
+            // Convert to submittedItems array: [[all data with seq 1], [all data with seq 2], ...]
             const submittedItems: any[][] = [];
             
-            if (allSubmittedData.length > 0) {
-              // Group by timestamp buckets (values with same/similar timestamp = same row)
-              const timestampGroups: Map<number, MinistrySubmissionData[]> = new Map();
-              allSubmittedData.forEach((data) => {
-                const timestamp = Math.floor(data.createdAt.getTime() / 100); // Group by 100ms
-                if (!timestampGroups.has(timestamp)) {
-                  timestampGroups.set(timestamp, []);
-                }
-                timestampGroups.get(timestamp)!.push(data);
+            // Sort sequences (null sequences last)
+            const sortedSequences = Array.from(sequenceGroups.entries())
+              .sort((a, b) => {
+                // Sort null sequences last
+                if (a[0] === null && b[0] !== null) return 1;
+                if (a[0] !== null && b[0] === null) return -1;
+                if (a[0] === null && b[0] === null) return 0;
+                // Sort by sequence number
+                return (a[0] as number) - (b[0] as number);
               });
-              
-              // Convert groups to rows
-              const sortedGroups = Array.from(timestampGroups.entries())
-                .sort((a, b) => a[0] - b[0]);
-              
-              sortedGroups.forEach(([_, groupData]) => {
-                const row: any[] = [];
-                groupData.forEach((data) => {
-                  const inputField = inputFieldMap.get(data.inputFieldId);
-                  if (inputField) {
-                    row.push({
-                      inputId: data.inputFieldId,
-                      dataType: inputField.dataType,
-                      valueText: data.valueText,
-                      valueNumber: data.valueNumber,
-                      valueDate: data.valueDate,
-                      valueJson: data.valueJson,
-                    });
-                  }
-                });
-                
-                // Only add row if it has at least one value
-                if (row.length > 0) {
-                  submittedItems.push(row);
+            
+            // For each sequence group, create an array with all data items
+            sortedSequences.forEach(([sequence, groupData]) => {
+              const row: any[] = [];
+              groupData.forEach((data) => {
+                const inputField = inputFieldMap.get(data.inputFieldId);
+                if (inputField) {
+                  row.push({
+                    inputId: data.inputFieldId,
+                    dataType: inputField.dataType,
+                    valueText: data.valueText,
+                    valueNumber: data.valueNumber,
+                    valueDate: data.valueDate,
+                    valueJson: data.valueJson,
+                  });
                 }
               });
-            }
+              
+              // Only add row if it has at least one value
+              if (row.length > 0) {
+                submittedItems.push(row);
+              }
+            });
             
             // For subsections, don't include submittedData in inputs - only in submittedItems
             const inputsWithData = subsectionInputs.map((input) => {

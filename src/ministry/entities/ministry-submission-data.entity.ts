@@ -19,6 +19,9 @@ export class MinistrySubmissionData {
   @Column({ name: "input_field_id" })
   inputFieldId: string; // References ministry_input_fields.id
 
+  @Column({ name: "sequence", type: "integer", nullable: true, default: null })
+  sequence: number | null; // Sequence number for subsection rows (1, 2, 3, etc.)
+
   @Column({ name: "value_text", type: "text", nullable: true })
   valueText: string | null;
 
