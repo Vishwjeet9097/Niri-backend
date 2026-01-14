@@ -5,7 +5,7 @@ import { MinistrySubmissionIndicator, SubmissionIndicatorStatus } from '../entit
 import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { Form, FormStatus } from '../entities/form.entity';
 import { User, UserRole } from '../../entities/user.entity';
-import { SubmissionStatus } from '../../entities/submission.entity';
+import { MinistrySubmissionStatus } from '../entities/ministry-submission.entity';
 import { Ministry } from '../../entities/ministry.entity';
 
 @Injectable()
@@ -222,7 +222,7 @@ export class MinistryDashboardService {
       const submissionsSubmittedToMospi = await this.ministrySubmissionRepository.find({
         where: {
           formId: In(formIdsSubmittedToMospi),
-          status: In([SubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER, SubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER]),
+          status: In([MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER, MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER]),
         },
       });
 
@@ -581,6 +581,7 @@ export class MinistryDashboardService {
     const forms = await this.formRepository.find({
       where: {
         ministryUser: userId,
+        
       },
     });
 
@@ -594,14 +595,18 @@ export class MinistryDashboardService {
 
     const formIds = forms.map((f) => f.id);
 
-    // Get all submissions for these forms where status is not null
-    const submissions = await this.ministrySubmissionRepository.find({
+    // Get all submissions for these forms
+    const allSubmissions = await this.ministrySubmissionRepository.find({
       where: {
         formId: In(formIds),
-        status: Not(IsNull()),
       },
       order: { createdAt: 'DESC' },
     });
+
+    // Filter out submissions with null or DRAFT status
+    const submissions = allSubmissions.filter(
+      (submission) => submission.status !== null && submission.status !== MinistrySubmissionStatus.DRAFT
+    );
 
     // Get unique user IDs from submissions
     const userIds = [...new Set(submissions.map((s) => s.userId))];
