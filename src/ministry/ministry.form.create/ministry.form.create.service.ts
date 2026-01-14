@@ -12,7 +12,7 @@ import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { MinistrySubmissionIndicator } from '../entities/ministry-submission-indicator.entity';
 import { User, UserRole } from '../../entities/user.entity';
 import { Ministry } from '../../entities/ministry.entity';
-import { SubmissionStatus } from '../../entities/submission.entity';
+import { MinistrySubmissionStatus } from '../entities/ministry-submission.entity';
 import { CreateIndicatorDto } from './dto/create-indicator.dto';
 import { CreateSubsectionDto } from './dto/create-subsection.dto';
 import { CreateInputFieldDto } from './dto/create-input-field.dto';
@@ -1113,7 +1113,7 @@ export class MinistryFormCreateService {
         submissionId,
         formId: form.id,
         userId: nodalUserId,
-        status: SubmissionStatus.DRAFT,
+        status: MinistrySubmissionStatus.DRAFT,
       });
 
       const savedSubmission = await this.ministrySubmissionRepository.save(newSubmission);
@@ -1276,7 +1276,7 @@ export class MinistryFormCreateService {
           submissionId,
           formId: ministryForm.id,
           userId: userId,
-          status: SubmissionStatus.DRAFT,
+          status: MinistrySubmissionStatus.DRAFT,
         });
 
         userSubmission = await this.ministrySubmissionRepository.save(userSubmission);

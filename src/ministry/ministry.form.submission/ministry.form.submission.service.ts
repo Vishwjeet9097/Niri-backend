@@ -8,7 +8,7 @@ import { IndicatorSubsection } from '../entities/indicator-subsection.entity';
 import { InputField, DataType } from '../entities/input-field.entity';
 import { MinistrySubmissionData } from '../entities/ministry-submission-data.entity';
 import { Form, FormStatus } from '../entities/form.entity';
-import { SubmissionStatus } from '../../entities/submission.entity';
+import { MinistrySubmissionStatus } from '../entities/ministry-submission.entity';
 import { MinistrySubmissionComment } from '../entities/ministry-submission-comment.entity';
 import { User } from '../../entities/user.entity';
 import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
@@ -165,6 +165,15 @@ export class MinistryFormSubmissionService {
         { id: dto.submissionIndicatorId },
         { status: statusToUpdate }
       );
+
+      // If status is SUBMITTED_TO_MINISTRY, also update the MinistrySubmission status to SUBMITTED_TO_MINISTRY
+      if (statusToUpdate === SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY) {
+        // First, find the submission indicator to get the submissionId
+          await this.ministrySubmissionRepository.update(
+            { id: submissionIndicator.submissionId },
+            { status: MinistrySubmissionStatus.SUBMITTED_TO_MINISTRY }
+          );
+      }
 
       return {
         status: true,
@@ -516,6 +525,21 @@ export class MinistryFormSubmissionService {
         { status: dto.status },
       );
 
+      // Task 1: If status is RETURNED_FROM_MINISTRY or RETURNED_FROM_MOSPI, mark submission as SUBMITTED_TO_MINISTRY
+      if (dto.status === SubmissionIndicatorStatus.RETURNED_FROM_MINISTRY || 
+          dto.status === SubmissionIndicatorStatus.RETURNED_FROM_MOSPI) {
+        await this.ministrySubmissionRepository.update(
+          { id: submissionIndicator.submissionId },
+          { status: MinistrySubmissionStatus.SUBMITTED_TO_MINISTRY },
+        );
+      }
+
+      // Task 2: If status is ACCEPTED_BY_MINISTRY or ACCEPTED_BY_MOSPI, use handleSubmissionOnIndicatorUpdates
+      if (dto.status === SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY || 
+          dto.status === SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI) {
+        await this.handleSubmissionOnIndicatorUpdates(dto.submissionIndicatorId);
+      }
+
       return {
         status: true,
         message: 'Submission indicator status updated successfully',
@@ -531,6 +555,58 @@ export class MinistryFormSubmissionService {
       throw new BadRequestException(
         `Failed to update submission indicator status: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Handle submission status update based on all indicator statuses
+   * If all indicators are ACCEPTED_BY_MINISTRY or ACCEPTED_BY_MOSPI, set submission to APPROVED
+   * Otherwise, set submission to SUBMITTED_TO_MINISTRY
+   */
+  private async handleSubmissionOnIndicatorUpdates(submissionIndicatorId: string): Promise<void> {
+    try {
+      // Step 1: Get the submission indicator to get the submission ID
+      const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+        where: { id: submissionIndicatorId },
+      });
+
+      if (!submissionIndicator) {
+        return; // If indicator not found, silently return
+      }
+
+      const submissionId = submissionIndicator.submissionId;
+
+      // Step 2: Get all indicators for this submission
+      const allIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: { submissionId: submissionId },
+      });
+
+      if (allIndicators.length === 0) {
+        return; // No indicators found, nothing to update
+      }
+
+      // Step 3: Check if all indicators have status ACCEPTED_BY_MINISTRY or ACCEPTED_BY_MOSPI
+      const allAccepted = allIndicators.every((indicator) => {
+        return indicator.status === SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY ||
+               indicator.status === SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI;
+      });
+
+      // Step 4: Update submission status
+      let newSubmissionStatus: MinistrySubmissionStatus;
+      if (allAccepted) {
+        newSubmissionStatus = MinistrySubmissionStatus.APPROVED;
+      } else {
+        newSubmissionStatus = MinistrySubmissionStatus.SUBMITTED_TO_MINISTRY;
+      }
+
+      // Update the submission status
+      await this.ministrySubmissionRepository.update(
+        { id: submissionId },
+        { status: newSubmissionStatus },
+      );
+    } catch (error) {
+      // Log error but don't throw - this is a side effect, shouldn't break the main flow
+      console.error('Error in handleSubmissionOnIndicatorUpdates:', error);
     }
   }
 
@@ -640,7 +716,7 @@ export class MinistryFormSubmissionService {
           submissionId: submissionId,
           formId: formId,
           userId: form.ministryUser, // Use form's ministry user id
-          status: SubmissionStatus.DRAFT,
+          status: MinistrySubmissionStatus.DRAFT,
           isConsolidated: true,
         });
 
