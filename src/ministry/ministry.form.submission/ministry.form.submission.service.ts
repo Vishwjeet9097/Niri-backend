@@ -716,7 +716,7 @@ export class MinistryFormSubmissionService {
           submissionId: submissionId,
           formId: formId,
           userId: form.ministryUser, // Use form's ministry user id
-          status: MinistrySubmissionStatus.DRAFT,
+          status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
           isConsolidated: true,
         });
 

@@ -871,7 +871,7 @@ export class MinistryFormRetrieveService {
 
   /**
    * Preview API: Get all indicator details with inputs and submitted data for a ministry user
-   * Retrieves all indicators where ministryUser = ministryUserId and status is not null
+   * Retrieves all indicators where ministryUser = ministryUserId and status is not null and not DRAFT
    */
   async getPreviewByMinistryUser(ministryUserId: string): Promise<{
     status: boolean;
@@ -879,13 +879,13 @@ export class MinistryFormRetrieveService {
     message: string;
   }> {
     try {
-      // Step 1: Get all submission indicators where ministryUser = ministryUserId and status is not null
-      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
-        where: {
-          ministryUser: ministryUserId,
-          status: Not(IsNull()),
-        },
-      });
+      // Step 1: Get all submission indicators where ministryUser = ministryUserId and status is not null and not DRAFT
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository
+        .createQueryBuilder('msi')
+        .where('msi.ministryUser = :ministryUserId', { ministryUserId })
+        .andWhere('msi.status IS NOT NULL')
+        .andWhere('msi.status != :draftStatus', { draftStatus: 'DRAFT' })
+        .getMany();
 
       if (submissionIndicators.length === 0) {
         return {
