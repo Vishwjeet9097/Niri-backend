@@ -227,15 +227,22 @@ export class MinistryFormRetrieveService {
       // submissionId parameter is already in SUB- format (SUB-{year}-{randomNum})
 
       // Step 2: Get all indicators mapped to this submission
-      // If forReview is true, filter by status not null
-      const whereCondition: any = { submissionId: submissionUuid };
+      // If forReview is true, filter by status not null and not 'DRAFT'
+      let submissionIndicators;
       if (forReview === true) {
-        whereCondition.status = Not(IsNull());
+        // Only include indicators whose status is neither null nor 'DRAFT'
+        // Use query builder to properly handle both conditions with AND logic
+        submissionIndicators = await this.ministrySubmissionIndicatorRepository
+          .createQueryBuilder('msi')
+          .where('msi.submissionId = :submissionUuid', { submissionUuid })
+          .andWhere('msi.status IS NOT NULL')
+          .andWhere('msi.status != :draftStatus', { draftStatus: 'DRAFT' })
+          .getMany();
+      } else {
+        submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: { submissionId: submissionUuid },
+        });
       }
-
-      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
-        where: whereCondition,
-      });
 
       if (submissionIndicators.length === 0) {
         return {
