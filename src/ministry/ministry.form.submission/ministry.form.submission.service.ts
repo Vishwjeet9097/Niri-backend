@@ -16,6 +16,7 @@ import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indi
 import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
+import { MospiFormActionDto } from './dto/mospi-form-action.dto';
 
 @Injectable()
 export class MinistryFormSubmissionService {
@@ -993,6 +994,297 @@ export class MinistryFormSubmissionService {
       }
       throw new BadRequestException(
         error.message || 'Failed to delete submission data',
+      );
+    }
+  }
+
+  /**
+   * MOSPI Approver: Send back form
+   * 1. Update form status to RETURNED_FROM_MOSPI
+   * 2. Find consolidated submission and update status to RETURNED_FROM_MOSPI_APPROVER
+   * 3. For all submissions of that form, find indicators with RETURNED_FROM_MOSPI_APPROVER_DRAFT and update to RETURNED_FROM_MOSPI_APPROVER
+   */
+  async mospiApproverSendBack(
+    dto: MospiFormActionDto,
+    userId: string,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: any;
+  }> {
+    try {
+      // Find form - MOSPI Approver can access any form, but if formId is provided, use it
+      let form: Form | null = null;
+      let formId: string;
+
+      if (dto.formId) {
+        form = await this.formRepository.findOne({
+          where: { id: dto.formId },
+        });
+        if (!form) {
+          throw new NotFoundException(`Form with id ${dto.formId} not found`);
+        }
+        formId = dto.formId;
+      } else {
+        // If formId not provided, find a form that needs MOSPI Approver action
+        // Find forms with status SUBMITTED_TO_MOSPI_APPROVER
+        form = await this.formRepository.findOne({
+          where: { status: FormStatus.SUBMITTED_TO_MOSPI_APPROVER },
+          order: { updatedAt: 'DESC' },
+        });
+        if (!form) {
+          throw new NotFoundException('No form found for MOSPI Approver action');
+        }
+        formId = form.id;
+      }
+
+      // Step 1: Update form status to RETURNED_FROM_MOSPI
+      await this.formRepository.update(
+        { id: formId },
+        { status: FormStatus.RETURNED_FROM_MOSPI },
+      );
+
+      // Step 2: Find consolidated submission for this form
+      const consolidatedSubmission = await this.ministrySubmissionRepository.findOne({
+        where: {
+          formId: formId,
+          isConsolidated: true,
+        },
+      });
+
+      if (consolidatedSubmission) {
+        // Update consolidated submission status to RETURNED_FROM_MOSPI_APPROVER
+        await this.ministrySubmissionRepository.update(
+          { id: consolidatedSubmission.id },
+          { status: MinistrySubmissionStatus.RETURNED_FROM_MOSPI_APPROVER },
+        );
+      }
+
+      // Step 3: Get all submissions for this form
+      const allSubmissions = await this.ministrySubmissionRepository.find({
+        where: { formId: formId },
+      });
+
+      const submissionIds = allSubmissions.map((s) => s.id);
+      let indicatorsUpdatedCount = 0;
+
+      if (submissionIds.length > 0) {
+        // Find all indicators with RETURNED_FROM_MOSPI_APPROVER_DRAFT status
+        const indicatorsToUpdate = await this.ministrySubmissionIndicatorRepository.find({
+          where: {
+            submissionId: In(submissionIds),
+            status: SubmissionIndicatorStatus.RETURNED_FROM_MOSPI_APPROVER_DRAFT,
+          },
+        });
+
+        indicatorsUpdatedCount = indicatorsToUpdate.length;
+
+        // Update all indicators from RETURNED_FROM_MOSPI_APPROVER_DRAFT to RETURNED_FROM_MOSPI_APPROVER
+        if (indicatorsToUpdate.length > 0) {
+          await this.ministrySubmissionIndicatorRepository.update(
+            {
+              submissionId: In(submissionIds),
+              status: SubmissionIndicatorStatus.RETURNED_FROM_MOSPI_APPROVER_DRAFT,
+            },
+            { status: SubmissionIndicatorStatus.RETURNED_FROM_MOSPI_APPROVER },
+          );
+        }
+      }
+
+      return {
+        status: true,
+        message: 'Form sent back successfully',
+        data: {
+          formId: formId,
+          formStatus: FormStatus.RETURNED_FROM_MOSPI,
+          consolidatedSubmissionUpdated: !!consolidatedSubmission,
+          indicatorsUpdated: indicatorsUpdatedCount,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to send back form',
+      );
+    }
+  }
+
+  /**
+   * MOSPI Approver: Accept form
+   * 1. Update form status to ACCEPTED_BY_MOSPI
+   * 2. Update consolidated submission status to APPROVED
+   */
+  async mospiApproverAccept(
+    dto: MospiFormActionDto,
+    userId: string,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: any;
+  }> {
+    try {
+      // Find form - MOSPI Approver can access any form, but if formId is provided, use it
+      let form: Form | null = null;
+      let formId: string;
+
+      if (dto.formId) {
+        form = await this.formRepository.findOne({
+          where: { id: dto.formId },
+        });
+        if (!form) {
+          throw new NotFoundException(`Form with id ${dto.formId} not found`);
+        }
+        formId = dto.formId;
+      } else {
+        // If formId not provided, find a form that needs MOSPI Approver action
+        // Find forms with status SUBMITTED_TO_MOSPI_APPROVER
+        form = await this.formRepository.findOne({
+          where: { status: FormStatus.SUBMITTED_TO_MOSPI_APPROVER },
+          order: { updatedAt: 'DESC' },
+        });
+        if (!form) {
+          throw new NotFoundException('No form found for MOSPI Approver action');
+        }
+        formId = form.id;
+      }
+
+      // Step 1: Update form status to ACCEPTED_BY_MOSPI
+      await this.formRepository.update(
+        { id: formId },
+        { status: FormStatus.ACCEPTED_BY_MOSPI },
+      );
+
+      // Step 2: Find and update consolidated submission
+      const consolidatedSubmission = await this.ministrySubmissionRepository.findOne({
+        where: {
+          formId: formId,
+          isConsolidated: true,
+        },
+      });
+
+      if (consolidatedSubmission) {
+        // Update consolidated submission status to APPROVED
+        await this.ministrySubmissionRepository.update(
+          { id: consolidatedSubmission.id },
+          { status: MinistrySubmissionStatus.APPROVED },
+        );
+      }
+
+      return {
+        status: true,
+        message: 'Form accepted successfully',
+        data: {
+          formId: formId,
+          formStatus: FormStatus.ACCEPTED_BY_MOSPI,
+          consolidatedSubmissionUpdated: !!consolidatedSubmission,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to accept form',
+      );
+    }
+  }
+
+  /**
+   * MOSPI Reviewer: Submit form to MOSPI Approver
+   * 1. Update form status to SUBMITTED_TO_MOSPI_APPROVER
+   * 2. Update consolidated submission status to SUBMITTED_TO_MOSPI_APPROVER
+   */
+  async mospiReviewerSubmitToApprover(
+    dto: MospiFormActionDto,
+    userId: string,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: any;
+  }> {
+    try {
+      // Find form - MOSPI Reviewer can only access forms where reviewer = userId
+      let form: Form | null = null;
+      let formId: string;
+
+      if (dto.formId) {
+        form = await this.formRepository.findOne({
+          where: {
+            id: dto.formId,
+            reviewer: userId,
+          },
+        });
+        if (!form) {
+          throw new NotFoundException(
+            `Form with id ${dto.formId} not found for reviewer ${userId}`,
+          );
+        }
+        formId = dto.formId;
+      } else {
+        // If formId not provided, find any form for this reviewer
+        form = await this.formRepository.findOne({
+          where: {
+            reviewer: userId,
+            status: FormStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+          },
+          order: { updatedAt: 'DESC' },
+        });
+        if (!form) {
+          throw new NotFoundException(
+            `No form found for reviewer ${userId}`,
+          );
+        }
+        formId = form.id;
+      }
+
+      // Step 1: Update form status to SUBMITTED_TO_MOSPI_APPROVER
+      await this.formRepository.update(
+        { id: formId },
+        { status: FormStatus.SUBMITTED_TO_MOSPI_APPROVER },
+      );
+
+      // Step 2: Find and update consolidated submission
+      const consolidatedSubmission = await this.ministrySubmissionRepository.findOne({
+        where: {
+          formId: formId,
+          isConsolidated: true,
+        },
+      });
+
+      if (consolidatedSubmission) {
+        // Update consolidated submission status to SUBMITTED_TO_MOSPI_APPROVER
+        await this.ministrySubmissionRepository.update(
+          { id: consolidatedSubmission.id },
+          { status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER },
+        );
+      }
+
+      return {
+        status: true,
+        message: 'Form submitted to MOSPI Approver successfully',
+        data: {
+          formId: formId,
+          formStatus: FormStatus.SUBMITTED_TO_MOSPI_APPROVER,
+          consolidatedSubmissionUpdated: !!consolidatedSubmission,
+        },
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to submit form to MOSPI Approver',
       );
     }
   }
