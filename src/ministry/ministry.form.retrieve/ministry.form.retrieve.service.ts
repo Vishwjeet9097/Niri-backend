@@ -390,6 +390,7 @@ export class MinistryFormRetrieveService {
                 const inputField = inputFieldMap.get(data.inputFieldId);
                 if (inputField) {
                   row.push({
+                    primaryId: data.id,
                     inputId: data.inputFieldId,
                     dataType: inputField.dataType,
                     valueText: data.valueText,
@@ -1032,6 +1033,7 @@ export class MinistryFormRetrieveService {
                 const inputField = inputFieldMap.get(data.inputFieldId);
                 if (inputField) {
                   row.push({
+                    primaryId: data.id,
                     inputId: data.inputFieldId,
                     dataType: inputField.dataType,
                     valueText: data.valueText,

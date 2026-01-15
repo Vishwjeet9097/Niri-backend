@@ -1,9 +1,13 @@
-import { Controller, Post, Put, Get, Body, Param, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Put, Get, Delete, Body, Param, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { MinistryFormSubmissionService } from './ministry.form.submission.service';
 import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
 import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indicator-status.dto';
 import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
+import { MospiFormActionDto, MospiFormAction } from './dto/mospi-form-action.dto';
+import { UserRole } from '../../entities/user.entity';
+import { BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
 
 @Controller('ministry/form/submission')
@@ -48,5 +52,43 @@ export class MinistryFormSubmissionController {
   @Get('comment/:submissionIndicatorId')
   async getCommentsBySubmissionIndicator(@Param('submissionIndicatorId') submissionIndicatorId: string) {
     return this.ministryFormSubmissionService.getCommentsBySubmissionIndicator(submissionIndicatorId);
+  }
+
+  @Delete('data')
+  @HttpCode(HttpStatus.OK)
+  async deleteSubmissionData(@Body() dto: DeleteSubmissionDataDto) {
+    return this.ministryFormSubmissionService.deleteSubmissionData(dto);
+  }
+
+  @Put('mospi-form-submit')
+  @HttpCode(HttpStatus.OK)
+  async mospiFormSubmit(@Body() dto: MospiFormActionDto, @Request() req) {
+    const userRole = req.user.role;
+    const { action } = dto;
+
+    // Route based on user role and action
+    if (userRole === UserRole.MOSPI_APPROVER) {
+      if (action === MospiFormAction.SEND_BACK) {
+        return this.ministryFormSubmissionService.mospiApproverSendBack(dto, req.user.id);
+      } else if (action === MospiFormAction.ACCEPT) {
+        return this.ministryFormSubmissionService.mospiApproverAccept(dto, req.user.id);
+      } else {
+        throw new BadRequestException(
+          `Action '${action}' is not allowed for MOSPI_APPROVER. Allowed actions: send-back, accept`,
+        );
+      }
+    } else if (userRole === UserRole.MOSPI_REVIEWER) {
+      if (action === MospiFormAction.SUBMIT_TO_APPROVER) {
+        return this.ministryFormSubmissionService.mospiReviewerSubmitToApprover(dto, req.user.id);
+      } else {
+        throw new BadRequestException(
+          `Action '${action}' is not allowed for MOSPI_REVIEWER. Allowed action: submit-to-approver`,
+        );
+      }
+    } else {
+      throw new BadRequestException(
+        `MOSPI form submission is not allowed for role: ${userRole}. Allowed roles: MOSPI_APPROVER, MOSPI_REVIEWER`,
+      );
+    }
   }
 }
