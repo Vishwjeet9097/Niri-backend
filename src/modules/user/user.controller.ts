@@ -36,7 +36,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async getAllActiveUsersByRole(@Request() req) {
     // Only privileged roles can access
@@ -52,7 +53,7 @@ export class UserController {
   async findAll(@Request() req) {
     const users = await this.userService.findAll(
       req.user.role,
-      req.user.stateUt,
+      req.user.stateUt ?? undefined,
       req.user.id
     );
     return {
@@ -119,7 +120,8 @@ export class UserController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async getUserIndicators(@Param("id") id: string, @Request() req) {
     // Check if user can access this user's data
@@ -143,7 +145,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async assignIndicatorsToUser(
     @Param("id") id: string,
@@ -162,7 +165,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async updateUserIndicators(
     @Param("id") id: string,
@@ -181,7 +185,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async removeIndicatorsFromUser(
     @Param("id") id: string,
@@ -200,7 +205,8 @@ export class UserController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async getUserIndicatorScope(@Param("id") id: string, @Request() req) {
     // Check if user can access this user's data
@@ -216,7 +222,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async updateUserIndicatorScope(
     @Param("id") id: string,
@@ -235,7 +242,8 @@ export class UserController {
     UserRole.NODAL_OFFICER,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async getUserIndicatorAccess(@Param("id") id: string, @Request() req) {
     // Check if user can access this user's data
@@ -262,7 +270,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async createUser(@Body() createUserDto: CreateUserDto, @Request() req) {
     return this.userService.createUser(
@@ -278,7 +287,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async update(
     @Param("id") id: string,
@@ -304,7 +314,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async deactivate(@Param("id") id: string, @Request() req) {
     await this.userService.deactivate(id, req.user.role, req.user.stateUt);
@@ -317,7 +328,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async bulkDeactivate(
     @Body() bulkDeleteDto: { userIds: string[] },
@@ -378,7 +390,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async checkEmailAvailability(
     @Param("email") email: string,
@@ -403,7 +416,8 @@ export class UserController {
     UserRole.ADMIN,
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
-    UserRole.MOSPI_APPROVER
+    UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER
   )
   async checkContactAvailability(
     @Param("contactNumber") contactNumber: string,

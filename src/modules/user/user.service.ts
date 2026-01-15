@@ -70,7 +70,7 @@ export class UserService {
 
   async findAll(
     userRole: UserRole,
-    userStateUt: string,
+    userStateUt?: string,
     userId?: string
   ): Promise<any[]> {
     let query = this.userRepository
@@ -83,8 +83,10 @@ export class UserService {
         "user.contactNumber",
         "user.role",
         "user.stateUt",
+        "user.ministryId",
         "user.isActive",
         "user.createdAt",
+        "user.ministryId",
       ])
       .where("user.isActive = :isActive", { isActive: true })
       .andWhere("user.role != :adminRole", { adminRole: UserRole.ADMIN })
@@ -103,14 +105,18 @@ export class UserService {
       });
     }
 
-    // Only STATE_APPROVER can see NODAL_OFFICER users, others cannot see them
-    if (userRole !== UserRole.STATE_APPROVER) {
-      query = query.andWhere("user.role != :nodalRole", {
+    // Only STATE_APPROVER can see NODAL_OFFICER users, MINISTRY_APPROVER can see all except NODAL_OFFICER, others cannot see NODAL_OFFICER
+    if (userRole === UserRole.STATE_APPROVER) {
+       query = query.andWhere("user.role = :nodalRole", {
+        nodalRole: UserRole.NODAL_OFFICER,
+      });
+    } else if (userRole === UserRole.MINISTRY_APPROVER) {
+       query = query.andWhere("user.role = :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
     } else {
-      // STATE_APPROVER can only see NODAL_OFFICER users
-      query = query.andWhere("user.role = :nodalRole", {
+      // Others cannot see NODAL_OFFICER users
+      query = query.andWhere("user.role != :nodalRole", {
         nodalRole: UserRole.NODAL_OFFICER,
       });
     }
@@ -205,6 +211,7 @@ export class UserService {
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
+        UserRole.MINISTRY_APPROVER,
       ].includes(userRole)
     ) {
       throw new ForbiddenException(
@@ -295,7 +302,7 @@ export class UserService {
 
     // Normalize contact number if provided (remove spaces)
     if (updateData.contactNumber) {
-      updateData.contactNumber = updateData.contactNumber.replace(/\s/g, "");
+      updateData.contactNumber = typeof updateData.contactNumber === "string" && updateData.contactNumber ? updateData.contactNumber.replace(/\s/g, "") : updateData.contactNumber;
     }
 
     // Normalize stateUt if provided (trim whitespace to prevent inconsistencies)
@@ -456,13 +463,14 @@ export class UserService {
       throw new ConflictException("User with this email already exists");
     }
 
-    // Check if contact number already exists
+    // Check if contact number already exists (excluding current user if updating)
     if (contactNumber) {
-      const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+      const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
       const existingUserWithContact = await this.userRepository.findOne({
         where: { contactNumber: normalizedContactNumber },
       });
 
+      // In createUser, any match is a conflict (no user should exist with this contact)
       if (existingUserWithContact) {
         throw new ConflictException(
           "A user with this contact number already exists. Each user must have a unique contact number."
@@ -631,7 +639,7 @@ export class UserService {
       // Check if contact number already exists INSIDE transaction
       // This prevents race conditions when multiple requests come simultaneously
       if (contactNumber) {
-        const normalizedContactNumber = contactNumber.replace(/\s/g, ""); // Remove spaces
+        const normalizedContactNumber = typeof contactNumber === "string" && contactNumber ? contactNumber.replace(/\s/g, "") : contactNumber; // Remove spaces safely
         const existingUserWithContact = await manager.findOne(User, {
           where: { contactNumber: normalizedContactNumber },
         });

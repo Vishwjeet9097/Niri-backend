@@ -76,6 +76,7 @@ export class IndicatorController {
     UserRole.STATE_APPROVER,
     UserRole.MOSPI_REVIEWER,
     UserRole.MOSPI_APPROVER,
+    UserRole.MINISTRY_APPROVER,
     UserRole.ADMIN
   )
   async findAll() {

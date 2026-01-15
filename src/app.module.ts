@@ -20,6 +20,11 @@ import { IndicatorModule } from "./modules/indicator/indicator.module";
 import { AuditMiddleware } from "./middleware/audit.middleware";
 import { NotificationModule } from "./modules/notification/notification.module";
 import { UlbModule } from "./modules/ulb/ulb.module";
+import { MinistryFormCreateModule } from './ministry/ministry.form.create/ministry.form.create.module';
+import { MinistryFormRetrieveModule } from './ministry/ministry.form.retrieve/ministry.form.retrieve.module';
+import { MinistryFormSubmissionModule } from './ministry/ministry.form.submission/ministry.form.submission.module';
+import { MinistryDashboardModule } from './ministry/ministry.dashboard/ministry.dashboard.module';
+import { MinistryModule } from "./modules/ministry/ministry.module";
 
 @Module({
   imports: [
@@ -46,7 +51,12 @@ import { UlbModule } from "./modules/ulb/ulb.module";
     ValidationModule,
     IndicatorModule,
     NotificationModule,
-    UlbModule
+    UlbModule,
+    MinistryFormCreateModule,
+    MinistryFormRetrieveModule,
+    MinistryFormSubmissionModule,
+    MinistryDashboardModule,
+    MinistryModule
   ],
   controllers: [AppController],
   providers: [AppService],

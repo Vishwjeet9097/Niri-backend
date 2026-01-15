@@ -12,13 +12,16 @@ export class LocalStorageStrategy implements IStorageStrategy {
 
   constructor() {
     this.basePath = process.env.STORAGE_PATH_LOCAL;
+    if (!this.basePath || typeof this.basePath !== 'string') {
+      throw new Error('STORAGE_PATH_LOCAL environment variable is not set or is invalid.');
+    }
     // ensure base dir exists
     ensureDirSync(this.basePath);
   }
 
   private makePath(file: UploadedFile | Express.Multer.File, subFolder?: string): string {
     const original = (file as any).originalname || 'file';
-    const safeOriginal = original.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    const safeOriginal = typeof original === 'string' && original ? original.replace(/[^a-zA-Z0-9.\-_]/g, '_') : 'file';
     const filename = `${uuidv4()}_${safeOriginal}`;
 
     if (subFolder) {
@@ -49,7 +52,8 @@ export class LocalStorageStrategy implements IStorageStrategy {
     }
 
     const stats = await fsPromises.stat(dest);
-    const relativePath = dest.replace(`${this.basePath.replace(/\/+$/,'')}/`, '');
+    const safeBasePath = typeof this.basePath === 'string' && this.basePath ? this.basePath.replace(/\/+$/, '') : '';
+    const relativePath = typeof dest === 'string' && dest ? dest.replace(`${safeBasePath}/`, '') : '';
 
     const stored: StoredFile = {
       fileName: basename(dest),
