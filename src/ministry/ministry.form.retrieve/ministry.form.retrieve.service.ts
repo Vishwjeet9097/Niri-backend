@@ -1608,7 +1608,7 @@ export class MinistryFormRetrieveService {
   /**
    * Helper method to get user details with ministry name
    * @param userId - The user ID to fetch details for
-   * @returns User details with ministry name or null if user not found
+   * @returns User details with ministry name and role or null if user not found
    */
   private async getUserDetailsWithMinistry(userId: string): Promise<{
     id: string;
@@ -1617,6 +1617,7 @@ export class MinistryFormRetrieveService {
     email: string;
     ministryId: string;
     ministryName: string | null;
+    role: string;
   } | null> {
     // Get user details
     const user = await this.userRepository.findOne({
@@ -1673,6 +1674,7 @@ export class MinistryFormRetrieveService {
       email: user.email,
       ministryId: user.ministryId,
       ministryName: ministryName,
+      role: user.role, // ✅ Add role to the response
     };
   }
 }
