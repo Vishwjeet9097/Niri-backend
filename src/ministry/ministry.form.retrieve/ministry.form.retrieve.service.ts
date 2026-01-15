@@ -1520,65 +1520,19 @@ export class MinistryFormRetrieveService {
         };
       }
 
-      // Get user details
-      const user = await this.userRepository.findOne({
-        where: { id: userId },
-      });
-
-      // Query ministries table explicitly to get ministry name using ministryId
-      let ministryName: string | null = null;
-      if (user?.ministryId) {
-        console.log('[getSubmissionsForCurrentUser] Querying ministries table for ministryId:', user.ministryId);
-        
-        // Query 1: Query ministries table by ID (UUID) - SELECT * FROM ministries WHERE id = :ministryId
-        let ministry = await this.ministryRepository.findOne({
-          where: { id: user.ministryId },
-        });
-        
-        // Query 2: If not found by UUID, query ministries table by name - SELECT * FROM ministries WHERE name = :ministryId
-        if (!ministry) {
-          console.log('[getSubmissionsForCurrentUser] Ministry not found by UUID in ministries table, querying by name...');
-          ministry = await this.ministryRepository.findOne({
-            where: { name: user.ministryId },
-          });
-        }
-        
-        // Query 3: If still not found, query all ministries and do case-insensitive match
-        if (!ministry) {
-          console.log('[getSubmissionsForCurrentUser] Querying all ministries from ministries table for case-insensitive match...');
-          const allMinistries = await this.ministryRepository.find();
-          ministry = allMinistries.find(m => 
-            m.name.toLowerCase() === user.ministryId.toLowerCase() ||
-            m.id.toLowerCase() === user.ministryId.toLowerCase()
-          ) || null;
-        }
-        
-        if (ministry) {
-          // Successfully retrieved ministry name from ministries table
-          ministryName = ministry.name;
-          console.log('[getSubmissionsForCurrentUser] ✅ Successfully queried ministries table - Found ministry name:', ministryName, 'from ministry ID:', ministry.id);
-        } else {
-          console.warn('[getSubmissionsForCurrentUser] ❌ Ministry not found in ministries table for ministryId:', user.ministryId);
-          // Log all available ministries from ministries table for debugging
-          const allMinistries = await this.ministryRepository.find();
-          console.warn('[getSubmissionsForCurrentUser] All ministries in ministries table:', allMinistries.map(m => ({ id: m.id, name: m.name })));
-          console.warn('[getSubmissionsForCurrentUser] User ministryId type:', typeof user.ministryId, 'Value:', user.ministryId);
-          
-          // Fallback: If ministryId looks like a name (not UUID format), use it as the name
-          // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars with dashes)
-          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.ministryId);
-          if (!isUUID && user.ministryId) {
-            console.log('[getSubmissionsForCurrentUser] Using ministryId as name (not a UUID):', user.ministryId);
-            // Capitalize first letter of each word
-            ministryName = user.ministryId
-              .split(/[\s._-]+/)
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-              .join(' ');
+      // Get unique user IDs from all submissions (submission owners, not current user)
+      const submissionUserIds = [...new Set(submissions.map(s => s.userId))];
+      
+      // Batch fetch user details for all submission owners
+      const userDetailsMap = new Map<string, any>();
+      await Promise.all(
+        submissionUserIds.map(async (submissionUserId) => {
+          const userDetails = await this.getUserDetailsWithMinistry(submissionUserId);
+          if (userDetails) {
+            userDetailsMap.set(submissionUserId, userDetails);
           }
-        }
-      } else {
-        console.log('[getSubmissionsForCurrentUser] User has no ministryId - skipping ministries table query');
-      }
+        })
+      );
 
       // For each submission, get the indicators submitted by this user
       const submissionsWithData = await Promise.all(
@@ -1588,10 +1542,13 @@ export class MinistryFormRetrieveService {
             (si) => si.submissionId === submission.id
           );
 
+          // Get user details for THIS submission's owner (not current user)
+          const submissionOwner = userDetailsMap.get(submission.userId) || null;
+
           // Get submission details with data for this user
           try {
             const submissionDetails = await this.getSubmissionDetailsWithData(
-              userId,
+              submission.id, // Use submission's UUID (id field)
               false // forReview = false to get all data
             );
 
@@ -1602,18 +1559,11 @@ export class MinistryFormRetrieveService {
               id: submission.id,
               submissionId: submission.submissionId,
               userId: submission.userId,
-              formId: submission.formId,
+              formId: submission.formId, // ✅ formId is already included
               status: submission.status,
               createdAt: submission.createdAt,
               updatedAt: submission.updatedAt,
-              user: user ? {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                ministryId: user.ministryId,
-                ministryName: ministryName,
-              } : null,
+              user: submissionOwner, // ✅ User details of submission owner, not current user
               indicators: userIndicators,
               totalIndicators: userIndicatorsForSubmission.length,
               submittedIndicators: userIndicatorsForSubmission.filter((si) => si.status !== null).length,
@@ -1624,18 +1574,11 @@ export class MinistryFormRetrieveService {
               id: submission.id,
               submissionId: submission.submissionId,
               userId: submission.userId,
-              formId: submission.formId,
+              formId: submission.formId, // ✅ formId is already included
               status: submission.status,
               createdAt: submission.createdAt,
               updatedAt: submission.updatedAt,
-              user: user ? {
-                id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                ministryId: user.ministryId,
-                ministryName: ministryName,
-              } : null,
+              user: submissionOwner, // ✅ User details of submission owner, not current user
               indicators: [],
               totalIndicators: userIndicatorsForSubmission.length,
               submittedIndicators: userIndicatorsForSubmission.filter((si) => si.status !== null).length,
@@ -1662,5 +1605,78 @@ export class MinistryFormRetrieveService {
         error.message || 'Failed to retrieve submissions for current user',
       );
     }
+  }
+
+  /**
+   * Helper method to get user details with ministry name
+   * @param userId - The user ID to fetch details for
+   * @returns User details with ministry name and role or null if user not found
+   */
+  private async getUserDetailsWithMinistry(userId: string): Promise<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    ministryId: string;
+    ministryName: string | null;
+    role: string;
+  } | null> {
+    // Get user details
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    // Query ministries table to get ministry name
+    let ministryName: string | null = null;
+    if (user.ministryId) {
+      // Query 1: Query ministries table by ID (UUID)
+      let ministry = await this.ministryRepository.findOne({
+        where: { id: user.ministryId },
+      });
+      
+      // Query 2: If not found by UUID, query ministries table by name
+      if (!ministry) {
+        ministry = await this.ministryRepository.findOne({
+          where: { name: user.ministryId },
+        });
+      }
+      
+      // Query 3: If still not found, query all ministries and do case-insensitive match
+      if (!ministry) {
+        const allMinistries = await this.ministryRepository.find();
+        ministry = allMinistries.find(m => 
+          m.name.toLowerCase() === user.ministryId.toLowerCase() ||
+          m.id.toLowerCase() === user.ministryId.toLowerCase()
+        ) || null;
+      }
+      
+      if (ministry) {
+        ministryName = ministry.name;
+      } else {
+        // Fallback: If ministryId looks like a name (not UUID format), use it as the name
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.ministryId);
+        if (!isUUID && user.ministryId) {
+          // Capitalize first letter of each word
+          ministryName = user.ministryId
+            .split(/[\s._-]+/)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+        }
+      }
+    }
+
+    return {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      ministryId: user.ministryId,
+      ministryName: ministryName,
+      role: user.role, // ✅ Add role to the response
+    };
   }
 }
