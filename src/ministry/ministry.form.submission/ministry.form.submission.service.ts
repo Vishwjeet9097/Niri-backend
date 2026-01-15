@@ -15,6 +15,7 @@ import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
 import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indicator-status.dto';
 import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
 
 @Injectable()
 export class MinistryFormSubmissionService {
@@ -869,6 +870,129 @@ export class MinistryFormSubmissionService {
       }
       throw new BadRequestException(
         `Failed to retrieve comments: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Delete submission data rows by primaryId array
+   * For each primaryId, validates that all rows with the same sequence belong to the same submission indicator
+   * Then deletes all rows with that submissionIndicatorId and sequence
+   */
+  async deleteSubmissionData(
+    dto: DeleteSubmissionDataDto,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    deletedCount?: number;
+  }> {
+    try {
+      const { submissionIndicatorId, inputPrimaryId } = dto;
+      let totalDeletedCount = 0;
+      const errors: string[] = [];
+
+      // Process each primaryId
+      for (const primaryId of inputPrimaryId) {
+        try {
+          // Step 1: Find the row with the provided primaryId
+          const primaryRow = await this.ministrySubmissionDataRepository.findOne({
+            where: { id: primaryId },
+          });
+
+          if (!primaryRow) {
+            errors.push(`Submission data with primaryId ${primaryId} not found`);
+            continue;
+          }
+
+          // Step 2: Validate that the primary row belongs to the provided submissionIndicatorId
+          if (primaryRow.submissionIndicatorId !== submissionIndicatorId) {
+            errors.push(
+              `Primary row with id ${primaryId} does not belong to submission indicator ${submissionIndicatorId}`,
+            );
+            continue;
+          }
+
+          // Step 3: Get the sequence number from the primary row
+          const sequence = primaryRow.sequence;
+
+          // Step 4: Find all rows with the same submissionIndicatorId and sequence
+          const rowsToDelete = await this.ministrySubmissionDataRepository.find({
+            where: {
+              submissionIndicatorId: submissionIndicatorId,
+              sequence: sequence,
+            },
+          });
+
+          if (rowsToDelete.length === 0) {
+            continue; // No rows to delete for this primaryId
+          }
+
+          // Step 5: Validate that all rows belong to the same submission indicator
+          const allBelongToSameIndicator = rowsToDelete.every(
+            (row) => row.submissionIndicatorId === submissionIndicatorId,
+          );
+
+          if (!allBelongToSameIndicator) {
+            errors.push(
+              `Not all rows belong to the same submission indicator for primaryId ${primaryId}`,
+            );
+            continue;
+          }
+
+          // Step 6: Validate that all rows have the same sequence number
+          const allHaveSameSequence = rowsToDelete.every(
+            (row) => row.sequence === sequence,
+          );
+
+          if (!allHaveSameSequence) {
+            errors.push(
+              `Not all rows have the same sequence number for primaryId ${primaryId}`,
+            );
+            continue;
+          }
+
+          // Step 7: Delete all rows
+          const deleteResult = await this.ministrySubmissionDataRepository.delete({
+            submissionIndicatorId: submissionIndicatorId,
+            sequence: sequence,
+          });
+
+          totalDeletedCount += deleteResult.affected || 0;
+        } catch (error) {
+          errors.push(`Error processing primaryId ${primaryId}: ${error.message}`);
+        }
+      }
+
+      // If there were errors but some deletions succeeded, return partial success
+      if (errors.length > 0 && totalDeletedCount > 0) {
+        return {
+          status: true,
+          message: `Successfully deleted ${totalDeletedCount} row(s), but encountered ${errors.length} error(s)`,
+          deletedCount: totalDeletedCount,
+        };
+      }
+
+      // If there were errors and no deletions, throw an error
+      if (errors.length > 0) {
+        throw new BadRequestException(
+          `Failed to delete submission data: ${errors.join('; ')}`,
+        );
+      }
+
+      return {
+        status: true,
+        message: `Successfully deleted ${totalDeletedCount} row(s)`,
+        deletedCount: totalDeletedCount,
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to delete submission data',
       );
     }
   }

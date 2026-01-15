@@ -1,9 +1,10 @@
-import { Controller, Post, Put, Get, Body, Param, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Put, Get, Delete, Body, Param, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { MinistryFormSubmissionService } from './ministry.form.submission.service';
 import { SubmitMinistryDataDto } from './dto/submit-ministry-data.dto';
 import { UpdateSubmissionIndicatorStatusDto } from './dto/update-submission-indicator-status.dto';
 import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
 
 @Controller('ministry/form/submission')
@@ -48,5 +49,11 @@ export class MinistryFormSubmissionController {
   @Get('comment/:submissionIndicatorId')
   async getCommentsBySubmissionIndicator(@Param('submissionIndicatorId') submissionIndicatorId: string) {
     return this.ministryFormSubmissionService.getCommentsBySubmissionIndicator(submissionIndicatorId);
+  }
+
+  @Delete('data')
+  @HttpCode(HttpStatus.OK)
+  async deleteSubmissionData(@Body() dto: DeleteSubmissionDataDto) {
+    return this.ministryFormSubmissionService.deleteSubmissionData(dto);
   }
 }
