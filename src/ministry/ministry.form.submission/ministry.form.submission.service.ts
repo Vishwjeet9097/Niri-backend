@@ -218,6 +218,21 @@ export class MinistryFormSubmissionService {
         submissionData.valueNumber = value != null ? Number(value) : null;
         break;
 
+      case DataType.DATE:
+        // For date input, save in valueDate
+        if (value != null) {
+          if (value instanceof Date) {
+            submissionData.valueDate = value;
+          } else if (typeof value === 'string') {
+            submissionData.valueDate = new Date(value);
+          } else {
+            submissionData.valueDate = null;
+          }
+        } else {
+          submissionData.valueDate = null;
+        }
+        break;
+
       case DataType.FILE:
         // For file input, save in value_json
         if (value != null) {
@@ -238,17 +253,7 @@ export class MinistryFormSubmissionService {
 
       case DataType.STRING:
       default:
-        // Check if it's a date string
-        if (value && typeof value === 'string') {
-          const dateRegex = /^\d{4}-\d{2}-\d{2}/;
-          if (dateRegex.test(value)) {
-            submissionData.valueDate = new Date(value);
-          } else {
-            submissionData.valueText = value;
-          }
-        } else {
-          submissionData.valueText = value != null ? String(value) : null;
-        }
+        submissionData.valueText = value != null ? String(value) : null;
         break;
     }
 
@@ -305,6 +310,24 @@ export class MinistryFormSubmissionService {
         submissionData.valueJson = null;
         break;
 
+      case DataType.DATE:
+        // For date input, save in valueDate
+        if (value != null) {
+          if (value instanceof Date) {
+            submissionData.valueDate = value;
+          } else if (typeof value === 'string') {
+            submissionData.valueDate = new Date(value);
+          } else {
+            submissionData.valueDate = null;
+          }
+        } else {
+          submissionData.valueDate = null;
+        }
+        submissionData.valueText = null;
+        submissionData.valueNumber = null;
+        submissionData.valueJson = null;
+        break;
+
       case DataType.FILE:
         // For file input, save in value_json
         if (value != null) {
@@ -328,21 +351,9 @@ export class MinistryFormSubmissionService {
 
       case DataType.STRING:
       default:
-        // Check if it's a date string
-        if (value && typeof value === 'string') {
-          const dateRegex = /^\d{4}-\d{2}-\d{2}/;
-          if (dateRegex.test(value)) {
-            submissionData.valueDate = new Date(value);
-            submissionData.valueText = null;
-          } else {
-            submissionData.valueText = value;
-            submissionData.valueDate = null;
-          }
-        } else {
-          submissionData.valueText = value != null ? String(value) : null;
-          submissionData.valueDate = null;
-        }
+        submissionData.valueText = value != null ? String(value) : null;
         submissionData.valueNumber = null;
+        submissionData.valueDate = null;
         submissionData.valueJson = null;
         break;
     }

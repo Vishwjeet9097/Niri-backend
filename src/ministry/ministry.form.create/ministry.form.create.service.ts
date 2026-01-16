@@ -1419,6 +1419,9 @@ export class MinistryFormCreateService {
         if (normalized.includes('file')) {
           return DataType.FILE;
         }
+        if (normalized.includes('date')) {
+          return DataType.DATE;
+        }
         return DataType.STRING;
       };
 
@@ -1442,6 +1445,9 @@ export class MinistryFormCreateService {
         if (normalized.includes('dropdown')) {
           return UIComponent.DROPDOWN;
         }
+        if (normalized.includes('input') && normalized.includes('date')) {
+          return UIComponent.INPUT_DATE;
+        }
         if (normalized.includes('input') && (normalized.includes('number') || normalized.includes('numeric'))) {
           return UIComponent.INPUT_NUMBER;
         }
@@ -1450,6 +1456,9 @@ export class MinistryFormCreateService {
         }
         
         // Default fallback based on common patterns
+        if (normalized.includes('date')) {
+          return UIComponent.INPUT_DATE;
+        }
         if (normalized.includes('number') || normalized.includes('numeric')) {
           return UIComponent.INPUT_NUMBER;
         }

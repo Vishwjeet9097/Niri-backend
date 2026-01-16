@@ -11,11 +11,13 @@ export enum DataType {
   NUMBER = "number",
   FILE = "file",
   STRING = "string",
+  DATE = "date",
 }
 
 export enum UIComponent {
   INPUT_TEXT = "Input (Text)",
   INPUT_NUMBER = "Input (Number)",
+  INPUT_DATE = "Input (Date)",
   DROPDOWN = "Dropdown",
   AUTO_CALCULATED = "Auto-calculated field",
   FILE = "File",
