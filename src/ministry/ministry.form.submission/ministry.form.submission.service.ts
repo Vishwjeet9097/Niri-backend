@@ -17,6 +17,7 @@ import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
 import { MospiFormActionDto } from './dto/mospi-form-action.dto';
+import { DeleteFileDataDto, DeleteFileAction } from './dto/delete-file-data.dto';
 
 @Injectable()
 export class MinistryFormSubmissionService {
@@ -1296,6 +1297,158 @@ export class MinistryFormSubmissionService {
       }
       throw new BadRequestException(
         error.message || 'Failed to submit form to MOSPI Approver',
+      );
+    }
+  }
+
+  /**
+   * Delete file data based on action type
+   * Action: by-submission-indicator - Delete all file field rows for a submission indicator
+   * Action: by-primary-id - Delete a specific row by primary ID
+   */
+  async deleteFileData(
+    dto: DeleteFileDataDto,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    deletedCount?: number;
+  }> {
+    try {
+      if (dto.action === DeleteFileAction.BY_SUBMISSION_INDICATOR) {
+        // Action: Delete all file field rows for a submission indicator
+        if (!dto.submissionIndicatorId) {
+          throw new BadRequestException(
+            'submissionIndicatorId is required for by-submission-indicator action',
+          );
+        }
+
+        // Step 1: Verify submission indicator exists
+        const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+          where: { id: dto.submissionIndicatorId },
+        });
+
+        if (!submissionIndicator) {
+          throw new NotFoundException(
+            `Submission indicator with id ${dto.submissionIndicatorId} not found`,
+          );
+        }
+
+        // Step 2: Get all submission data for this submission indicator
+        const allSubmissionData = await this.ministrySubmissionDataRepository.find({
+          where: { submissionIndicatorId: dto.submissionIndicatorId },
+        });
+
+        if (allSubmissionData.length === 0) {
+          return {
+            status: true,
+            message: 'No submission data found for this submission indicator',
+            deletedCount: 0,
+          };
+        }
+
+        // Step 3: Get input field IDs from submission data
+        const inputFieldIds = allSubmissionData.map((data) => data.inputFieldId);
+
+        // Step 4: Get input fields to check which ones are file type
+        const inputFields = await this.inputFieldRepository.find({
+          where: { id: In(inputFieldIds) },
+        });
+
+        // Step 5: Filter to get only file type input field IDs
+        const fileInputFieldIds = inputFields
+          .filter((field) => field.dataType === DataType.FILE)
+          .map((field) => field.id);
+
+        if (fileInputFieldIds.length === 0) {
+          return {
+            status: true,
+            message: 'No file fields found for this submission indicator',
+            deletedCount: 0,
+          };
+        }
+
+        // Step 6: Find all submission data rows that have file type input fields
+        const fileDataRows = allSubmissionData.filter((data) =>
+          fileInputFieldIds.includes(data.inputFieldId),
+        );
+
+        if (fileDataRows.length === 0) {
+          return {
+            status: true,
+            message: 'No file data found to delete',
+            deletedCount: 0,
+          };
+        }
+
+        // Step 7: Delete all file data rows
+        const fileDataIds = fileDataRows.map((row) => row.id);
+        const deleteResult = await this.ministrySubmissionDataRepository.delete({
+          id: In(fileDataIds),
+        });
+
+        return {
+          status: true,
+          message: `Successfully deleted ${deleteResult.affected || 0} file data row(s)`,
+          deletedCount: deleteResult.affected || 0,
+        };
+      } else if (dto.action === DeleteFileAction.BY_PRIMARY_ID) {
+        // Action: Delete a specific row by primary ID
+        if (!dto.primaryId) {
+          throw new BadRequestException(
+            'primaryId is required for by-primary-id action',
+          );
+        }
+
+        // Step 1: Find the row with the provided primaryId
+        const rowToDelete = await this.ministrySubmissionDataRepository.findOne({
+          where: { id: dto.primaryId },
+        });
+
+        if (!rowToDelete) {
+          throw new NotFoundException(
+            `Submission data with primaryId ${dto.primaryId} not found`,
+          );
+        }
+
+        // Step 2: Verify it's a file type field
+        const inputField = await this.inputFieldRepository.findOne({
+          where: { id: rowToDelete.inputFieldId },
+        });
+
+        if (!inputField) {
+          throw new NotFoundException(
+            `Input field with id ${rowToDelete.inputFieldId} not found`,
+          );
+        }
+
+        if (inputField.dataType !== DataType.FILE) {
+          throw new BadRequestException(
+            `Row with primaryId ${dto.primaryId} is not a file field. It is of type ${inputField.dataType}`,
+          );
+        }
+
+        // Step 3: Delete the row
+        const deleteResult = await this.ministrySubmissionDataRepository.delete({
+          id: dto.primaryId,
+        });
+
+        return {
+          status: true,
+          message: `Successfully deleted file data row`,
+          deletedCount: deleteResult.affected || 0,
+        };
+      } else {
+        throw new BadRequestException(`Invalid action: ${dto.action}`);
+      }
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to delete file data',
       );
     }
   }

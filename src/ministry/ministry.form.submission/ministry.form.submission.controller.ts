@@ -6,9 +6,11 @@ import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
 import { MospiFormActionDto, MospiFormAction } from './dto/mospi-form-action.dto';
+import { DeleteFileDataDto } from './dto/delete-file-data.dto';
 import { UserRole } from '../../entities/user.entity';
 import { BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
+import { RolesGuard, Roles } from '../../modules/auth/guards/roles.guard';
 
 @Controller('ministry/form/submission')
 @UseGuards(JwtAuthGuard)
@@ -90,5 +92,13 @@ export class MinistryFormSubmissionController {
         `MOSPI form submission is not allowed for role: ${userRole}. Allowed roles: MOSPI_APPROVER, MOSPI_REVIEWER`,
       );
     }
+  }
+
+  @Delete('file-data')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.MINISTRY_APPROVER)
+  @HttpCode(HttpStatus.OK)
+  async deleteFileData(@Body() dto: DeleteFileDataDto) {
+    return this.ministryFormSubmissionService.deleteFileData(dto);
   }
 }
