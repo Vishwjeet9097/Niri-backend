@@ -101,4 +101,11 @@ export class MinistryFormSubmissionController {
   async deleteFileData(@Body() dto: DeleteFileDataDto) {
     return this.ministryFormSubmissionService.deleteFileData(dto);
   }
+
+  @Get('form-status-statistics/:formId')
+  // @UseGuards(RolesGuard)
+  // @Roles(UserRole.MOSPI_APPROVER)
+  async getFormStatusStatistics(@Param('formId') formId: string) {
+    return this.ministryFormSubmissionService.getFormStatusStatistics(formId);
+  }
 }

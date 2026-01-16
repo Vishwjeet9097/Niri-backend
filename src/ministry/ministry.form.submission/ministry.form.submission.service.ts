@@ -1452,4 +1452,94 @@ export class MinistryFormSubmissionService {
       );
     }
   }
+
+  /**
+   * Get form status statistics for MOSPI Approver
+   * Returns totalSentBack and totalApproved counts based on submission indicator statuses
+   */
+  async getFormStatusStatistics(
+    formId: string,
+  ): Promise<{
+    status: boolean;
+    data: {
+      formId: string;
+      totalSentBack: number;
+      totalApproved: number;
+    };
+    message: string;
+  }> {
+    try {
+      // Step 1: Verify form exists
+      const form = await this.formRepository.findOne({
+        where: { id: formId },
+      });
+
+      if (!form) {
+        throw new NotFoundException(`Form with id ${formId} not found`);
+      }
+
+      // Step 2: Get all submissions for this form where isConsolidated = false
+      const nonConsolidatedSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          isConsolidated: false,
+        },
+      });
+
+      if (nonConsolidatedSubmissions.length === 0) {
+        return {
+          status: true,
+          data: {
+            formId: formId,
+            totalSentBack: 0,
+            totalApproved: 0,
+          },
+          message: 'No non-consolidated submissions found for this form',
+        };
+      }
+
+      // Step 3: Get all submission IDs
+      const submissionIds = nonConsolidatedSubmissions.map((s) => s.id);
+
+      // Step 4: Get all submission indicators for these submissions
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          submissionId: In(submissionIds),
+        },
+      });
+
+      // Step 5: Count indicators by status
+      const totalSentBack = submissionIndicators.filter(
+        (indicator) =>
+          indicator.status === SubmissionIndicatorStatus.RETURNED_FROM_MOSPI_APPROVER ||
+          indicator.status === SubmissionIndicatorStatus.RETURNED_FROM_MOSPI_APPROVER_DRAFT,
+      ).length;
+
+      const totalApproved = submissionIndicators.filter(
+        (indicator) =>
+          indicator.status === SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI ||
+          indicator.status === SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI_APPROVER_DRAFT,
+      ).length;
+
+      return {
+        status: true,
+        data: {
+          formId: formId,
+          totalSentBack: totalSentBack,
+          totalApproved: totalApproved,
+        },
+        message: 'Form status statistics retrieved successfully',
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve form status statistics',
+      );
+    }
+  }
 }
