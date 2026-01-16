@@ -25,6 +25,7 @@ import { MinistryFormRetrieveModule } from './ministry/ministry.form.retrieve/mi
 import { MinistryFormSubmissionModule } from './ministry/ministry.form.submission/ministry.form.submission.module';
 import { MinistryDashboardModule } from './ministry/ministry.dashboard/ministry.dashboard.module';
 import { MinistryModule } from "./modules/ministry/ministry.module";
+import { MinistryScoringModule } from "./modules/ministry-scoring/ministry-scoring.module";
 
 @Module({
   imports: [
@@ -56,7 +57,8 @@ import { MinistryModule } from "./modules/ministry/ministry.module";
     MinistryFormRetrieveModule,
     MinistryFormSubmissionModule,
     MinistryDashboardModule,
-    MinistryModule
+    MinistryModule,
+    MinistryScoringModule
   ],
   controllers: [AppController],
   providers: [AppService],
