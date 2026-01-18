@@ -363,13 +363,24 @@ export class MinistryDashboardService {
     message: string;
   }> {
     try {
-      // Accepted: status ACCEPTED_BY_MINISTRY where ministry_user = userId
-      const accepted = await this.ministrySubmissionIndicatorRepository.count({
+      // Accepted by Ministry: status ACCEPTED_BY_MINISTRY where ministry_user = userId
+      const acceptedByMinistry = await this.ministrySubmissionIndicatorRepository.count({
         where: {
           ministryUser: ministryUserId,
           status: SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY,
         },
       });
+
+      // Accepted by MOSPI: status ACCEPTED_BY_MOSPI where ministry_user = userId
+      const acceptedByMospi = await this.ministrySubmissionIndicatorRepository.count({
+        where: {
+          ministryUser: ministryUserId,
+          status: SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI,
+        },
+      });
+
+      // Total accepted: ACCEPTED_BY_MINISTRY + ACCEPTED_BY_MOSPI
+      const accepted = acceptedByMinistry + acceptedByMospi;
 
       // Total: where ministry_user = userId
       const total = await this.ministrySubmissionIndicatorRepository.count({

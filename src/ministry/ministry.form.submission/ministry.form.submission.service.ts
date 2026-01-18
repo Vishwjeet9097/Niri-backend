@@ -709,32 +709,60 @@ export class MinistryFormSubmissionService {
         );
       }
 
+      // Check if form status is RETURNED_FROM_MOSPI
+      const isReturnedFromMospi = form?.status === FormStatus.RETURNED_FROM_MOSPI;
+
       // Update the status
       await this.formRepository.update(
         { id: formId },
         { status: dto.status },
       );
 
-      // If user is MINISTRY_APPROVER, create a ministry submission with isConsolidated = true
+      // If user is MINISTRY_APPROVER, handle submission creation/update
       let createdSubmission = null;
       if (userRole === 'MINISTRY_APPROVER' && form) {
-        // Generate submissionId: SUB-{year}-{randomNum}
-        const year = new Date().getFullYear();
-        const randomNum = Math.floor(Math.random() * 1000000)
-          .toString()
-          .padStart(6, '0');
-        const submissionId = `SUB-${year}-${randomNum}`;
+        if (isReturnedFromMospi && dto.status === FormStatus.SUBMITTED_TO_MOSPI_REVIEWER) {
+          // If form was returned from MOSPI, find existing consolidated submission and update its status
+          const existingSubmission = await this.ministrySubmissionRepository.findOne({
+            where: {
+              formId: formId,
+              isConsolidated: true,
+            },
+            order: {
+              createdAt: 'DESC', // Get the most recent one
+            },
+          });
 
-        // Create ministry submission
-        const newSubmission = this.ministrySubmissionRepository.create({
-          submissionId: submissionId,
-          formId: formId,
-          userId: form.ministryUser, // Use form's ministry user id
-          status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
-          isConsolidated: true,
-        });
+          if (existingSubmission) {
+            // Update existing consolidated submission status
+            await this.ministrySubmissionRepository.update(
+              { id: existingSubmission.id },
+              { status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER },
+            );
+            createdSubmission = await this.ministrySubmissionRepository.findOne({
+              where: { id: existingSubmission.id },
+            });
+          }
+        } else {
+          // Create new consolidated submission
+          // Generate submissionId: SUB-{year}-{randomNum}
+          const year = new Date().getFullYear();
+          const randomNum = Math.floor(Math.random() * 1000000)
+            .toString()
+            .padStart(6, '0');
+          const submissionId = `SUB-${year}-${randomNum}`;
 
-        createdSubmission = await this.ministrySubmissionRepository.save(newSubmission);
+          // Create ministry submission
+          const newSubmission = this.ministrySubmissionRepository.create({
+            submissionId: submissionId,
+            formId: formId,
+            userId: form.ministryUser, // Use form's ministry user id
+            status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+            isConsolidated: true,
+          });
+
+          createdSubmission = await this.ministrySubmissionRepository.save(newSubmission);
+        }
       }
 
       return {
@@ -1463,8 +1491,11 @@ export class MinistryFormSubmissionService {
     status: boolean;
     data: {
       formId: string;
+      formStatus: FormStatus | null;
+      total: number;
       totalSentBack: number;
       totalApproved: number;
+      totalSubmitted: number;
     };
     message: string;
   }> {
@@ -1491,8 +1522,11 @@ export class MinistryFormSubmissionService {
           status: true,
           data: {
             formId: formId,
+            formStatus: form.status,
+            total: 17,
             totalSentBack: 0,
             totalApproved: 0,
+            totalSubmitted: 0,
           },
           message: 'No non-consolidated submissions found for this form',
         };
@@ -1525,8 +1559,11 @@ export class MinistryFormSubmissionService {
         status: true,
         data: {
           formId: formId,
+          formStatus: form.status,
+          total: 17,
           totalSentBack: totalSentBack,
           totalApproved: totalApproved,
+          totalSubmitted: totalSentBack+totalApproved,
         },
         message: 'Form status statistics retrieved successfully',
       };
