@@ -19,6 +19,7 @@ import { CreateInputFieldDto } from './dto/create-input-field.dto';
 import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
 import { AssignIndicatorToNodalDto } from './dto/assign-indicator-to-nodal.dto';
 import { ReassignIndicatorDto } from './dto/reassign-indicator.dto';
+import { RemoveAssignedIndicatorDto } from './dto/remove-assigned-indicator.dto';
 
 @Injectable()
 export class MinistryFormCreateService {
@@ -1661,6 +1662,69 @@ export class MinistryFormCreateService {
     } catch (error) {
       throw new BadRequestException(
         error.message || 'Failed to process Excel file',
+      );
+    }
+  }
+
+  /**
+   * Remove/Update assigned indicator - Update assignedTo field in ministry_submission_indicator table
+   */
+  async removeAssignedIndicator(
+    dto: RemoveAssignedIndicatorDto,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: {
+      updatedCount: number;
+      indicatorsId: string[];
+      ministryUserId: string;
+    };
+  }> {
+    try {
+      // Step 1: Find all submission indicators where indicatorId is in the provided indicatorsId array
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          indicatorId: In(dto.indicatorsId),
+        },
+      });
+
+      if (submissionIndicators.length === 0) {
+        return {
+          status: true,
+          message: 'No submission indicators found for the provided indicator IDs',
+          data: {
+            updatedCount: 0,
+            indicatorsId: dto.indicatorsId,
+            ministryUserId: dto.ministryUserId,
+          },
+        };
+      }
+
+      // Step 2: Update assignedTo field to ministryUserId for all found submission indicators
+      const updateResult = await this.ministrySubmissionIndicatorRepository.update(
+        {
+          indicatorId: In(dto.indicatorsId),
+        },
+        {
+          assignedTo: dto.ministryUserId,
+        },
+      );
+
+      return {
+        status: true,
+        message: `Successfully updated assignedTo for ${updateResult.affected || 0} submission indicator(s)`,
+        data: {
+          updatedCount: updateResult.affected || 0,
+          indicatorsId: dto.indicatorsId,
+          ministryUserId: dto.ministryUserId,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to remove/update assigned indicator',
       );
     }
   }

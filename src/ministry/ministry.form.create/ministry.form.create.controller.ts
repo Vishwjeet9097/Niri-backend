@@ -18,6 +18,7 @@ import { CreateInputFieldDto } from './dto/create-input-field.dto';
 import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
 import { AssignIndicatorToNodalDto } from './dto/assign-indicator-to-nodal.dto';
 import { ReassignIndicatorDto } from './dto/reassign-indicator.dto';
+import { RemoveAssignedIndicatorDto } from './dto/remove-assigned-indicator.dto';
 import { JwtAuthGuard } from '../../modules/auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../../modules/auth/guards/roles.guard';
 import { UserRole } from '../../entities/user.entity';
@@ -157,6 +158,13 @@ export class MinistryFormCreateController {
   @HttpCode(HttpStatus.OK)
   async reassignIndicator(@Body() reassignIndicatorDto: ReassignIndicatorDto) {
     return this.ministryFormCreateService.reassignIndicator(reassignIndicatorDto);
+  }
+
+  @Post('remove-assigned-indicator')
+  @UseGuards(RolesGuard)
+  @HttpCode(HttpStatus.OK)
+  async removeAssignedIndicator(@Body() removeAssignedIndicatorDto: RemoveAssignedIndicatorDto) {
+    return this.ministryFormCreateService.removeAssignedIndicator(removeAssignedIndicatorDto);
   }
   
 }

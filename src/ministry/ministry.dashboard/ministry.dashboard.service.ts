@@ -192,9 +192,13 @@ export class MinistryDashboardService {
     const total_pending_submission = await this.ministrySubmissionIndicatorRepository
       .createQueryBuilder('indicator')
       .where('indicator.ministryUser = :userId', { userId })
-      .andWhere('(indicator.status IS NULL OR indicator.status = :draftStatus)', {
-        draftStatus: SubmissionIndicatorStatus.DRAFT,
-      })
+      .andWhere(
+        '(indicator.status IS NULL OR indicator.status = :draftStatus OR indicator.status = :resubmittedStatus)',
+        {
+          draftStatus: SubmissionIndicatorStatus.DRAFT,
+          resubmittedStatus: SubmissionIndicatorStatus.RESUBMITTED,
+        }
+      )
       .getCount();
 
     // Total return nodal: status is RETURNED_FROM_MINISTRY
