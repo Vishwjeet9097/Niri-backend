@@ -139,6 +139,7 @@ export class MinistryFormCreateService {
   async getAllActiveIndicators(userId?: string, forUpdate?: boolean): Promise<{
     status: boolean;
     data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null; indicatorStatus?: string | null })[]>;
+    availableIndicators?: string[];
     message: string;
   }> {
     try {
@@ -246,15 +247,38 @@ export class MinistryFormCreateService {
       const totalCount = indicators.length;
       const categoryCount = Object.keys(groupedIndicators).length;
 
+      // Get available indicators: indicators where assignedTo = userId and status is null
+      let availableIndicators: string[] = [];
+      if (userId) {
+        const availableSubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: {
+            assignedTo: userId,
+            status: IsNull(),
+          },
+        });
+        availableIndicators = availableSubmissionIndicators.map((si) => si.indicatorId);
+      }
+
       const message = userId
         ? `Found ${totalCount} active indicator(s) for user ${userId} across ${categoryCount} category/categories`
         : `Found ${totalCount} active indicator(s) across ${categoryCount} category/categories`;
 
-      return {
+      const response: {
+        status: boolean;
+        data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null; indicatorStatus?: string | null })[]>;
+        availableIndicators?: string[];
+        message: string;
+      } = {
         status: true,
         data: groupedIndicators,
         message,
       };
+
+      if (userId) {
+        response.availableIndicators = availableIndicators;
+      }
+
+      return response;
     } catch (error) {
       throw new BadRequestException(
         error.message || 'Failed to fetch indicators',
