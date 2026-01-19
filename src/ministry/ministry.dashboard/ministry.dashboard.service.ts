@@ -553,7 +553,7 @@ export class MinistryDashboardService {
    */
   private async getNodalSubmissionDetails(userId: string): Promise<any> {
     const submission = await this.ministrySubmissionRepository.findOne({
-      where: { userId: userId },
+      where: { userId: userId, status: Not(MinistrySubmissionStatus.DRAFT) },
       order: { createdAt: 'DESC' },
     });
 
