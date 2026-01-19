@@ -138,7 +138,7 @@ export class MinistryFormCreateService {
    */
   async getAllActiveIndicators(userId?: string, forUpdate?: boolean): Promise<{
     status: boolean;
-    data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null })[]>;
+    data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null; indicatorStatus?: string | null })[]>;
     message: string;
   }> {
     try {
@@ -147,6 +147,7 @@ export class MinistryFormCreateService {
       let indicatorIds: string[] = [];
       let submissionIndicatorMap: Map<string, string> = new Map(); // Map indicatorId -> submissionIndicatorId
       let assignedToMap: Map<string, string | null> = new Map(); // Map indicatorId -> assignedTo
+      let indicatorStatusMap: Map<string, string | null> = new Map(); // Map indicatorId -> status
 
       // If userId is provided, get indicator IDs from ministry_submission_indicator table
       if (userId) {
@@ -172,12 +173,13 @@ export class MinistryFormCreateService {
         // Extract unique indicator IDs and create mapping
         indicatorIds = [...new Set(submissionIndicators.map((si) => si.indicatorId))];
         
-        // Create map of indicatorId -> submissionIndicatorId and assignedTo
+        // Create map of indicatorId -> submissionIndicatorId, assignedTo, and status
         // If multiple submission indicators exist for same indicator, use the first one
         submissionIndicators.forEach((si) => {
           if (!submissionIndicatorMap.has(si.indicatorId)) {
             submissionIndicatorMap.set(si.indicatorId, si.id);
             assignedToMap.set(si.indicatorId, si.assignedTo || null);
+            indicatorStatusMap.set(si.indicatorId, si.status || null);
           }
         });
 
@@ -208,8 +210,8 @@ export class MinistryFormCreateService {
         .addOrderBy('indicatorDetail.sNo', 'ASC')
         .getMany();
 
-      // Group indicators by category and add submissionIndicatorId and assignedTo
-      const groupedIndicators: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null })[]> = {};
+      // Group indicators by category and add submissionIndicatorId, assignedTo, and indicatorStatus
+      const groupedIndicators: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null; indicatorStatus?: string | null })[]> = {};
 
       indicators.forEach((indicator) => {
         const category = indicator.category;
@@ -217,12 +219,13 @@ export class MinistryFormCreateService {
           groupedIndicators[category] = [];
         }
         
-        // Add submissionIndicatorId and assignedTo if userId is provided and mapping exists
+        // Add submissionIndicatorId, assignedTo, and indicatorStatus if userId is provided and mapping exists
         const indicatorWithMetadata = {
           ...indicator,
           ...(userId && submissionIndicatorMap.has(indicator.id) && {
             submissionIndicatorId: submissionIndicatorMap.get(indicator.id),
-            assignedTo: assignedToMap.get(indicator.id) || null
+            assignedTo: assignedToMap.get(indicator.id) || null,
+            indicatorStatus: indicatorStatusMap.get(indicator.id) || null
           })
         };
         
