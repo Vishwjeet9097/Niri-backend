@@ -1005,10 +1005,10 @@ export class UserService {
   // Get user's assigned indicators from user_indicator_scope table
   // If user has ministryId, also get indicators from ministry_submission_indicator table
   async getUserIndicatorScopes(userId: string) {
-    // Get user to check if they have a ministry
+    // Get user to check if they have a ministry and role
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'ministryId'],
+      select: ['id', 'ministryId', 'role'],
     });
 
     // Get indicators from user_indicator_scope table
@@ -1023,41 +1023,53 @@ export class UserService {
       name: scope.indicator.name,
     }));
 
-    // If user has a ministry, also get indicators from ministry_submission_indicator table
+    // Get indicators from ministry_submission_indicator table
+    // For MINISTRY_APPROVER: check where ministryUser = userId
+    // For NODAL_OFFICER: check where assignedTo = userId
+    let ministrySubmissionIndicators: MinistrySubmissionIndicator[] = [];
+    
     if (user?.ministryId) {
-      const ministrySubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
-        where: { ministryUser: userId },
+      if (user.role === UserRole.MINISTRY_APPROVER) {
+        // For ministry approver, get indicators where they are the ministry user
+        ministrySubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: { ministryUser: userId },
+        });
+      } else if (user.role === UserRole.NODAL_OFFICER) {
+        // For nodal officer, get indicators where they are assigned (assignedTo = userId)
+        ministrySubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: { assignedTo: userId },
+        });
+      }
+    }
+
+    if (ministrySubmissionIndicators.length > 0) {
+      const indicatorIds = ministrySubmissionIndicators.map((msi) => msi.indicatorId);
+      const indicatorDetails = await this.indicatorDetailRepository.find({
+        where: { id: In(indicatorIds) },
       });
 
-      if (ministrySubmissionIndicators.length > 0) {
-        const indicatorIds = ministrySubmissionIndicators.map((msi) => msi.indicatorId);
-        const indicatorDetails = await this.indicatorDetailRepository.find({
-          where: { id: In(indicatorIds) },
-        });
+      const indicatorDetailMap = new Map(indicatorDetails.map((ind) => [ind.id, ind]));
 
-        const indicatorDetailMap = new Map(indicatorDetails.map((ind) => [ind.id, ind]));
+      // Add indicators from ministry_submission_indicator table
+      const indicatorsFromMinistry = ministrySubmissionIndicators.map((msi) => {
+        const indicatorDetail = indicatorDetailMap.get(msi.indicatorId);
+        return indicatorDetail ? {
+          code: indicatorDetail.sNo || indicatorDetail.id,
+          name: indicatorDetail.name,
+        } : null;
+      }).filter((ind) => ind !== null);
 
-        // Add indicators from ministry_submission_indicator table
-        const indicatorsFromMinistry = ministrySubmissionIndicators.map((msi) => {
-          const indicatorDetail = indicatorDetailMap.get(msi.indicatorId);
-          return indicatorDetail ? {
-            code: indicatorDetail.sNo || indicatorDetail.id,
-            name: indicatorDetail.name,
-          } : null;
-        }).filter((ind) => ind !== null);
+      // Combine both sources, avoiding duplicates based on code
+      const combinedIndicators = [...indicatorsFromScope];
+      const existingCodes = new Set(indicatorsFromScope.map((ind) => ind.code));
+      
+      indicatorsFromMinistry.forEach((ind) => {
+        if (ind && !existingCodes.has(ind.code)) {
+          combinedIndicators.push(ind);
+        }
+      });
 
-        // Combine both sources, avoiding duplicates based on code
-        const combinedIndicators = [...indicatorsFromScope];
-        const existingCodes = new Set(indicatorsFromScope.map((ind) => ind.code));
-        
-        indicatorsFromMinistry.forEach((ind) => {
-          if (ind && !existingCodes.has(ind.code)) {
-            combinedIndicators.push(ind);
-          }
-        });
-
-        return combinedIndicators;
-      }
+      return combinedIndicators;
     }
 
     return indicatorsFromScope;
