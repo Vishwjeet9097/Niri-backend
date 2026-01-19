@@ -302,7 +302,7 @@ export class MinistryDashboardService {
 
     // Under review: status is null or DRAFT
     const underReview = forms.filter(
-      (form) => form.status === null || form.status === FormStatus.DRAFT,
+      (form) => form.status === null || form.status === FormStatus.DRAFT || form.status === FormStatus.SUBMITTED_TO_MOSPI_REVIEWER ,
     ).length;
 
     // Total: count of forms

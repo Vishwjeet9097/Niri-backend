@@ -1523,7 +1523,7 @@ export class MinistryFormSubmissionService {
           data: {
             formId: formId,
             formStatus: form.status,
-            total: 17,
+            total: 16,
             totalSentBack: 0,
             totalApproved: 0,
             totalSubmitted: 0,
@@ -1560,7 +1560,7 @@ export class MinistryFormSubmissionService {
         data: {
           formId: formId,
           formStatus: form.status,
-          total: 17,
+          total: 16,
           totalSentBack: totalSentBack,
           totalApproved: totalApproved,
           totalSubmitted: totalSentBack+totalApproved,
