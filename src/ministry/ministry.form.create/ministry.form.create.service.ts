@@ -1693,7 +1693,25 @@ export class MinistryFormCreateService {
         );
       }
 
-      // Step 3: Find submission indicators where indicatorId is in the provided array AND ministryUser matches
+      // Step 3: Get ministry user's form and submission
+      const ministryForm = await this.formRepository.findOne({
+        where: { ministryUser: dto.ministryUserId },
+      });
+
+      if (!ministryForm) {
+        throw new NotFoundException(`Form not found for ministry user ${dto.ministryUserId}`);
+      }
+
+      const ministrySubmission = await this.ministrySubmissionRepository.findOne({
+        where: { formId: ministryForm.id, userId: dto.ministryUserId },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (!ministrySubmission) {
+        throw new NotFoundException(`Submission not found for ministry user ${dto.ministryUserId}`);
+      }
+
+      // Step 4: Find submission indicators where indicatorId is in the provided array AND ministryUser matches
       const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
         where: {
           indicatorId: In(dto.indicatorsId),
@@ -1713,7 +1731,7 @@ export class MinistryFormCreateService {
         };
       }
 
-      // Step 4: Update assignedTo field to ministryUserId for all found submission indicators
+      // Step 5: Update assignedTo and submissionId to ministry user's values for all found submission indicators
       const updateResult = await this.ministrySubmissionIndicatorRepository.update(
         {
           indicatorId: In(dto.indicatorsId),
@@ -1721,6 +1739,7 @@ export class MinistryFormCreateService {
         },
         {
           assignedTo: dto.ministryUserId,
+          submissionId: ministrySubmission.id,
         },
       );
 
