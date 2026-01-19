@@ -1182,7 +1182,7 @@ export class MinistryFormCreateService {
         where: {
           ministryUser: ministryUserId,
           indicatorId: In(validIndicatorIds),
-          status: IsNull(),
+          // status: IsNull(),
         },
       });
 
