@@ -6,6 +6,8 @@ import { UserIndicatorScope } from "../../entities/user-indicator-scope.entity";
 import { Submission } from "../../entities/submission.entity";
 import { FinalScore } from "../../entities/final-score.entity";
 import { AuditLog } from "../../entities/audit-log.entity";
+import { MinistrySubmissionIndicator } from "../../ministry/entities/ministry-submission-indicator.entity";
+import { IndicatorDetail } from "../../ministry/entities/indicator-detail.entity";
 import { UserService } from "./user.service";
 import { UserController } from "./user.controller";
 import { UserIndicatorsController } from "./user-indicators.controller";
@@ -13,7 +15,16 @@ import { IndicatorModule } from "../indicator/indicator.module";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Indicator, UserIndicatorScope, Submission, FinalScore, AuditLog]),
+    TypeOrmModule.forFeature([
+      User,
+      Indicator,
+      UserIndicatorScope,
+      Submission,
+      FinalScore,
+      AuditLog,
+      MinistrySubmissionIndicator,
+      IndicatorDetail,
+    ]),
     IndicatorModule,
   ],
   controllers: [UserController, UserIndicatorsController],
