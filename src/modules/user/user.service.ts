@@ -28,6 +28,7 @@ export class UserService {
       UserRole.STATE_APPROVER,
       UserRole.MOSPI_REVIEWER,
       UserRole.MOSPI_APPROVER,
+      UserRole.MINISTRY_APPROVER,
       UserRole.ADMIN,
     ];
 
@@ -44,6 +45,7 @@ export class UserService {
           "contactNumber",
           "role",
           "stateUt",
+          "ministryId",
           "isActive",
           "createdAt",
         ],
