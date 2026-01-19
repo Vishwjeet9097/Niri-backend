@@ -665,6 +665,11 @@ export class MinistryFormSubmissionService {
           );
         }
         formId = form.id;
+
+        // Check if MOSPI reviewer exists before submitting
+        if (!form.reviewer || form.reviewer.trim() === '') {
+          throw new BadRequestException('mospi reviewer does not exists');
+        }
       } else if (userRole === 'MOSPI_REVIEWER') {
         // For Mospi Reviewer: Find form with reviewer = userId
         if (dto.formId) {
