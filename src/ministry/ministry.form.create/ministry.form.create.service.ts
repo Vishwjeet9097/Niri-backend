@@ -134,11 +134,11 @@ export class MinistryFormCreateService {
 
   /**
    * Get all indicators with status = true, grouped by category and ordered by sequence
-   * If userId is provided, first gets indicator IDs from ministry_submission_indicator table
+   * If userId is provided, filters indicators where ministryUser = userId and includes assignedTo
    */
   async getAllActiveIndicators(userId?: string, forUpdate?: boolean): Promise<{
     status: boolean;
-    data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string })[]>;
+    data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null })[]>;
     message: string;
   }> {
     try {
@@ -146,6 +146,7 @@ export class MinistryFormCreateService {
       console.log('userId', userId, 'forUpdate', forUpdate);
       let indicatorIds: string[] = [];
       let submissionIndicatorMap: Map<string, string> = new Map(); // Map indicatorId -> submissionIndicatorId
+      let assignedToMap: Map<string, string | null> = new Map(); // Map indicatorId -> assignedTo
 
       // If userId is provided, get indicator IDs from ministry_submission_indicator table
       if (userId) {
@@ -160,30 +161,10 @@ export class MinistryFormCreateService {
             },
           });
         } else {
-          // Previous logic: Filter by assignedTo and get from submissions
-          // First, get submissions for this user
-          const submissions = await this.ministrySubmissionRepository.find({
-            where: { userId: userId },
-          });
-
-          if (submissions.length === 0) {
-            return {
-              status: true,
-              data: {},
-              message: `No submissions found for user ${userId}`,
-            };
-          }
-
-          // Get all submission IDs
-          const submissionIds: string[] = submissions.map((sub) => sub.id);
-
-          // Get indicator IDs from ministry_submission_indicator table
-          // where assignedTo = userId
+          // Filter by ministryUser equals userId
           submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
             where: { 
-              submissionId: In(submissionIds),
-              assignedTo: userId,
-              status: IsNull(),
+              ministryUser: userId,
             },
           });
         }
@@ -191,11 +172,12 @@ export class MinistryFormCreateService {
         // Extract unique indicator IDs and create mapping
         indicatorIds = [...new Set(submissionIndicators.map((si) => si.indicatorId))];
         
-        // Create map of indicatorId -> submissionIndicatorId
+        // Create map of indicatorId -> submissionIndicatorId and assignedTo
         // If multiple submission indicators exist for same indicator, use the first one
         submissionIndicators.forEach((si) => {
           if (!submissionIndicatorMap.has(si.indicatorId)) {
             submissionIndicatorMap.set(si.indicatorId, si.id);
+            assignedToMap.set(si.indicatorId, si.assignedTo || null);
           }
         });
 
@@ -226,8 +208,8 @@ export class MinistryFormCreateService {
         .addOrderBy('indicatorDetail.sNo', 'ASC')
         .getMany();
 
-      // Group indicators by category and add submissionIndicatorId
-      const groupedIndicators: Record<string, (IndicatorDetail & { submissionIndicatorId?: string })[]> = {};
+      // Group indicators by category and add submissionIndicatorId and assignedTo
+      const groupedIndicators: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null })[]> = {};
 
       indicators.forEach((indicator) => {
         const category = indicator.category;
@@ -235,15 +217,16 @@ export class MinistryFormCreateService {
           groupedIndicators[category] = [];
         }
         
-        // Add submissionIndicatorId if userId is provided and mapping exists
-        const indicatorWithSubmissionId = {
+        // Add submissionIndicatorId and assignedTo if userId is provided and mapping exists
+        const indicatorWithMetadata = {
           ...indicator,
           ...(userId && submissionIndicatorMap.has(indicator.id) && {
-            submissionIndicatorId: submissionIndicatorMap.get(indicator.id)
+            submissionIndicatorId: submissionIndicatorMap.get(indicator.id),
+            assignedTo: assignedToMap.get(indicator.id) || null
           })
         };
         
-        groupedIndicators[category].push(indicatorWithSubmissionId);
+        groupedIndicators[category].push(indicatorWithMetadata);
       });
 
       // Sort each category's indicators by sequence
