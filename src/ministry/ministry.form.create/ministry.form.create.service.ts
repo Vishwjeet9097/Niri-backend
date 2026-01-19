@@ -1667,17 +1667,44 @@ export class MinistryFormCreateService {
     };
   }> {
     try {
-      // Step 1: Find all submission indicators where indicatorId is in the provided indicatorsId array
+      // Step 1: Validate that the ministry user exists
+      const ministryUser = await this.userRepository.findOne({
+        where: { id: dto.ministryUserId },
+      });
+
+      if (!ministryUser) {
+        throw new NotFoundException(
+          `Ministry user with id ${dto.ministryUserId} not found`,
+        );
+      }
+
+      // Step 2: Validate that all indicators exist
+      const indicators = await this.indicatorDetailRepository.find({
+        where: { id: In(dto.indicatorsId) },
+      });
+
+      if (indicators.length !== dto.indicatorsId.length) {
+        const foundIndicatorIds = indicators.map((ind) => ind.id);
+        const missingIndicatorIds = dto.indicatorsId.filter(
+          (id) => !foundIndicatorIds.includes(id),
+        );
+        throw new NotFoundException(
+          `Indicator(s) not found: ${missingIndicatorIds.join(', ')}`,
+        );
+      }
+
+      // Step 3: Find submission indicators where indicatorId is in the provided array AND ministryUser matches
       const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
         where: {
           indicatorId: In(dto.indicatorsId),
+          ministryUser: dto.ministryUserId,
         },
       });
 
       if (submissionIndicators.length === 0) {
         return {
           status: true,
-          message: 'No submission indicators found for the provided indicator IDs',
+          message: 'No submission indicators found for the provided indicator IDs and ministry user',
           data: {
             updatedCount: 0,
             indicatorsId: dto.indicatorsId,
@@ -1686,10 +1713,11 @@ export class MinistryFormCreateService {
         };
       }
 
-      // Step 2: Update assignedTo field to ministryUserId for all found submission indicators
+      // Step 4: Update assignedTo field to ministryUserId for all found submission indicators
       const updateResult = await this.ministrySubmissionIndicatorRepository.update(
         {
           indicatorId: In(dto.indicatorsId),
+          ministryUser: dto.ministryUserId,
         },
         {
           assignedTo: dto.ministryUserId,
