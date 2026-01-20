@@ -363,6 +363,7 @@ export class MinistryDashboardService {
       accepted: number;
       total: number;
       formId: string | null;
+      formStatus: FormStatus | null;
     };
     message: string;
   }> {
@@ -393,12 +394,12 @@ export class MinistryDashboardService {
         },
       });
 
-      // Get form id for this ministry user
+      // Get form id and status for this ministry user
       const form = await this.formRepository.findOne({
         where: {
           ministryUser: ministryUserId,
         },
-        select: ['id'],
+        select: ['id', 'status'],
       });
 
       return {
@@ -407,6 +408,7 @@ export class MinistryDashboardService {
           accepted,
           total,
           formId: form?.id || null,
+          formStatus: form?.status || null,
         },
         message: 'Progress bar data retrieved successfully',
       };
