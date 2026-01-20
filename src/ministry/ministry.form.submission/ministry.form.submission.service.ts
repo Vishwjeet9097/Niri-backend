@@ -17,6 +17,7 @@ import { UpdateFormStatusDto } from './dto/update-form-status.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
 import { MospiFormActionDto } from './dto/mospi-form-action.dto';
+import { DeleteFileDataDto, DeleteFileAction } from './dto/delete-file-data.dto';
 
 @Injectable()
 export class MinistryFormSubmissionService {
@@ -218,6 +219,21 @@ export class MinistryFormSubmissionService {
         submissionData.valueNumber = value != null ? Number(value) : null;
         break;
 
+      case DataType.DATE:
+        // For date input, save in valueDate
+        if (value != null) {
+          if (value instanceof Date) {
+            submissionData.valueDate = value;
+          } else if (typeof value === 'string') {
+            submissionData.valueDate = new Date(value);
+          } else {
+            submissionData.valueDate = null;
+          }
+        } else {
+          submissionData.valueDate = null;
+        }
+        break;
+
       case DataType.FILE:
         // For file input, save in value_json
         if (value != null) {
@@ -238,17 +254,7 @@ export class MinistryFormSubmissionService {
 
       case DataType.STRING:
       default:
-        // Check if it's a date string
-        if (value && typeof value === 'string') {
-          const dateRegex = /^\d{4}-\d{2}-\d{2}/;
-          if (dateRegex.test(value)) {
-            submissionData.valueDate = new Date(value);
-          } else {
-            submissionData.valueText = value;
-          }
-        } else {
-          submissionData.valueText = value != null ? String(value) : null;
-        }
+        submissionData.valueText = value != null ? String(value) : null;
         break;
     }
 
@@ -305,6 +311,24 @@ export class MinistryFormSubmissionService {
         submissionData.valueJson = null;
         break;
 
+      case DataType.DATE:
+        // For date input, save in valueDate
+        if (value != null) {
+          if (value instanceof Date) {
+            submissionData.valueDate = value;
+          } else if (typeof value === 'string') {
+            submissionData.valueDate = new Date(value);
+          } else {
+            submissionData.valueDate = null;
+          }
+        } else {
+          submissionData.valueDate = null;
+        }
+        submissionData.valueText = null;
+        submissionData.valueNumber = null;
+        submissionData.valueJson = null;
+        break;
+
       case DataType.FILE:
         // For file input, save in value_json
         if (value != null) {
@@ -328,21 +352,9 @@ export class MinistryFormSubmissionService {
 
       case DataType.STRING:
       default:
-        // Check if it's a date string
-        if (value && typeof value === 'string') {
-          const dateRegex = /^\d{4}-\d{2}-\d{2}/;
-          if (dateRegex.test(value)) {
-            submissionData.valueDate = new Date(value);
-            submissionData.valueText = null;
-          } else {
-            submissionData.valueText = value;
-            submissionData.valueDate = null;
-          }
-        } else {
-          submissionData.valueText = value != null ? String(value) : null;
-          submissionData.valueDate = null;
-        }
+        submissionData.valueText = value != null ? String(value) : null;
         submissionData.valueNumber = null;
+        submissionData.valueDate = null;
         submissionData.valueJson = null;
         break;
     }
@@ -653,6 +665,11 @@ export class MinistryFormSubmissionService {
           );
         }
         formId = form.id;
+
+        // Check if MOSPI reviewer exists before submitting
+        if (!form.reviewer || form.reviewer.trim() === '') {
+          throw new BadRequestException('mospi reviewer does not exists');
+        }
       } else if (userRole === 'MOSPI_REVIEWER') {
         // For Mospi Reviewer: Find form with reviewer = userId
         if (dto.formId) {
@@ -697,32 +714,60 @@ export class MinistryFormSubmissionService {
         );
       }
 
+      // Check if form status is RETURNED_FROM_MOSPI
+      const isReturnedFromMospi = form?.status === FormStatus.RETURNED_FROM_MOSPI;
+
       // Update the status
       await this.formRepository.update(
         { id: formId },
         { status: dto.status },
       );
 
-      // If user is MINISTRY_APPROVER, create a ministry submission with isConsolidated = true
+      // If user is MINISTRY_APPROVER, handle submission creation/update
       let createdSubmission = null;
       if (userRole === 'MINISTRY_APPROVER' && form) {
-        // Generate submissionId: SUB-{year}-{randomNum}
-        const year = new Date().getFullYear();
-        const randomNum = Math.floor(Math.random() * 1000000)
-          .toString()
-          .padStart(6, '0');
-        const submissionId = `SUB-${year}-${randomNum}`;
+        if (isReturnedFromMospi && dto.status === FormStatus.SUBMITTED_TO_MOSPI_REVIEWER) {
+          // If form was returned from MOSPI, find existing consolidated submission and update its status
+          const existingSubmission = await this.ministrySubmissionRepository.findOne({
+            where: {
+              formId: formId,
+              isConsolidated: true,
+            },
+            order: {
+              createdAt: 'DESC', // Get the most recent one
+            },
+          });
 
-        // Create ministry submission
-        const newSubmission = this.ministrySubmissionRepository.create({
-          submissionId: submissionId,
-          formId: formId,
-          userId: form.ministryUser, // Use form's ministry user id
-          status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
-          isConsolidated: true,
-        });
+          if (existingSubmission) {
+            // Update existing consolidated submission status
+            await this.ministrySubmissionRepository.update(
+              { id: existingSubmission.id },
+              { status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER },
+            );
+            createdSubmission = await this.ministrySubmissionRepository.findOne({
+              where: { id: existingSubmission.id },
+            });
+          }
+        } else {
+          // Create new consolidated submission
+          // Generate submissionId: SUB-{year}-{randomNum}
+          const year = new Date().getFullYear();
+          const randomNum = Math.floor(Math.random() * 1000000)
+            .toString()
+            .padStart(6, '0');
+          const submissionId = `SUB-${year}-${randomNum}`;
 
-        createdSubmission = await this.ministrySubmissionRepository.save(newSubmission);
+          // Create ministry submission
+          const newSubmission = this.ministrySubmissionRepository.create({
+            submissionId: submissionId,
+            formId: formId,
+            userId: form.ministryUser, // Use form's ministry user id
+            status: MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+            isConsolidated: true,
+          });
+
+          createdSubmission = await this.ministrySubmissionRepository.save(newSubmission);
+        }
       }
 
       return {
@@ -1285,6 +1330,257 @@ export class MinistryFormSubmissionService {
       }
       throw new BadRequestException(
         error.message || 'Failed to submit form to MOSPI Approver',
+      );
+    }
+  }
+
+  /**
+   * Delete file data based on action type
+   * Action: by-submission-indicator - Delete all file field rows for a submission indicator
+   * Action: by-primary-id - Delete a specific row by primary ID
+   */
+  async deleteFileData(
+    dto: DeleteFileDataDto,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    deletedCount?: number;
+  }> {
+    try {
+      if (dto.action === DeleteFileAction.BY_SUBMISSION_INDICATOR) {
+        // Action: Delete all file field rows for a submission indicator
+        if (!dto.submissionIndicatorId) {
+          throw new BadRequestException(
+            'submissionIndicatorId is required for by-submission-indicator action',
+          );
+        }
+
+        // Step 1: Verify submission indicator exists
+        const submissionIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+          where: { id: dto.submissionIndicatorId },
+        });
+
+        if (!submissionIndicator) {
+          throw new NotFoundException(
+            `Submission indicator with id ${dto.submissionIndicatorId} not found`,
+          );
+        }
+
+        // Step 2: Get all submission data for this submission indicator
+        const allSubmissionData = await this.ministrySubmissionDataRepository.find({
+          where: { submissionIndicatorId: dto.submissionIndicatorId },
+        });
+
+        if (allSubmissionData.length === 0) {
+          return {
+            status: true,
+            message: 'No submission data found for this submission indicator',
+            deletedCount: 0,
+          };
+        }
+
+        // Step 3: Get input field IDs from submission data
+        const inputFieldIds = allSubmissionData.map((data) => data.inputFieldId);
+
+        // Step 4: Get input fields to check which ones are file type
+        const inputFields = await this.inputFieldRepository.find({
+          where: { id: In(inputFieldIds) },
+        });
+
+        // Step 5: Filter to get only file type input field IDs
+        const fileInputFieldIds = inputFields
+          .filter((field) => field.dataType === DataType.FILE)
+          .map((field) => field.id);
+
+        if (fileInputFieldIds.length === 0) {
+          return {
+            status: true,
+            message: 'No file fields found for this submission indicator',
+            deletedCount: 0,
+          };
+        }
+
+        // Step 6: Find all submission data rows that have file type input fields
+        const fileDataRows = allSubmissionData.filter((data) =>
+          fileInputFieldIds.includes(data.inputFieldId),
+        );
+
+        if (fileDataRows.length === 0) {
+          return {
+            status: true,
+            message: 'No file data found to delete',
+            deletedCount: 0,
+          };
+        }
+
+        // Step 7: Delete all file data rows
+        const fileDataIds = fileDataRows.map((row) => row.id);
+        const deleteResult = await this.ministrySubmissionDataRepository.delete({
+          id: In(fileDataIds),
+        });
+
+        return {
+          status: true,
+          message: `Successfully deleted ${deleteResult.affected || 0} file data row(s)`,
+          deletedCount: deleteResult.affected || 0,
+        };
+      } else if (dto.action === DeleteFileAction.BY_PRIMARY_ID) {
+        // Action: Delete a specific row by primary ID
+        if (!dto.primaryId) {
+          throw new BadRequestException(
+            'primaryId is required for by-primary-id action',
+          );
+        }
+
+        // Step 1: Find the row with the provided primaryId
+        const rowToDelete = await this.ministrySubmissionDataRepository.findOne({
+          where: { id: dto.primaryId },
+        });
+
+        if (!rowToDelete) {
+          throw new NotFoundException(
+            `Submission data with primaryId ${dto.primaryId} not found`,
+          );
+        }
+
+        // Step 2: Verify it's a file type field
+        const inputField = await this.inputFieldRepository.findOne({
+          where: { id: rowToDelete.inputFieldId },
+        });
+
+        if (!inputField) {
+          throw new NotFoundException(
+            `Input field with id ${rowToDelete.inputFieldId} not found`,
+          );
+        }
+
+        if (inputField.dataType !== DataType.FILE) {
+          throw new BadRequestException(
+            `Row with primaryId ${dto.primaryId} is not a file field. It is of type ${inputField.dataType}`,
+          );
+        }
+
+        // Step 3: Delete the row
+        const deleteResult = await this.ministrySubmissionDataRepository.delete({
+          id: dto.primaryId,
+        });
+
+        return {
+          status: true,
+          message: `Successfully deleted file data row`,
+          deletedCount: deleteResult.affected || 0,
+        };
+      } else {
+        throw new BadRequestException(`Invalid action: ${dto.action}`);
+      }
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to delete file data',
+      );
+    }
+  }
+
+  /**
+   * Get form status statistics for MOSPI Approver
+   * Returns totalSentBack and totalApproved counts based on submission indicator statuses
+   */
+  async getFormStatusStatistics(
+    formId: string,
+  ): Promise<{
+    status: boolean;
+    data: {
+      formId: string;
+      formStatus: FormStatus | null;
+      total: number;
+      totalSentBack: number;
+      totalApproved: number;
+      totalSubmitted: number;
+    };
+    message: string;
+  }> {
+    try {
+      // Step 1: Verify form exists
+      const form = await this.formRepository.findOne({
+        where: { id: formId },
+      });
+
+      if (!form) {
+        throw new NotFoundException(`Form with id ${formId} not found`);
+      }
+
+      // Step 2: Get all submissions for this form where isConsolidated = false
+      const nonConsolidatedSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          isConsolidated: false,
+        },
+      });
+
+      if (nonConsolidatedSubmissions.length === 0) {
+        return {
+          status: true,
+          data: {
+            formId: formId,
+            formStatus: form.status,
+            total: 16,
+            totalSentBack: 0,
+            totalApproved: 0,
+            totalSubmitted: 0,
+          },
+          message: 'No non-consolidated submissions found for this form',
+        };
+      }
+
+      // Step 3: Get all submission IDs
+      const submissionIds = nonConsolidatedSubmissions.map((s) => s.id);
+
+      // Step 4: Get all submission indicators for these submissions
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          submissionId: In(submissionIds),
+        },
+      });
+
+      // Step 5: Count indicators by status
+      const totalSentBack = submissionIndicators.filter(
+        (indicator) =>
+          indicator.status === SubmissionIndicatorStatus.RETURNED_FROM_MOSPI_APPROVER ||
+          indicator.status === SubmissionIndicatorStatus.RETURNED_FROM_MOSPI_APPROVER_DRAFT,
+      ).length;
+
+      const totalApproved = submissionIndicators.filter(
+        (indicator) =>
+          indicator.status === SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI ||
+          indicator.status === SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI_APPROVER_DRAFT,
+      ).length;
+
+      return {
+        status: true,
+        data: {
+          formId: formId,
+          formStatus: form.status,
+          total: 16,
+          totalSentBack: totalSentBack,
+          totalApproved: totalApproved,
+          totalSubmitted: totalSentBack+totalApproved,
+        },
+        message: 'Form status statistics retrieved successfully',
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve form status statistics',
       );
     }
   }

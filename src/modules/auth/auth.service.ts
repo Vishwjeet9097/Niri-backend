@@ -143,20 +143,42 @@ export class AuthService {
     // Validate indicator codes for NODAL_OFFICER (if provided)
     // Indicator assignment is optional - if no indicators are assigned, user will see all indicators
     if (role === UserRole.NODAL_OFFICER && indicatorCodes && indicatorCodes.length > 0) {
+      // Normalize indicator codes (trim whitespace, convert to string)
+      const normalizedCodes = indicatorCodes.map((code) => 
+        typeof code === 'string' ? code.trim() : String(code).trim()
+      ).filter((code) => code.length > 0);
+
+      if (normalizedCodes.length === 0) {
+        throw new ConflictException('No valid indicator codes provided');
+      }
+
       // Check if all indicator codes exist (only validate if indicators are provided)
       const indicators = await this.indicatorRepository.find({
-        where: { code: In(indicatorCodes), isActive: true },
+        where: { code: In(normalizedCodes), isActive: true },
       });
 
-      if (indicators.length !== indicatorCodes.length) {
+      if (indicators.length !== normalizedCodes.length) {
         const foundCodes = indicators.map((ind) => ind.code);
-        const missingCodes = indicatorCodes.filter(
+        const missingCodes = normalizedCodes.filter(
           (code) => !foundCodes.includes(code)
         );
+        
+        // Log for debugging
+        console.log('Indicator validation failed:', {
+          providedCodes: normalizedCodes,
+          foundCodes: foundCodes,
+          missingCodes: missingCodes,
+          totalIndicatorsInDb: await this.indicatorRepository.count({ where: { isActive: true } })
+        });
+        
         throw new ConflictException(
-          `Invalid indicator codes: ${missingCodes.join(", ")}`
+          `Invalid indicator codes: ${missingCodes.join(", ")}. Please ensure these codes exist in the indicators table and are active.`
         );
       }
+      
+      // Update indicatorCodes to normalized values for later use
+      indicatorCodes.length = 0;
+      indicatorCodes.push(...normalizedCodes);
     }
 
     // Hash password

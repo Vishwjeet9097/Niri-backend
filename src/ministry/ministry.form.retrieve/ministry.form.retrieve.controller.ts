@@ -82,7 +82,7 @@ export class MinistryFormRetrieveController {
 
   @Get('submissions/current-user')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.MINISTRY_APPROVER, UserRole.ADMIN, UserRole.MOSPI_APPROVER, UserRole.NODAL_OFFICER)
+  @Roles(UserRole.MINISTRY_APPROVER, UserRole.ADMIN, UserRole.MOSPI_APPROVER, UserRole.NODAL_OFFICER, UserRole.MOSPI_REVIEWER)
   async getSubmissionsForCurrentUser(@Request() req) {
     try {
       const userId = req.user.id;

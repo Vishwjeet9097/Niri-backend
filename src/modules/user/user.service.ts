@@ -15,6 +15,8 @@ import { Submission, SubmissionStatus } from "../../entities/submission.entity";
 import { FinalScore } from "../../entities/final-score.entity";
 import { AuditLog } from "../../entities/audit-log.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
+import { MinistrySubmissionIndicator } from "../../ministry/entities/ministry-submission-indicator.entity";
+import { IndicatorDetail } from "../../ministry/entities/indicator-detail.entity";
 import * as bcrypt from "bcryptjs";
 
 @Injectable()
@@ -28,6 +30,7 @@ export class UserService {
       UserRole.STATE_APPROVER,
       UserRole.MOSPI_REVIEWER,
       UserRole.MOSPI_APPROVER,
+      UserRole.MINISTRY_APPROVER,
       UserRole.ADMIN,
     ];
 
@@ -44,6 +47,7 @@ export class UserService {
           "contactNumber",
           "role",
           "stateUt",
+          "ministryId",
           "isActive",
           "createdAt",
         ],
@@ -65,6 +69,10 @@ export class UserService {
     private userIndicatorScopeRepository: Repository<UserIndicatorScope>,
     @InjectRepository(Submission)
     private submissionRepository: Repository<Submission>,
+    @InjectRepository(MinistrySubmissionIndicator)
+    private ministrySubmissionIndicatorRepository: Repository<MinistrySubmissionIndicator>,
+    @InjectRepository(IndicatorDetail)
+    private indicatorDetailRepository: Repository<IndicatorDetail>,
     private dataSource: DataSource
   ) {}
 
@@ -995,27 +1003,76 @@ export class UserService {
   }
 
   // Get user's assigned indicators from user_indicator_scope table
+  // If user has ministryId, also get indicators from ministry_submission_indicator table
   async getUserIndicatorScopes(userId: string) {
+    // Get user to check if they have a ministry and role
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'ministryId', 'role'],
+    });
+
+    // Get indicators from user_indicator_scope table
     const userIndicatorScopes = await this.userIndicatorScopeRepository
       .createQueryBuilder("scope")
       .leftJoinAndSelect("scope.indicator", "indicator")
       .where("scope.userId = :userId", { userId })
       .getMany();
 
-    return userIndicatorScopes.map((scope) => ({
-      id: scope.id,
-      userId: scope.userId,
-      indicatorId: scope.indicatorId,
-      indicator: {
-        id: scope.indicator.id,
-        code: scope.indicator.code,
-        name: scope.indicator.name,
-        category: scope.indicator.category,
-        maxScore: scope.indicator.maxScore,
-        isActive: scope.indicator.isActive,
-      },
-      createdAt: scope.createdAt,
+    const indicatorsFromScope = userIndicatorScopes.map((scope) => ({
+      code: scope.indicator.code,
+      name: scope.indicator.name,
     }));
+
+    // Get indicators from ministry_submission_indicator table
+    // For MINISTRY_APPROVER: check where ministryUser = userId
+    // For NODAL_OFFICER: check where assignedTo = userId
+    let ministrySubmissionIndicators: MinistrySubmissionIndicator[] = [];
+    
+    if (user?.ministryId) {
+      if (user.role === UserRole.MINISTRY_APPROVER) {
+        // For ministry approver, get indicators where they are the ministry user
+        ministrySubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: { ministryUser: userId },
+        });
+      } else if (user.role === UserRole.NODAL_OFFICER) {
+        // For nodal officer, get indicators where they are assigned (assignedTo = userId)
+        ministrySubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: { assignedTo: userId },
+        });
+      }
+    }
+
+    if (ministrySubmissionIndicators.length > 0) {
+      const indicatorIds = ministrySubmissionIndicators.map((msi) => msi.indicatorId);
+      const indicatorDetails = await this.indicatorDetailRepository.find({
+        where: { id: In(indicatorIds) },
+      });
+
+      const indicatorDetailMap = new Map(indicatorDetails.map((ind) => [ind.id, ind]));
+
+      // Add indicators from ministry_submission_indicator table
+      const indicatorsFromMinistry = ministrySubmissionIndicators.map((msi) => {
+        const indicatorDetail = indicatorDetailMap.get(msi.indicatorId);
+        return indicatorDetail ? {
+          code: indicatorDetail.sNo || indicatorDetail.id,
+          name: indicatorDetail.name,
+        } : null;
+      }).filter((ind) => ind !== null);
+
+      // Combine both sources, avoiding duplicates based on code
+      const combinedIndicators = [...indicatorsFromScope];
+      const existingCodes = new Set(indicatorsFromScope.map((ind) => ind.code));
+      
+      indicatorsFromMinistry.forEach((ind) => {
+        if (ind && !existingCodes.has(ind.code)) {
+          combinedIndicators.push(ind);
+        }
+      });
+
+      return combinedIndicators;
+    }
+
+    return indicatorsFromScope;
   }
 
   // Get only indicator codes for a user (for simplified response)

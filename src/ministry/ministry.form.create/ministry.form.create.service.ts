@@ -19,6 +19,7 @@ import { CreateInputFieldDto } from './dto/create-input-field.dto';
 import { CreateMinistryFormDto } from './dto/create-ministry-form.dto';
 import { AssignIndicatorToNodalDto } from './dto/assign-indicator-to-nodal.dto';
 import { ReassignIndicatorDto } from './dto/reassign-indicator.dto';
+import { RemoveAssignedIndicatorDto } from './dto/remove-assigned-indicator.dto';
 
 @Injectable()
 export class MinistryFormCreateService {
@@ -133,11 +134,12 @@ export class MinistryFormCreateService {
 
   /**
    * Get all indicators with status = true, grouped by category and ordered by sequence
-   * If userId is provided, first gets indicator IDs from ministry_submission_indicator table
+   * If userId is provided, filters indicators where ministryUser = userId and includes assignedTo
    */
   async getAllActiveIndicators(userId?: string, forUpdate?: boolean): Promise<{
     status: boolean;
-    data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string })[]>;
+    data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null; indicatorStatus?: string | null })[]>;
+    availableIndicators?: string[];
     message: string;
   }> {
     try {
@@ -145,6 +147,8 @@ export class MinistryFormCreateService {
       console.log('userId', userId, 'forUpdate', forUpdate);
       let indicatorIds: string[] = [];
       let submissionIndicatorMap: Map<string, string> = new Map(); // Map indicatorId -> submissionIndicatorId
+      let assignedToMap: Map<string, string | null> = new Map(); // Map indicatorId -> assignedTo
+      let indicatorStatusMap: Map<string, string | null> = new Map(); // Map indicatorId -> status
 
       // If userId is provided, get indicator IDs from ministry_submission_indicator table
       if (userId) {
@@ -159,30 +163,10 @@ export class MinistryFormCreateService {
             },
           });
         } else {
-          // Previous logic: Filter by assignedTo and get from submissions
-          // First, get submissions for this user
-          const submissions = await this.ministrySubmissionRepository.find({
-            where: { userId: userId },
-          });
-
-          if (submissions.length === 0) {
-            return {
-              status: true,
-              data: {},
-              message: `No submissions found for user ${userId}`,
-            };
-          }
-
-          // Get all submission IDs
-          const submissionIds: string[] = submissions.map((sub) => sub.id);
-
-          // Get indicator IDs from ministry_submission_indicator table
-          // where assignedTo = userId
+          // Filter by ministryUser equals userId
           submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
             where: { 
-              submissionId: In(submissionIds),
-              assignedTo: userId,
-              status: IsNull(),
+              ministryUser: userId,
             },
           });
         }
@@ -190,11 +174,13 @@ export class MinistryFormCreateService {
         // Extract unique indicator IDs and create mapping
         indicatorIds = [...new Set(submissionIndicators.map((si) => si.indicatorId))];
         
-        // Create map of indicatorId -> submissionIndicatorId
+        // Create map of indicatorId -> submissionIndicatorId, assignedTo, and status
         // If multiple submission indicators exist for same indicator, use the first one
         submissionIndicators.forEach((si) => {
           if (!submissionIndicatorMap.has(si.indicatorId)) {
             submissionIndicatorMap.set(si.indicatorId, si.id);
+            assignedToMap.set(si.indicatorId, si.assignedTo || null);
+            indicatorStatusMap.set(si.indicatorId, si.status || null);
           }
         });
 
@@ -225,8 +211,8 @@ export class MinistryFormCreateService {
         .addOrderBy('indicatorDetail.sNo', 'ASC')
         .getMany();
 
-      // Group indicators by category and add submissionIndicatorId
-      const groupedIndicators: Record<string, (IndicatorDetail & { submissionIndicatorId?: string })[]> = {};
+      // Group indicators by category and add submissionIndicatorId, assignedTo, and indicatorStatus
+      const groupedIndicators: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null; indicatorStatus?: string | null })[]> = {};
 
       indicators.forEach((indicator) => {
         const category = indicator.category;
@@ -234,15 +220,17 @@ export class MinistryFormCreateService {
           groupedIndicators[category] = [];
         }
         
-        // Add submissionIndicatorId if userId is provided and mapping exists
-        const indicatorWithSubmissionId = {
+        // Add submissionIndicatorId, assignedTo, and indicatorStatus if userId is provided and mapping exists
+        const indicatorWithMetadata = {
           ...indicator,
           ...(userId && submissionIndicatorMap.has(indicator.id) && {
-            submissionIndicatorId: submissionIndicatorMap.get(indicator.id)
+            submissionIndicatorId: submissionIndicatorMap.get(indicator.id),
+            assignedTo: assignedToMap.get(indicator.id) || null,
+            indicatorStatus: indicatorStatusMap.get(indicator.id) || null
           })
         };
         
-        groupedIndicators[category].push(indicatorWithSubmissionId);
+        groupedIndicators[category].push(indicatorWithMetadata);
       });
 
       // Sort each category's indicators by sequence
@@ -259,15 +247,38 @@ export class MinistryFormCreateService {
       const totalCount = indicators.length;
       const categoryCount = Object.keys(groupedIndicators).length;
 
+      // Get available indicators: indicators where assignedTo = userId and status is null
+      let availableIndicators: string[] = [];
+      if (userId) {
+        const availableSubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+          where: {
+            assignedTo: userId,
+            status: IsNull(),
+          },
+        });
+        availableIndicators = availableSubmissionIndicators.map((si) => si.indicatorId);
+      }
+
       const message = userId
         ? `Found ${totalCount} active indicator(s) for user ${userId} across ${categoryCount} category/categories`
         : `Found ${totalCount} active indicator(s) across ${categoryCount} category/categories`;
 
-      return {
+      const response: {
+        status: boolean;
+        data: Record<string, (IndicatorDetail & { submissionIndicatorId?: string; assignedTo?: string | null; indicatorStatus?: string | null })[]>;
+        availableIndicators?: string[];
+        message: string;
+      } = {
         status: true,
         data: groupedIndicators,
         message,
       };
+
+      if (userId) {
+        response.availableIndicators = availableIndicators;
+      }
+
+      return response;
     } catch (error) {
       throw new BadRequestException(
         error.message || 'Failed to fetch indicators',
@@ -1195,7 +1206,7 @@ export class MinistryFormCreateService {
         where: {
           ministryUser: ministryUserId,
           indicatorId: In(validIndicatorIds),
-          status: IsNull(),
+          // status: IsNull(),
         },
       });
 
@@ -1419,6 +1430,9 @@ export class MinistryFormCreateService {
         if (normalized.includes('file')) {
           return DataType.FILE;
         }
+        if (normalized.includes('date')) {
+          return DataType.DATE;
+        }
         return DataType.STRING;
       };
 
@@ -1442,6 +1456,9 @@ export class MinistryFormCreateService {
         if (normalized.includes('dropdown')) {
           return UIComponent.DROPDOWN;
         }
+        if (normalized.includes('input') && normalized.includes('date')) {
+          return UIComponent.INPUT_DATE;
+        }
         if (normalized.includes('input') && (normalized.includes('number') || normalized.includes('numeric'))) {
           return UIComponent.INPUT_NUMBER;
         }
@@ -1450,6 +1467,9 @@ export class MinistryFormCreateService {
         }
         
         // Default fallback based on common patterns
+        if (normalized.includes('date')) {
+          return UIComponent.INPUT_DATE;
+        }
         if (normalized.includes('number') || normalized.includes('numeric')) {
           return UIComponent.INPUT_NUMBER;
         }
@@ -1652,6 +1672,116 @@ export class MinistryFormCreateService {
     } catch (error) {
       throw new BadRequestException(
         error.message || 'Failed to process Excel file',
+      );
+    }
+  }
+
+  /**
+   * Remove/Update assigned indicator - Update assignedTo field in ministry_submission_indicator table
+   */
+  async removeAssignedIndicator(
+    dto: RemoveAssignedIndicatorDto,
+  ): Promise<{
+    status: boolean;
+    message: string;
+    data?: {
+      updatedCount: number;
+      indicatorsId: string[];
+      ministryUserId: string;
+    };
+  }> {
+    try {
+      // Step 1: Validate that the ministry user exists
+      const ministryUser = await this.userRepository.findOne({
+        where: { id: dto.ministryUserId },
+      });
+
+      if (!ministryUser) {
+        throw new NotFoundException(
+          `Ministry user with id ${dto.ministryUserId} not found`,
+        );
+      }
+
+      // Step 2: Validate that all indicators exist
+      const indicators = await this.indicatorDetailRepository.find({
+        where: { id: In(dto.indicatorsId) },
+      });
+
+      if (indicators.length !== dto.indicatorsId.length) {
+        const foundIndicatorIds = indicators.map((ind) => ind.id);
+        const missingIndicatorIds = dto.indicatorsId.filter(
+          (id) => !foundIndicatorIds.includes(id),
+        );
+        throw new NotFoundException(
+          `Indicator(s) not found: ${missingIndicatorIds.join(', ')}`,
+        );
+      }
+
+      // Step 3: Get ministry user's form and submission
+      const ministryForm = await this.formRepository.findOne({
+        where: { ministryUser: dto.ministryUserId },
+      });
+
+      if (!ministryForm) {
+        throw new NotFoundException(`Form not found for ministry user ${dto.ministryUserId}`);
+      }
+
+      const ministrySubmission = await this.ministrySubmissionRepository.findOne({
+        where: { formId: ministryForm.id, userId: dto.ministryUserId },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (!ministrySubmission) {
+        throw new NotFoundException(`Submission not found for ministry user ${dto.ministryUserId}`);
+      }
+
+      // Step 4: Find submission indicators where indicatorId is in the provided array AND ministryUser matches
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          indicatorId: In(dto.indicatorsId),
+          ministryUser: dto.ministryUserId,
+        },
+      });
+
+      if (submissionIndicators.length === 0) {
+        return {
+          status: true,
+          message: 'No submission indicators found for the provided indicator IDs and ministry user',
+          data: {
+            updatedCount: 0,
+            indicatorsId: dto.indicatorsId,
+            ministryUserId: dto.ministryUserId,
+          },
+        };
+      }
+
+      // Step 5: Update assignedTo and submissionId to ministry user's values for all found submission indicators
+      const updateResult = await this.ministrySubmissionIndicatorRepository.update(
+        {
+          indicatorId: In(dto.indicatorsId),
+          ministryUser: dto.ministryUserId,
+        },
+        {
+          assignedTo: dto.ministryUserId,
+          submissionId: ministrySubmission.id,
+        },
+      );
+
+      return {
+        status: true,
+        message: `Successfully updated assignedTo for ${updateResult.affected || 0} submission indicator(s)`,
+        data: {
+          updatedCount: updateResult.affected || 0,
+          indicatorsId: dto.indicatorsId,
+          ministryUserId: dto.ministryUserId,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to remove/update assigned indicator',
       );
     }
   }

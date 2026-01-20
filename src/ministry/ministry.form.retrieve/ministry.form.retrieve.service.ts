@@ -587,6 +587,7 @@ export class MinistryFormRetrieveService {
       // Create a map of indicatorId -> array of submissionIndicatorIds (since multiple submissions can have same indicator)
       const submissionIndicatorMap = new Map<string, string[]>();
       const indicatorStatusMap = new Map<string, string | null>();
+      const indicatorAssignedToMap = new Map<string, string | null>();
       submissionIndicators.forEach((si) => {
         if (!submissionIndicatorMap.has(si.indicatorId)) {
           submissionIndicatorMap.set(si.indicatorId, []);
@@ -595,6 +596,10 @@ export class MinistryFormRetrieveService {
         // Use the first status found (or most recent if needed)
         if (!indicatorStatusMap.has(si.indicatorId)) {
           indicatorStatusMap.set(si.indicatorId, si.status);
+        }
+        // Use the first assignedTo found (or most recent if needed)
+        if (!indicatorAssignedToMap.has(si.indicatorId)) {
+          indicatorAssignedToMap.set(si.indicatorId, si.assignedTo || null);
         }
       });
 
@@ -788,6 +793,8 @@ export class MinistryFormRetrieveService {
 
           // Get status for this indicator (from first occurrence)
           const indicatorStatus = indicatorStatusMap.get(indicator.id) || null;
+          // Get assignedTo for this indicator (from first occurrence)
+          const indicatorAssignedTo = indicatorAssignedToMap.get(indicator.id) || null;
 
           // Build indicator object
           return {
@@ -796,6 +803,7 @@ export class MinistryFormRetrieveService {
               sequence: indicator.sequence,
               submissionIndicatorId: submissionIndicatorIds.length > 0 ? submissionIndicatorIds[0] : null, // Use first one
               status: indicatorStatus,
+              assignedTo: indicatorAssignedTo,
               inputs: inputsWithData,
               subsection: subsectionArray,
             },

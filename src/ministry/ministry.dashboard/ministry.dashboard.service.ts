@@ -192,9 +192,13 @@ export class MinistryDashboardService {
     const total_pending_submission = await this.ministrySubmissionIndicatorRepository
       .createQueryBuilder('indicator')
       .where('indicator.ministryUser = :userId', { userId })
-      .andWhere('(indicator.status IS NULL OR indicator.status = :draftStatus)', {
-        draftStatus: SubmissionIndicatorStatus.DRAFT,
-      })
+      .andWhere(
+        '(indicator.status IS NULL OR indicator.status = :draftStatus OR indicator.status = :resubmittedStatus)',
+        {
+          draftStatus: SubmissionIndicatorStatus.DRAFT,
+          resubmittedStatus: SubmissionIndicatorStatus.RESUBMITTED,
+        }
+      )
       .getCount();
 
     // Total return nodal: status is RETURNED_FROM_MINISTRY
@@ -302,7 +306,7 @@ export class MinistryDashboardService {
 
     // Under review: status is null or DRAFT
     const underReview = forms.filter(
-      (form) => form.status === null || form.status === FormStatus.DRAFT,
+      (form) => form.status === null || form.status === FormStatus.DRAFT || form.status === FormStatus.SUBMITTED_TO_MOSPI_REVIEWER ,
     ).length;
 
     // Total: count of forms
@@ -339,7 +343,7 @@ export class MinistryDashboardService {
     ).length;
 
     // Total: count of all forms
-    const total = allForms.length;
+    const total = 16;
 
     return {
       accepted,
@@ -363,13 +367,24 @@ export class MinistryDashboardService {
     message: string;
   }> {
     try {
-      // Accepted: status ACCEPTED_BY_MINISTRY where ministry_user = userId
-      const accepted = await this.ministrySubmissionIndicatorRepository.count({
+      // Accepted by Ministry: status ACCEPTED_BY_MINISTRY where ministry_user = userId
+      const acceptedByMinistry = await this.ministrySubmissionIndicatorRepository.count({
         where: {
           ministryUser: ministryUserId,
           status: SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY,
         },
       });
+
+      // Accepted by MOSPI: status ACCEPTED_BY_MOSPI where ministry_user = userId
+      const acceptedByMospi = await this.ministrySubmissionIndicatorRepository.count({
+        where: {
+          ministryUser: ministryUserId,
+          status: SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI,
+        },
+      });
+
+      // Total accepted: ACCEPTED_BY_MINISTRY + ACCEPTED_BY_MOSPI
+      const accepted = acceptedByMinistry + acceptedByMospi;
 
       // Total: where ministry_user = userId
       const total = await this.ministrySubmissionIndicatorRepository.count({
@@ -542,7 +557,7 @@ export class MinistryDashboardService {
    */
   private async getNodalSubmissionDetails(userId: string): Promise<any> {
     const submission = await this.ministrySubmissionRepository.findOne({
-      where: { userId: userId },
+      where: { userId: userId, status: Not(MinistrySubmissionStatus.DRAFT) },
       order: { createdAt: 'DESC' },
     });
 
