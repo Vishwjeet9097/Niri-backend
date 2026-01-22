@@ -13,6 +13,7 @@ import { MinistryIndicatorScoreHistory } from '../../entities/ministry-indicator
 import { MinistryManualScoreUpdate } from '../../entities/ministry-manual-score-update.entity';
 import { MinistryFinalScore } from '../../entities/ministry-final-score.entity';
 import { Form } from '../../ministry/entities/form.entity';
+import { Ministry } from '../../entities/ministry.entity';
 
 export interface MinistryScoreCalculation {
   indicator: string;
@@ -81,6 +82,8 @@ export class MinistryScoringService {
     private ministryManualScoreUpdateRepository: Repository<MinistryManualScoreUpdate>,
     @InjectRepository(MinistryFinalScore)
     private ministryFinalScoreRepository: Repository<MinistryFinalScore>,
+    @InjectRepository(Ministry)
+    private ministryRepository: Repository<Ministry>,
     @InjectDataSource()
     private dataSource: DataSource,
   ) {}
@@ -2909,6 +2912,148 @@ export class MinistryScoringService {
     }
 
     return scoreBreakdown;
+  }
+
+  /**
+   * Get ministry score rankings ordered by total score
+   */
+  async getMinistryScoreRankings(): Promise<any[]> {
+    this.logger.log('📊 Fetching ministry score rankings...');
+
+    const scores = await this.ministryFinalScoreRepository.find({
+      order: { totalScore: 'DESC' },
+    });
+
+    // Get ministry names from ministries table
+    const rankings = await Promise.all(
+      scores.map(async (score, index) => {
+        let ministryName = 'Unknown Ministry';
+        
+        // First, try to get ministry name from ministries table using ministryId
+        if (score.ministryId) {
+          try {
+            const ministry = await this.ministryRepository.findOne({
+              where: { id: score.ministryId },
+            });
+            if (ministry && ministry.name) {
+              ministryName = ministry.name;
+            } else {
+              // Fallback: try to get from form.ministry (which might be the name)
+              const submission = await this.ministrySubmissionRepository.findOne({
+                where: { id: score.submissionId },
+              });
+              
+              if (submission && submission.formId) {
+                const formRepository = this.dataSource.getRepository(Form);
+                const form = await formRepository.findOne({
+                  where: { id: submission.formId },
+                });
+                if (form && form.ministry) {
+                  ministryName = form.ministry;
+                }
+              }
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch ministry name for ministryId ${score.ministryId}:`, error);
+            // Fallback to form.ministry
+            const submission = await this.ministrySubmissionRepository.findOne({
+              where: { id: score.submissionId },
+            });
+            
+            if (submission && submission.formId) {
+              const formRepository = this.dataSource.getRepository(Form);
+              const form = await formRepository.findOne({
+                where: { id: submission.formId },
+              });
+              if (form && form.ministry) {
+                ministryName = form.ministry;
+              }
+            }
+          }
+        } else {
+          // If no ministryId, try to get from form
+          const submission = await this.ministrySubmissionRepository.findOne({
+            where: { id: score.submissionId },
+          });
+          
+          if (submission && submission.formId) {
+            const formRepository = this.dataSource.getRepository(Form);
+            const form = await formRepository.findOne({
+              where: { id: submission.formId },
+            });
+            if (form && form.ministry) {
+              ministryName = form.ministry;
+            }
+          }
+        }
+
+        return {
+          rank: index + 1,
+          ministryId: score.ministryId,
+          ministryName: ministryName,
+          totalScore: parseFloat(score.totalScore.toString()),
+          percentage: parseFloat(score.percentage?.toString() || '0'),
+          categoryScores: score.categoryScores,
+          submissionId: score.submissionId,
+          createdAt: score.createdAt,
+        };
+      })
+    );
+
+    this.logger.log(`✅ Retrieved ${rankings.length} ministry rankings`);
+    return rankings;
+  }
+
+  /**
+   * Get ministry score statistics
+   */
+  async getMinistryScoreStatistics(): Promise<any> {
+    this.logger.log('📊 Fetching ministry score statistics...');
+
+    const scores = await this.ministryFinalScoreRepository.find();
+
+    if (scores.length === 0) {
+      return {
+        totalMinistries: 0,
+        averageScore: 0,
+        highestScore: 0,
+        lowestScore: 0,
+        scoreDistribution: {},
+      };
+    }
+
+    const totalScores = scores.map(s => parseFloat(s.totalScore.toString()));
+    const averageScore = totalScores.reduce((sum, score) => sum + score, 0) / totalScores.length;
+    const highestScore = Math.max(...totalScores);
+    const lowestScore = Math.min(...totalScores);
+
+    // Score distribution
+    const distribution = {
+      '0-200': 0,
+      '201-400': 0,
+      '401-600': 0,
+      '601-800': 0,
+      '801-1000': 0,
+    };
+
+    totalScores.forEach(score => {
+      if (score <= 200) distribution['0-200']++;
+      else if (score <= 400) distribution['201-400']++;
+      else if (score <= 600) distribution['401-600']++;
+      else if (score <= 800) distribution['601-800']++;
+      else distribution['801-1000']++;
+    });
+
+    const statistics = {
+      totalMinistries: scores.length,
+      averageScore: Math.round(averageScore * 100) / 100,
+      highestScore,
+      lowestScore,
+      scoreDistribution: distribution,
+    };
+
+    this.logger.log(`✅ Retrieved ministry statistics: ${statistics.totalMinistries} ministries`);
+    return statistics;
   }
 }
 

@@ -10,6 +10,40 @@ import { ManualScoreUpdateDto } from '../scoring/dto/manual-score-update.dto';
 export class MinistryScoringController {
   constructor(private readonly ministryScoringService: MinistryScoringService) {}
 
+  @Get('rankings')
+  @Roles(
+    UserRole.MINISTRY_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
+  )
+  async getRankings(@Request() req) {
+    const rankings = await this.ministryScoringService.getMinistryScoreRankings();
+    return {
+      status: true,
+      data: rankings,
+      message: 'Ministry score rankings retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('statistics')
+  @Roles(
+    UserRole.MINISTRY_APPROVER,
+    UserRole.MOSPI_REVIEWER,
+    UserRole.MOSPI_APPROVER,
+    UserRole.ADMIN
+  )
+  async getStatistics(@Request() req) {
+    const statistics = await this.ministryScoringService.getMinistryScoreStatistics();
+    return {
+      status: true,
+      data: statistics,
+      message: 'Ministry score statistics retrieved successfully',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
   @Get(':submissionId')
   @Roles(
     UserRole.MINISTRY_APPROVER,
