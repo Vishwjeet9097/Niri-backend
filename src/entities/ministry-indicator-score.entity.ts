@@ -29,14 +29,18 @@ export class MinistryIndicatorScore {
   @Column({ name: 'maxScore', type: 'decimal', precision: 10, scale: 2 })
   maxScore: number;
 
-  @Column({ name: 'calculation', type: 'jsonb' })
+  @Column({ name: 'calculation', type: 'jsonb', nullable: true })
   calculation: {
     indicator: string;
     value: number;
     weight: number;
     score: number;
     maxScore: number;
-  };
+    aggregatedFrom?: number; // Number of source submissions aggregated
+    sourceSubmissionIds?: string[]; // IDs of source submissions
+    hasManualUpdates?: boolean; // Whether any source has manual updates
+    [key: string]: any; // Allow additional properties for flexibility
+  } | null;
 
   @CreateDateColumn()
   createdAt: Date;

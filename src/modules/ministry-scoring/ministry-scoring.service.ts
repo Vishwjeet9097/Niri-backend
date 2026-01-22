@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { Repository, In, Not, DataSource } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { MinistrySubmission } from '../../ministry/entities/ministry-submission.entity';
 import { MinistrySubmissionIndicator } from '../../ministry/entities/ministry-submission-indicator.entity';
@@ -10,6 +10,9 @@ import { IndicatorSubsection } from '../../ministry/entities/indicator-subsectio
 import { InputField } from '../../ministry/entities/input-field.entity';
 import { MinistryIndicatorScore } from '../../entities/ministry-indicator-score.entity';
 import { MinistryIndicatorScoreHistory } from '../../entities/ministry-indicator-score-history.entity';
+import { MinistryManualScoreUpdate } from '../../entities/ministry-manual-score-update.entity';
+import { MinistryFinalScore } from '../../entities/ministry-final-score.entity';
+import { Form } from '../../ministry/entities/form.entity';
 
 export interface MinistryScoreCalculation {
   indicator: string;
@@ -74,6 +77,10 @@ export class MinistryScoringService {
     private ministryIndicatorScoreRepository: Repository<MinistryIndicatorScore>,
     @InjectRepository(MinistryIndicatorScoreHistory)
     private ministryIndicatorScoreHistoryRepository: Repository<MinistryIndicatorScoreHistory>,
+    @InjectRepository(MinistryManualScoreUpdate)
+    private ministryManualScoreUpdateRepository: Repository<MinistryManualScoreUpdate>,
+    @InjectRepository(MinistryFinalScore)
+    private ministryFinalScoreRepository: Repository<MinistryFinalScore>,
     @InjectDataSource()
     private dataSource: DataSource,
   ) {}
@@ -2023,40 +2030,885 @@ export class MinistryScoringService {
   }
 
   /**
+   * Helper method to resolve submissionId to UUID format
+   * Handles both UUID and submissionId string format (SUB- format)
+   */
+  private async resolveSubmissionIdToUUID(submissionId: string): Promise<string | null> {
+    // Check if submissionId is already a UUID format
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(submissionId);
+    
+    if (isUUID) {
+      return submissionId;
+    }
+    
+    // It's likely a submissionId string (SUB- format), need to find the actual UUID
+    this.logger.debug(`🔍 submissionId appears to be string format, resolving to UUID...`);
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { submissionId: submissionId },
+    });
+    
+    if (submission) {
+      this.logger.debug(`✅ Resolved submissionId "${submissionId}" to UUID: ${submission.id}`);
+      return submission.id;
+    } else {
+      this.logger.warn(`⚠️ Could not find submission with submissionId: ${submissionId}`);
+      return null;
+    }
+  }
+
+  /**
    * Get indicator score for a specific indicator
+   * Handles both UUID and submissionId string format
+   * For consolidated submissions, aggregates scores from all source submissions
    */
   async getIndicatorScore(
     submissionId: string,
     indicatorCode: string
   ): Promise<MinistryIndicatorScore | null> {
-    return await this.ministryIndicatorScoreRepository.findOne({
-      where: { submissionId, indicatorCode },
+    this.logger.debug(`🔍 Fetching indicator score for submissionId: ${submissionId}, indicatorCode: ${indicatorCode}`);
+    
+    // Resolve submissionId to UUID format
+    const actualSubmissionId = await this.resolveSubmissionIdToUUID(submissionId);
+    if (!actualSubmissionId) {
+      return null;
+    }
+    
+    // Check if this is a consolidated submission
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { id: actualSubmissionId },
     });
+    
+    if (!submission) {
+      this.logger.debug(`⚠️ Submission not found: ${actualSubmissionId}`);
+      return null;
+    }
+    
+    // If consolidated, aggregate scores from source submissions
+    if (submission.isConsolidated) {
+      this.logger.debug(`📊 Consolidated submission detected, aggregating score for indicator ${indicatorCode}`);
+      
+      // Get formId from consolidated submission
+      const formId = submission.formId;
+      if (!formId) {
+        this.logger.warn(`⚠️ Consolidated submission ${actualSubmissionId} does not have a formId`);
+        return null;
+      }
+      
+      // Get all source submissions (isConsolidated = false) for this formId
+      const sourceSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          isConsolidated: false,
+        },
+      });
+      
+      if (sourceSubmissions.length === 0) {
+        this.logger.debug(`⚠️ No source submissions found for consolidated submission ${actualSubmissionId}`);
+        return null;
+      }
+      
+      const sourceSubmissionIds = sourceSubmissions.map(s => s.id);
+      this.logger.debug(`📊 Found ${sourceSubmissions.length} source submissions: ${sourceSubmissionIds.join(', ')}`);
+      
+      // Get all scores for this indicator from source submissions
+      const sourceScores = await this.ministryIndicatorScoreRepository.find({
+        where: {
+          submissionId: In(sourceSubmissionIds),
+          indicatorCode: indicatorCode,
+        },
+      });
+      
+      if (sourceScores.length === 0) {
+        this.logger.debug(`⚠️ No scores found for indicator ${indicatorCode} in source submissions`);
+        return null;
+      }
+      
+      // Aggregate ONLY system-generated scores (not manual updates)
+      // Manual updates are handled separately via getLatestManualScoreUpdate
+      let totalScore = 0;
+      let maxScore = sourceScores[0]?.maxScore || 0;
+      
+      // Sum up system-generated scores from all source submissions
+      sourceScores.forEach(score => {
+        // Always use system-generated score, not manual updates
+        totalScore += parseFloat(score.score.toString());
+        this.logger.debug(`📊 Using system score for source ${score.submissionId}: ${score.score}`);
+      });
+      
+      // Create aggregated score object
+      const baseCalculation = sourceScores[0].calculation || {
+        indicator: indicatorCode,
+        value: 0,
+        weight: 0,
+        score: 0,
+        maxScore: maxScore,
+      };
+      
+      const aggregatedScore: MinistryIndicatorScore = {
+        id: `${actualSubmissionId}_${indicatorCode}`, // Synthetic ID
+        submissionId: actualSubmissionId,
+        indicatorCode: indicatorCode,
+        category: sourceScores[0].category,
+        score: totalScore,
+        maxScore: maxScore,
+        calculation: {
+          indicator: baseCalculation.indicator || indicatorCode,
+          value: baseCalculation.value || 0,
+          weight: baseCalculation.weight || 0,
+          score: totalScore,
+          maxScore: maxScore,
+          aggregatedFrom: sourceScores.length,
+          sourceSubmissionIds: sourceSubmissionIds,
+        },
+        createdAt: sourceScores[0].createdAt,
+        updatedAt: new Date(), // Use current date for aggregated score
+      };
+      
+      this.logger.debug(`✅ Aggregated score for indicator ${indicatorCode}: ${totalScore}/${maxScore} from ${sourceScores.length} source submissions`);
+      
+      return aggregatedScore;
+    }
+    
+    // For non-consolidated submissions, return score as-is
+    const score = await this.ministryIndicatorScoreRepository.findOne({
+      where: { submissionId: actualSubmissionId, indicatorCode },
+    });
+    
+    if (score) {
+      this.logger.debug(`✅ Found score: ${score.score}/${score.maxScore} for indicator ${indicatorCode}`);
+    } else {
+      this.logger.debug(`⚠️ No score found for submissionId: ${actualSubmissionId}, indicatorCode: ${indicatorCode}`);
+    }
+    
+    return score;
   }
 
   /**
    * Get all indicator scores for a submission
+   * Handles both UUID and submissionId string format
+   * For consolidated submissions, aggregates scores from all source submissions
    */
   async getSubmissionIndicatorScores(
     submissionId: string
   ): Promise<MinistryIndicatorScore[]> {
-    return await this.ministryIndicatorScoreRepository.find({
-      where: { submissionId },
+    this.logger.debug(`🔍 Fetching all indicator scores for submissionId: ${submissionId}`);
+    
+    // Resolve submissionId to UUID format
+    const actualSubmissionId = await this.resolveSubmissionIdToUUID(submissionId);
+    if (!actualSubmissionId) {
+      return [];
+    }
+    
+    // Check if this is a consolidated submission
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { id: actualSubmissionId },
+    });
+    
+    if (!submission) {
+      this.logger.debug(`⚠️ Submission not found: ${actualSubmissionId}`);
+      return [];
+    }
+    
+    // If consolidated, aggregate scores from source submissions
+    if (submission.isConsolidated) {
+      this.logger.debug(`📊 Consolidated submission detected, aggregating scores from source submissions`);
+      
+      // Get formId from consolidated submission
+      const formId = submission.formId;
+      if (!formId) {
+        this.logger.warn(`⚠️ Consolidated submission ${actualSubmissionId} does not have a formId`);
+        return [];
+      }
+      
+      // Get all source submissions (isConsolidated = false) for this formId
+      const sourceSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          isConsolidated: false,
+        },
+      });
+      
+      if (sourceSubmissions.length === 0) {
+        this.logger.debug(`⚠️ No source submissions found for consolidated submission ${actualSubmissionId}`);
+        return [];
+      }
+      
+      const sourceSubmissionIds = sourceSubmissions.map(s => s.id);
+      this.logger.debug(`📊 Found ${sourceSubmissions.length} source submissions: ${sourceSubmissionIds.join(', ')}`);
+      
+      // Get all scores from source submissions
+      const allSourceScores = await this.ministryIndicatorScoreRepository.find({
+        where: { submissionId: In(sourceSubmissionIds) },
+        order: { indicatorCode: 'ASC' },
+      });
+      
+      // Aggregate ONLY system-generated scores (not manual updates)
+      // Manual updates are handled separately via getLatestManualScoreUpdate
+      const aggregatedScoresMap = new Map<string, MinistryIndicatorScore[]>();
+      
+      allSourceScores.forEach(score => {
+        if (!aggregatedScoresMap.has(score.indicatorCode)) {
+          aggregatedScoresMap.set(score.indicatorCode, []);
+        }
+        aggregatedScoresMap.get(score.indicatorCode)!.push(score);
+      });
+      
+      // Create aggregated scores
+      const aggregatedScores: MinistryIndicatorScore[] = [];
+      
+      aggregatedScoresMap.forEach((scores, indicatorCode) => {
+        // Sum up ONLY system-generated scores
+        let totalScore = 0;
+        let maxScore = scores[0]?.maxScore || 0;
+        
+        scores.forEach(score => {
+          // Always use system-generated score, not manual updates
+          totalScore += parseFloat(score.score.toString());
+        });
+        
+        // Create aggregated score object
+        const baseCalculation = scores[0].calculation || {
+          indicator: indicatorCode,
+          value: 0,
+          weight: 0,
+          score: 0,
+          maxScore: maxScore,
+        };
+        
+        const aggregatedScore: MinistryIndicatorScore = {
+          id: `${actualSubmissionId}_${indicatorCode}`, // Synthetic ID
+          submissionId: actualSubmissionId,
+          indicatorCode: indicatorCode,
+          category: scores[0].category,
+          score: totalScore,
+          maxScore: maxScore,
+          calculation: {
+            indicator: baseCalculation.indicator || indicatorCode,
+            value: baseCalculation.value || 0,
+            weight: baseCalculation.weight || 0,
+            score: totalScore,
+            maxScore: maxScore,
+            aggregatedFrom: scores.length,
+            sourceSubmissionIds: sourceSubmissionIds,
+          },
+          createdAt: scores[0].createdAt,
+          updatedAt: new Date(), // Use current date for aggregated score
+        };
+        
+        aggregatedScores.push(aggregatedScore);
+      });
+      
+      // Sort by indicator code
+      aggregatedScores.sort((a, b) => a.indicatorCode.localeCompare(b.indicatorCode));
+      
+      this.logger.debug(`✅ Aggregated ${aggregatedScores.length} indicator scores from ${sourceSubmissions.length} source submissions`);
+      
+      return aggregatedScores;
+    }
+    
+    // For non-consolidated submissions, return scores as-is
+    const scores = await this.ministryIndicatorScoreRepository.find({
+      where: { submissionId: actualSubmissionId },
       order: { indicatorCode: 'ASC' },
     });
+    
+    this.logger.debug(`✅ Found ${scores.length} indicator scores for submissionId: ${actualSubmissionId}`);
+    
+    return scores;
   }
 
   /**
    * Get score history for a specific indicator
+   * Handles both UUID and submissionId string format
    */
   async getIndicatorScoreHistory(
     submissionId: string,
     indicatorCode: string
   ): Promise<MinistryIndicatorScoreHistory[]> {
+    // Resolve submissionId to UUID format
+    const actualSubmissionId = await this.resolveSubmissionIdToUUID(submissionId);
+    if (!actualSubmissionId) {
+      return [];
+    }
+    
     return await this.ministryIndicatorScoreHistoryRepository.find({
-      where: { submissionId, indicatorCode },
+      where: { submissionId: actualSubmissionId, indicatorCode },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  /**
+   * Get latest manual score update for a specific indicator
+   * Handles both UUID and submissionId string format
+   * For consolidated submissions, returns the most recent manual update from source submissions
+   */
+  async getLatestManualScoreUpdate(
+    submissionId: string,
+    indicatorCode: string
+  ): Promise<MinistryManualScoreUpdate | null> {
+    // Resolve submissionId to UUID format
+    const actualSubmissionId = await this.resolveSubmissionIdToUUID(submissionId);
+    if (!actualSubmissionId) {
+      return null;
+    }
+    
+    // Check if this is a consolidated submission
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { id: actualSubmissionId },
+    });
+    
+    if (!submission) {
+      return null;
+    }
+    
+    // If consolidated, get latest manual update from source submissions
+    if (submission.isConsolidated) {
+      this.logger.debug(`📊 Consolidated submission detected, fetching latest manual update from source submissions`);
+      
+      // Get formId from consolidated submission
+      const formId = submission.formId;
+      if (!formId) {
+        return null;
+      }
+      
+      // Get all source submissions (isConsolidated = false) for this formId
+      const sourceSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          isConsolidated: false,
+        },
+      });
+      
+      if (sourceSubmissions.length === 0) {
+        return null;
+      }
+      
+      const sourceSubmissionIds = sourceSubmissions.map(s => s.id);
+      
+      // Get all manual updates for this indicator from source submissions
+      const manualUpdates = await this.ministryManualScoreUpdateRepository.find({
+        where: {
+          submissionId: In(sourceSubmissionIds),
+          indicatorCode: indicatorCode,
+        },
+        order: { createdAt: 'DESC' },
+      });
+      
+      if (manualUpdates.length === 0) {
+        return null;
+      }
+      
+      // Return the most recent one
+      return manualUpdates[0];
+    }
+    
+    // For non-consolidated submissions, return as-is
+    return await this.ministryManualScoreUpdateRepository.findOne({
+      where: { submissionId: actualSubmissionId, indicatorCode },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Save manual score update for a ministry indicator
+   * Handles both UUID and submissionId string format
+   * For consolidated submissions, saves to all source submissions that have this indicator
+   */
+  async saveManualScoreUpdate(
+    submissionId: string,
+    indicatorCode: string,
+    category: string,
+    updatedScore: number,
+    maxScore: number,
+    updateReason: string,
+    userId: string
+  ): Promise<MinistryManualScoreUpdate> {
+    this.logger.log(
+      `💾 Saving manual score update for ministry indicator ${indicatorCode} in submission ${submissionId}`
+    );
+
+    // Validate that updated score does not exceed maximum score
+    if (updatedScore > maxScore) {
+      throw new Error(
+        `Updated score (${updatedScore}) cannot exceed maximum score (${maxScore}) for indicator ${indicatorCode}`
+      );
+    }
+
+    // Validate that updated score is not negative
+    if (updatedScore < 0) {
+      throw new Error(`Updated score cannot be negative`);
+    }
+
+    // Resolve submissionId to UUID format if needed
+    const actualSubmissionId = await this.resolveSubmissionIdToUUID(submissionId);
+    if (!actualSubmissionId) {
+      throw new Error(`Submission not found: ${submissionId}`);
+    }
+
+    // Check if this is a consolidated submission
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { id: actualSubmissionId },
+    });
+
+    if (!submission) {
+      throw new Error(`Submission not found: ${actualSubmissionId}`);
+    }
+
+    // If consolidated, save to all source submissions that have this indicator
+    if (submission.isConsolidated) {
+      this.logger.debug(`📊 Consolidated submission detected, saving manual update to source submissions`);
+      
+      // Get formId from consolidated submission
+      const formId = submission.formId;
+      if (!formId) {
+        throw new Error(`Consolidated submission ${actualSubmissionId} does not have a formId`);
+      }
+
+      // Get all source submissions (isConsolidated = false) for this formId
+      const sourceSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          isConsolidated: false,
+        },
+      });
+
+      if (sourceSubmissions.length === 0) {
+        throw new Error(`No source submissions found for consolidated submission ${actualSubmissionId}`);
+      }
+
+      const sourceSubmissionIds = sourceSubmissions.map(s => s.id);
+      this.logger.debug(`📊 Found ${sourceSubmissions.length} source submissions: ${sourceSubmissionIds.join(', ')}`);
+
+      // Find the indicator by sNo (which contains the indicator code like "1.1", "2.3", etc.)
+      const indicator = await this.indicatorDetailRepository.findOne({
+        where: { sNo: indicatorCode },
+      });
+
+      if (!indicator) {
+        throw new Error(`Indicator with code ${indicatorCode} not found`);
+      }
+
+      // Find all source submissions that have this indicator
+      const submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: {
+          submissionId: In(sourceSubmissionIds),
+          indicatorId: indicator.id,
+        },
+      });
+
+      if (submissionIndicators.length === 0) {
+        throw new Error(`No source submissions found with indicator ${indicatorCode}`);
+      }
+
+      const sourceSubmissionsWithIndicator = submissionIndicators.map(si => si.submissionId);
+      const uniqueSourceSubmissionIds = [...new Set(sourceSubmissionsWithIndicator)];
+      
+      this.logger.debug(`📊 Found ${uniqueSourceSubmissionIds.length} source submissions with indicator ${indicatorCode}`);
+
+      // Get aggregated system score for reference
+      const aggregatedSystemScore = await this.getIndicatorScore(actualSubmissionId, indicatorCode);
+      const aggregatedSystemScoreValue = aggregatedSystemScore ? parseFloat(aggregatedSystemScore.score.toString()) : 0;
+
+      // Calculate per-source score: divide updated score by number of sources
+      // This ensures that when aggregated, the total equals the updated score
+      // Example: If user sets 10 for consolidated with 3 sources, save 10/3 = 3.33 to each
+      // When aggregated: 3.33 + 3.33 + 3.33 = 10
+      const perSourceScore = uniqueSourceSubmissionIds.length > 0 
+        ? updatedScore / uniqueSourceSubmissionIds.length 
+        : updatedScore;
+
+      this.logger.debug(`📊 Distributing updated score ${updatedScore} across ${uniqueSourceSubmissionIds.length} sources: ${perSourceScore.toFixed(2)} per source`);
+
+      // Save manual update to each source submission
+      const savedUpdates: MinistryManualScoreUpdate[] = [];
+      
+      for (const sourceSubmissionId of uniqueSourceSubmissionIds) {
+        // Get the system score for this specific source submission
+        const sourceScore = await this.ministryIndicatorScoreRepository.findOne({
+          where: { submissionId: sourceSubmissionId, indicatorCode },
+        });
+        const sourceSystemScore = sourceScore ? parseFloat(sourceScore.score.toString()) : 0;
+
+        // Create manual update record for this source submission
+        // Save the per-source score so that when aggregated, it equals the user's updated score
+        const manualUpdate = this.ministryManualScoreUpdateRepository.create({
+          submissionId: sourceSubmissionId, // Save to source submission, not consolidated
+          indicatorCode,
+          category,
+          systemScore: sourceSystemScore,
+          manualUpdatedScore: perSourceScore, // Per-source score that will aggregate to updatedScore
+          maxScore: maxScore,
+          updateReason: updateReason, // Save only the user's input reason
+          updatedBy: userId,
+        });
+
+        const savedUpdate = await this.ministryManualScoreUpdateRepository.save(manualUpdate);
+        savedUpdates.push(savedUpdate);
+
+        this.logger.debug(
+          `✅ Saved manual score update to source submission ${sourceSubmissionId}: ` +
+          `System Score: ${sourceSystemScore} → Manual Updated Score: ${perSourceScore.toFixed(2)} ` +
+          `(Part of consolidated total: ${updatedScore})`
+        );
+      }
+
+      this.logger.log(
+        `✅ Saved manual score update for consolidated submission ${actualSubmissionId}, indicator ${indicatorCode}: ` +
+        `Aggregated System Score: ${aggregatedSystemScoreValue} → Aggregated Manual Updated Score: ${updatedScore} ` +
+        `(Saved to ${savedUpdates.length} source submissions) at ${savedUpdates[0].createdAt}`
+      );
+
+      // Return a synthetic update object representing the consolidated update
+      // This allows the frontend to see the aggregated value
+      return {
+        ...savedUpdates[0],
+        submissionId: actualSubmissionId, // Return consolidated submission ID for consistency
+        manualUpdatedScore: updatedScore, // Return the aggregated value
+        systemScore: aggregatedSystemScoreValue, // Return the aggregated system score
+      } as MinistryManualScoreUpdate;
+    }
+
+    // For non-consolidated submissions, save as before
+    // Get the current system-generated score (this is NOT modified)
+    const currentScore = await this.getIndicatorScore(actualSubmissionId, indicatorCode);
+    const systemScore = currentScore ? parseFloat(currentScore.score.toString()) : 0;
+
+    // Create manual update record
+    const manualUpdate = this.ministryManualScoreUpdateRepository.create({
+      submissionId: actualSubmissionId,
+      indicatorCode,
+      category,
+      systemScore,
+      manualUpdatedScore: updatedScore,
+      maxScore,
+      updateReason,
+      updatedBy: userId,
+    });
+
+    const savedUpdate = await this.ministryManualScoreUpdateRepository.save(manualUpdate);
+
+    this.logger.log(
+      `✅ Saved manual score update for ministry indicator ${indicatorCode}: ` +
+      `System Score: ${systemScore} → Manual Updated Score: ${updatedScore} ` +
+      `(Reason: ${updateReason}) at ${savedUpdate.createdAt}`
+    );
+
+    return savedUpdate;
+  }
+
+  /**
+   * Get manual score update history for a ministry indicator
+   * Handles both UUID and submissionId string format
+   * For consolidated submissions, returns history from all source submissions
+   */
+  async getManualScoreUpdateHistory(
+    submissionId: string,
+    indicatorCode: string
+  ): Promise<MinistryManualScoreUpdate[]> {
+    // Resolve submissionId to UUID format
+    const actualSubmissionId = await this.resolveSubmissionIdToUUID(submissionId);
+    if (!actualSubmissionId) {
+      return [];
+    }
+    
+    // Check if this is a consolidated submission
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { id: actualSubmissionId },
+    });
+    
+    if (!submission) {
+      return [];
+    }
+    
+    // If consolidated, get history from all source submissions
+    if (submission.isConsolidated) {
+      this.logger.debug(`📊 Consolidated submission detected, fetching manual update history from source submissions`);
+      
+      // Get formId from consolidated submission
+      const formId = submission.formId;
+      if (!formId) {
+        return [];
+      }
+      
+      // Get all source submissions (isConsolidated = false) for this formId
+      const sourceSubmissions = await this.ministrySubmissionRepository.find({
+        where: {
+          formId: formId,
+          isConsolidated: false,
+        },
+      });
+      
+      if (sourceSubmissions.length === 0) {
+        return [];
+      }
+      
+      const sourceSubmissionIds = sourceSubmissions.map(s => s.id);
+      
+      // Get all manual updates for this indicator from source submissions
+      const manualUpdates = await this.ministryManualScoreUpdateRepository.find({
+        where: {
+          submissionId: In(sourceSubmissionIds),
+          indicatorCode: indicatorCode,
+        },
+        order: { createdAt: 'DESC' },
+      });
+      
+      return manualUpdates;
+    }
+    
+    // For non-consolidated submissions, return as-is
+    return await this.ministryManualScoreUpdateRepository.find({
+      where: { submissionId: actualSubmissionId, indicatorCode },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Calculate and save final score for a ministry submission
+   * Uses manual updated scores if available (only the latest one per indicator), otherwise uses system-generated scores
+   * For consolidated submissions, aggregates scores from all source submissions
+   */
+  async calculateFinalScore(
+    submissionId: string,
+    userId: string
+  ): Promise<MinistryScoreBreakdown> {
+    this.logger.log(`🧮 Calculating final score for ministry submission ${submissionId}`);
+
+    // Resolve submissionId to UUID format
+    const actualSubmissionId = await this.resolveSubmissionIdToUUID(submissionId);
+    if (!actualSubmissionId) {
+      throw new NotFoundException(`Submission not found: ${submissionId}`);
+    }
+
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { id: actualSubmissionId },
+    });
+
+    if (!submission) {
+      throw new NotFoundException(`Submission not found: ${actualSubmissionId}`);
+    }
+
+    // Get ministryId from the form
+    let ministryId = '';
+    if (submission.formId) {
+      const formRepository = this.dataSource.getRepository(Form);
+      const form = await formRepository.findOne({
+        where: { id: submission.formId },
+      });
+      if (form && form.ministry) {
+        ministryId = form.ministry;
+      }
+    }
+
+    // Get all indicator scores for this submission
+    // For consolidated submissions, getSubmissionIndicatorScores already aggregates
+    const indicatorScores = await this.getSubmissionIndicatorScores(actualSubmissionId);
+
+    if (indicatorScores.length === 0) {
+      throw new NotFoundException(`No indicator scores found for submission ${actualSubmissionId}`);
+    }
+
+    // Calculate final score using manual scores if available, otherwise system scores
+    const scoreBreakdown = await this.sumMinistryIndicatorScores(
+      actualSubmissionId,
+      ministryId,
+      userId,
+      indicatorScores
+    );
+
+    return scoreBreakdown;
+  }
+
+  /**
+   * Sum all indicator scores for final score calculation
+   * Uses manual updated scores if available (only the latest one per indicator), otherwise uses system-generated scores
+   */
+  private async sumMinistryIndicatorScores(
+    submissionId: string,
+    ministryId: string,
+    userId: string,
+    indicatorScores: MinistryIndicatorScore[]
+  ): Promise<MinistryScoreBreakdown> {
+    this.logger.log(`🔍 Summing indicator scores for ministry submission ${submissionId}...`);
+
+    // Check if this is a consolidated submission
+    const submission = await this.ministrySubmissionRepository.findOne({
+      where: { id: submissionId },
+    });
+
+    let manualScoreUpdates: MinistryManualScoreUpdate[] = [];
+
+    if (submission?.isConsolidated) {
+      // For consolidated submissions, get manual updates from all source submissions
+      const formId = submission.formId;
+      if (formId) {
+        const sourceSubmissions = await this.ministrySubmissionRepository.find({
+          where: {
+            formId: formId,
+            isConsolidated: false,
+          },
+        });
+        const sourceSubmissionIds = sourceSubmissions.map(s => s.id);
+
+        // Get all manual updates from source submissions
+        manualScoreUpdates = await this.ministryManualScoreUpdateRepository.find({
+          where: { submissionId: In(sourceSubmissionIds) },
+          order: { createdAt: 'DESC' },
+        });
+      }
+    } else {
+      // For non-consolidated submissions, get manual updates for this submission
+      manualScoreUpdates = await this.ministryManualScoreUpdateRepository.find({
+        where: { submissionId },
+        order: { createdAt: 'DESC' },
+      });
+    }
+
+    // Create a map of indicatorCode -> LATEST manual updated score only
+    // Since we ordered by createdAt DESC, the first occurrence of each indicatorCode is the latest
+    const latestManualScoreMap = new Map<string, MinistryManualScoreUpdate>();
+    manualScoreUpdates.forEach(update => {
+      // Only add if we haven't seen this indicatorCode yet (ensures we only keep the latest)
+      if (!latestManualScoreMap.has(update.indicatorCode)) {
+        latestManualScoreMap.set(update.indicatorCode, update);
+        this.logger.log(
+          `📝 Using latest manual updated score for indicator ${update.indicatorCode}: ${update.manualUpdatedScore} (updated at ${update.createdAt})`
+        );
+      }
+    });
+
+    this.logger.log(
+      `📊 Found ${latestManualScoreMap.size} indicators with manual score updates (latest only) out of ${indicatorScores.length} total indicators`
+    );
+
+    const calculations: MinistryScoreCalculation[] = [];
+
+    // Group by category
+    const categoryScores = {
+      infraFinancing: { score: 0, maxScore: 250 },
+      infraDevelopment: { score: 0, maxScore: 250 },
+      pppDevelopment: { score: 0, maxScore: 250 },
+      infraEnablers: { score: 0, maxScore: 250 },
+    };
+
+    let totalScore = 0;
+    let maxPossibleScore = 1000; // Total is always 1000 (250+250+250+250)
+    let manualScoresUsed = 0;
+    let systemScoresUsed = 0;
+
+    indicatorScores.forEach(is => {
+      // Check if latest manual updated score exists for this indicator
+      const latestManualUpdate = latestManualScoreMap.get(is.indicatorCode);
+
+      let scoreToUse: number;
+      let maxScoreToUse: number;
+      let scoreSource: 'system' | 'manual';
+
+      if (latestManualUpdate) {
+        // Use the LATEST manual updated score for this indicator
+        scoreToUse = parseFloat(latestManualUpdate.manualUpdatedScore.toString());
+        maxScoreToUse = parseFloat(latestManualUpdate.maxScore.toString());
+        scoreSource = 'manual';
+        manualScoresUsed++;
+        this.logger.log(
+          `✅ Using LATEST manual updated score for indicator ${is.indicatorCode}: ${scoreToUse} (system score was ${is.score})`
+        );
+      } else {
+        // Use system-generated score (no manual update exists for this indicator)
+        scoreToUse = parseFloat(is.score.toString());
+        maxScoreToUse = parseFloat(is.maxScore.toString());
+        scoreSource = 'system';
+        systemScoresUsed++;
+      }
+
+      totalScore += scoreToUse;
+
+      // Add to category totals
+      if (categoryScores[is.category]) {
+        categoryScores[is.category].score += scoreToUse;
+      }
+
+      // Update calculation object to reflect the score used
+      const calculation: MinistryScoreCalculation = {
+        indicator: is.indicatorCode,
+        value: is.calculation?.value || 0,
+        weight: is.calculation?.weight || 0,
+        score: scoreToUse,
+        maxScore: maxScoreToUse,
+        source: scoreSource,
+      };
+      calculations.push(calculation);
+    });
+
+    const percentage = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 100 : 0;
+
+    const scoreBreakdown: MinistryScoreBreakdown = {
+      totalScore: Math.round(totalScore * 100) / 100,
+      maxPossibleScore,
+      percentage: Math.round(percentage * 100) / 100,
+      calculations,
+      categoryScores: {
+        infraFinancing: {
+          score: Math.round(categoryScores.infraFinancing.score * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((categoryScores.infraFinancing.score / 250) * 100 * 100) / 100,
+        },
+        infraDevelopment: {
+          score: Math.round(categoryScores.infraDevelopment.score * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((categoryScores.infraDevelopment.score / 250) * 100 * 100) / 100,
+        },
+        pppDevelopment: {
+          score: Math.round(categoryScores.pppDevelopment.score * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((categoryScores.pppDevelopment.score / 250) * 100 * 100) / 100,
+        },
+        infraEnablers: {
+          score: Math.round(categoryScores.infraEnablers.score * 100) / 100,
+          maxScore: 250,
+          percentage: Math.round((categoryScores.infraEnablers.score / 250) * 100 * 100) / 100,
+        }
+      },
+      methodology: 'NIRI Ministry Scoring Methodology v1.0 - Sum of individual indicator scores (using latest manual updated scores where available)',
+    };
+
+    // Check if final score already exists
+    const existingFinalScore = await this.ministryFinalScoreRepository.findOne({
+      where: { submissionId },
+    });
+
+    if (existingFinalScore) {
+      // Update existing final score
+      existingFinalScore.totalScore = scoreBreakdown.totalScore;
+      existingFinalScore.percentage = scoreBreakdown.percentage;
+      existingFinalScore.scoreBreakdown = scoreBreakdown;
+      existingFinalScore.categoryScores = scoreBreakdown.categoryScores;
+      existingFinalScore.calculationMethodology = scoreBreakdown.methodology;
+      existingFinalScore.approvedBy = userId;
+      await this.ministryFinalScoreRepository.save(existingFinalScore);
+      this.logger.log(
+        `✅ Updated final score: ${scoreBreakdown.totalScore} points (${scoreBreakdown.percentage}%) - Used ${manualScoresUsed} latest manual updated scores, ${systemScoresUsed} system scores`
+      );
+    } else {
+      // Create new final score
+      const finalScore = this.ministryFinalScoreRepository.create({
+        submissionId,
+        ministryId,
+        totalScore: scoreBreakdown.totalScore,
+        percentage: scoreBreakdown.percentage,
+        scoreBreakdown,
+        categoryScores: scoreBreakdown.categoryScores,
+        calculationMethodology: scoreBreakdown.methodology,
+        approvedBy: userId,
+      });
+
+      await this.ministryFinalScoreRepository.save(finalScore);
+      this.logger.log(
+        `✅ Final score saved: ${scoreBreakdown.totalScore} points (${scoreBreakdown.percentage}%) - Used ${manualScoresUsed} latest manual updated scores, ${systemScoresUsed} system scores`
+      );
+    }
+
+    return scoreBreakdown;
   }
 }
 

@@ -18,6 +18,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
 import { MospiFormActionDto } from './dto/mospi-form-action.dto';
 import { DeleteFileDataDto, DeleteFileAction } from './dto/delete-file-data.dto';
+import { MinistryScoringService } from '../../modules/ministry-scoring/ministry-scoring.service';
 
 @Injectable()
 export class MinistryFormSubmissionService {
@@ -42,6 +43,7 @@ export class MinistryFormSubmissionService {
     private readonly ministrySubmissionCommentRepository: Repository<MinistrySubmissionComment>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly ministryScoringService: MinistryScoringService,
   ) {}
 
   /**
@@ -1315,6 +1317,21 @@ export class MinistryFormSubmissionService {
           { id: consolidatedSubmission.id },
           { status: MinistrySubmissionStatus.APPROVED },
         );
+
+        // Calculate and save final score for the consolidated submission
+        try {
+          await this.ministryScoringService.calculateFinalScore(
+            consolidatedSubmission.id,
+            userId
+          );
+          this.logger.log(`✅ Final score calculated for consolidated submission ${consolidatedSubmission.id}`);
+        } catch (scoreError) {
+          this.logger.error(
+            `⚠️ Failed to calculate final score for consolidated submission ${consolidatedSubmission.id}:`,
+            scoreError
+          );
+          // Don't throw - allow the form acceptance to proceed even if score calculation fails
+        }
       }
 
       return {
