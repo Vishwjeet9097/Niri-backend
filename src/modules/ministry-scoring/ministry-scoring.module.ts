@@ -10,6 +10,7 @@ import { MinistryIndicatorScore } from '../../entities/ministry-indicator-score.
 import { MinistryIndicatorScoreHistory } from '../../entities/ministry-indicator-score-history.entity';
 import { MinistryFinalScore } from '../../entities/ministry-final-score.entity';
 import { MinistryManualScoreUpdate } from '../../entities/ministry-manual-score-update.entity';
+import { Ministry } from '../../entities/ministry.entity';
 import { MinistryScoringService } from './ministry-scoring.service';
 import { MinistryScoringController } from './ministry-scoring.controller';
 import { MinistryScoringSubscriber } from './ministry-scoring.subscriber';
@@ -28,6 +29,7 @@ import { MinistryIndicatorScoringSubscriber } from './ministry-indicator-scoring
       MinistryIndicatorScoreHistory,
       MinistryFinalScore,
       MinistryManualScoreUpdate,
+      Ministry,
     ]),
   ],
   controllers: [MinistryScoringController],
