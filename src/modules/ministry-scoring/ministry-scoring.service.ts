@@ -398,45 +398,76 @@ export class MinistryScoringService {
       }
       case '1.2': {
         // Asset Monetization Pipeline Utilization
-        // A1 = (Actual Utilization / Estimated Monetization Value) * 100
+        // Data is in proposals array - need to sum values from all proposals
+        // A1 = (Total Actual Utilization / Total Estimated Monetization Value) * 100
         // A2 = A1 / 2
         // Score = A2 * 1.5, Max 75
-        const actualUtilization = this.getNumericValue(section, [
-          'Actual Utilization (INR Cr)', // Exact original label (stored as-is)
-          'actualutilizationinrcr', // Normalized version (also stored)
-          'actual utilization (inr cr)', // Lowercase version
-          'Actual Utilization (INR Cr)'.toLowerCase(), // Lowercase exact
-          'actualutilization',
-          'actualmonetization',
-          'actualvalue',
-          'actual utilization',
-          'actual utilization value',
-          'actual monetization value',
-          'actual monetization utilization',
-          'actual utilization (inr crore)',
-          'actual utilization (inr-crore)'
-        ]);
-        const estimatedMonetizationValue = this.getNumericValue(section, [
-          'Estimated Monetization Value (INR Cr)', // Exact original label (stored as-is)
-          'estimatedmonetizationvalueinrcr', // Normalized version (also stored)
-          'estimated monetization value (inr cr)', // Lowercase version
-          'Estimated Monetization Value (INR Cr)'.toLowerCase(), // Lowercase exact
-          'estimatedmonetizationvalue',
-          'estimatedvalue',
-          'monetizationvalue',
-          'estimated monetization value',
-          'estimated value',
-          'monetization value',
-          'total estimated monetization value',
-          'estimated monetization value (inr crore)',
-          'estimated monetization value (inr-crore)',
-          'Estimated Monetization (INR-CRORE)',
-          'estimatedmonetizationinrcrore'
+        
+        // Get proposals array
+        const proposalsArray = this.getArrayValue(section, [
+          'proposals', // Generic key for subsection data (stored by transformMinistryDataToFormDataForIndicator)
+          'Proposals submitted under VGF/IIPDF', // Alternative key
+          'proposalssubmittedundervgfiipdf', // Normalized version
+          'proposals submitted under vgf/iipdf', // Lowercase version
+          'Proposals submitted under VGF/IIPDF'.toLowerCase(), // Lowercase exact
+          'assetmonetizationproposals',
+          'monetizationproposals',
+          'asset proposals',
+          'monetization proposals'
         ]);
         
-        this.logger.debug(`🔍 Indicator 1.2 - Actual Utilization: ${actualUtilization}, Estimated Monetization Value: ${estimatedMonetizationValue}`);
+        this.logger.debug(`🔍 Indicator 1.2 - Found ${proposalsArray.length} proposals`);
         
-        const A1 = estimatedMonetizationValue > 0 ? (actualUtilization / estimatedMonetizationValue) * 100 : 0;
+        // Sum actual utilization and estimated monetization value from all proposals
+        let totalActualUtilization = 0;
+        let totalEstimatedMonetizationValue = 0;
+        
+        proposalsArray.forEach((proposal: any) => {
+          if (!proposal) return;
+          
+          // Get actual utilization from this proposal
+          const actualUtil = this.getNumericValue(proposal, [
+            'Actual Utilization (INR Cr)', // Exact original label (stored as-is)
+            'actualutilizationinrcr', // Normalized version (also stored)
+            'actual utilization (inr cr)', // Lowercase version
+            'Actual Utilization (INR Cr)'.toLowerCase(), // Lowercase exact
+            'actualutilization',
+            'actualmonetization',
+            'actualvalue',
+            'actual utilization',
+            'actual utilization value',
+            'actual monetization value',
+            'actual monetization utilization',
+            'actual utilization (inr crore)',
+            'actual utilization (inr-crore)'
+          ]);
+          
+          // Get estimated monetization value from this proposal
+          const estimatedValue = this.getNumericValue(proposal, [
+            'Estimated Monetization Value (INR Cr)', // Exact original label (stored as-is)
+            'estimatedmonetizationvalueinrcr', // Normalized version (also stored)
+            'estimated monetization value (inr cr)', // Lowercase version
+            'Estimated Monetization Value (INR Cr)'.toLowerCase(), // Lowercase exact
+            'estimatedmonetizationvalue',
+            'estimatedvalue',
+            'monetizationvalue',
+            'estimated monetization value',
+            'estimated value',
+            'monetization value',
+            'total estimated monetization value',
+            'estimated monetization value (inr crore)',
+            'estimated monetization value (inr-crore)',
+            'Estimated Monetization (INR-CRORE)',
+            'estimatedmonetizationinrcrore'
+          ]);
+          
+          totalActualUtilization += actualUtil;
+          totalEstimatedMonetizationValue += estimatedValue;
+        });
+        
+        this.logger.debug(`🔍 Indicator 1.2 - Total Actual Utilization: ${totalActualUtilization}, Total Estimated Monetization Value: ${totalEstimatedMonetizationValue}`);
+        
+        const A1 = totalEstimatedMonetizationValue > 0 ? (totalActualUtilization / totalEstimatedMonetizationValue) * 100 : 0;
         const A2 = A1 / 2;
         const score = Math.min(A2 * 1.5, 75); // 1.5 marks per 2%
 
