@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { MinistrySubmissionIndicator, SubmissionIndicatorStatus } from '../entities/ministry-submission-indicator.entity';
@@ -18,9 +18,12 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { DeleteSubmissionDataDto } from './dto/delete-submission-data.dto';
 import { MospiFormActionDto } from './dto/mospi-form-action.dto';
 import { DeleteFileDataDto, DeleteFileAction } from './dto/delete-file-data.dto';
+import { MinistryScoringService } from '../../modules/ministry-scoring/ministry-scoring.service';
 
 @Injectable()
 export class MinistryFormSubmissionService {
+  private readonly logger = new Logger(MinistryFormSubmissionService.name);
+
   constructor(
     @InjectRepository(MinistrySubmissionIndicator)
     private readonly ministrySubmissionIndicatorRepository: Repository<MinistrySubmissionIndicator>,
@@ -40,6 +43,7 @@ export class MinistryFormSubmissionService {
     private readonly ministrySubmissionCommentRepository: Repository<MinistrySubmissionComment>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly ministryScoringService: MinistryScoringService,
   ) {}
 
   /**
@@ -225,7 +229,55 @@ export class MinistryFormSubmissionService {
           if (value instanceof Date) {
             submissionData.valueDate = value;
           } else if (typeof value === 'string') {
-            submissionData.valueDate = new Date(value);
+            // Check if it's MM/YY format (e.g., "12/25" or "01/24")
+            // Pattern: exactly 2 digits, slash, exactly 2 digits (5 characters total)
+            const mmyyPattern = /^(\d{2})\/(\d{2})$/;
+            const mmyyMatch = value.trim().match(mmyyPattern);
+            
+            if (mmyyMatch) {
+              // MM/YY format: Convert to a valid date (first day of the month)
+              const month = parseInt(mmyyMatch[1], 10);
+              const yearShort = parseInt(mmyyMatch[2], 10);
+              
+              // Validate month (1-12)
+              if (month < 1 || month > 12) {
+                this.logger.warn(`Invalid month in MM/YY date: ${value}, defaulting to null`);
+                submissionData.valueDate = null;
+                break;
+              }
+              
+              // Convert YY to full year (assuming 2000-2099 range)
+              // YY 00-99 maps to 2000-2099
+              const fullYear = 2000 + yearShort;
+              
+              // Create date as first day of the month (YYYY-MM-01)
+              // Note: JavaScript Date months are 0-indexed (0-11), so month - 1
+              const dateObj = new Date(fullYear, month - 1, 1);
+              
+              // Validate the date
+              if (isNaN(dateObj.getTime())) {
+                this.logger.warn(`Invalid MM/YY date after conversion: ${value} -> ${fullYear}-${month}-01, defaulting to null`);
+                submissionData.valueDate = null;
+              } else {
+                submissionData.valueDate = dateObj;
+                this.logger.debug(`✅ Converted MM/YY format: ${value} -> ${fullYear}-${String(month).padStart(2, '0')}-01`);
+              }
+            } else {
+              // Try to parse as standard date format (YYYY-MM-DD, ISO, etc.)
+              try {
+                const parsedDate = new Date(value);
+                if (!isNaN(parsedDate.getTime())) {
+                  submissionData.valueDate = parsedDate;
+                  this.logger.debug(`✅ Parsed standard date format: ${value} -> ${parsedDate.toISOString()}`);
+                } else {
+                  this.logger.warn(`Invalid date format: ${value}, defaulting to null`);
+                  submissionData.valueDate = null;
+                }
+              } catch (e) {
+                this.logger.warn(`Error parsing date: ${value}, defaulting to null`, e);
+                submissionData.valueDate = null;
+              }
+            }
           } else {
             submissionData.valueDate = null;
           }
@@ -317,7 +369,54 @@ export class MinistryFormSubmissionService {
           if (value instanceof Date) {
             submissionData.valueDate = value;
           } else if (typeof value === 'string') {
-            submissionData.valueDate = new Date(value);
+            // Check if it's MM/YY format (e.g., "12/25" or "01/24")
+            // Pattern: exactly 2 digits, slash, exactly 2 digits (5 characters total)
+            const mmyyPattern = /^(\d{2})\/(\d{2})$/;
+            const mmyyMatch = value.trim().match(mmyyPattern);
+            
+            if (mmyyMatch) {
+              // MM/YY format: Convert to a valid date (first day of the month)
+              const month = parseInt(mmyyMatch[1], 10);
+              const yearShort = parseInt(mmyyMatch[2], 10);
+              
+              // Validate month (1-12)
+              if (month < 1 || month > 12) {
+                this.logger.warn(`Invalid month in MM/YY date: ${value}, defaulting to null`);
+                submissionData.valueDate = null;
+              } else {
+                // Convert YY to full year (assuming 2000-2099 range)
+                // YY 00-99 maps to 2000-2099
+                const fullYear = 2000 + yearShort;
+                
+                // Create date as first day of the month (YYYY-MM-01)
+                // Note: JavaScript Date months are 0-indexed (0-11), so month - 1
+                const dateObj = new Date(fullYear, month - 1, 1);
+                
+                // Validate the date
+                if (isNaN(dateObj.getTime())) {
+                  this.logger.warn(`Invalid MM/YY date after conversion: ${value} -> ${fullYear}-${month}-01, defaulting to null`);
+                  submissionData.valueDate = null;
+                } else {
+                  submissionData.valueDate = dateObj;
+                  this.logger.debug(`✅ Converted MM/YY format: ${value} -> ${fullYear}-${String(month).padStart(2, '0')}-01`);
+                }
+              }
+            } else {
+              // Try to parse as standard date format (YYYY-MM-DD, ISO, etc.)
+              try {
+                const parsedDate = new Date(value);
+                if (!isNaN(parsedDate.getTime())) {
+                  submissionData.valueDate = parsedDate;
+                  this.logger.debug(`✅ Parsed standard date format: ${value} -> ${parsedDate.toISOString()}`);
+                } else {
+                  this.logger.warn(`Invalid date format: ${value}, defaulting to null`);
+                  submissionData.valueDate = null;
+                }
+              } catch (e) {
+                this.logger.warn(`Error parsing date: ${value}, defaulting to null`, e);
+                submissionData.valueDate = null;
+              }
+            }
           } else {
             submissionData.valueDate = null;
           }
@@ -1218,6 +1317,21 @@ export class MinistryFormSubmissionService {
           { id: consolidatedSubmission.id },
           { status: MinistrySubmissionStatus.APPROVED },
         );
+
+        // Calculate and save final score for the consolidated submission
+        try {
+          await this.ministryScoringService.calculateFinalScore(
+            consolidatedSubmission.id,
+            userId
+          );
+          this.logger.log(`✅ Final score calculated for consolidated submission ${consolidatedSubmission.id}`);
+        } catch (scoreError) {
+          this.logger.error(
+            `⚠️ Failed to calculate final score for consolidated submission ${consolidatedSubmission.id}:`,
+            scoreError
+          );
+          // Don't throw - allow the form acceptance to proceed even if score calculation fails
+        }
       }
 
       return {

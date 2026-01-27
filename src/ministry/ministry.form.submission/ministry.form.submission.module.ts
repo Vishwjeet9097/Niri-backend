@@ -11,6 +11,7 @@ import { MinistrySubmissionData } from '../entities/ministry-submission-data.ent
 import { Form } from '../entities/form.entity';
 import { MinistrySubmissionComment } from '../entities/ministry-submission-comment.entity';
 import { User } from '../../entities/user.entity';
+import { MinistryScoringModule } from '../../modules/ministry-scoring/ministry-scoring.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { User } from '../../entities/user.entity';
       MinistrySubmissionComment,
       User,
     ]),
+    MinistryScoringModule,
   ],
   controllers: [MinistryFormSubmissionController],
   providers: [MinistryFormSubmissionService],

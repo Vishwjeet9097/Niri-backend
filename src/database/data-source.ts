@@ -9,6 +9,10 @@ import { MinistrySubmission } from "../ministry/entities/ministry-submission.ent
 import { MinistrySubmissionIndicator } from "../ministry/entities/ministry-submission-indicator.entity";
 import { MinistrySubmissionData } from "../ministry/entities/ministry-submission-data.entity";
 import { MinistrySubmissionComment } from "../ministry/entities/ministry-submission-comment.entity";
+import { MinistryIndicatorScore } from "../entities/ministry-indicator-score.entity";
+import { MinistryIndicatorScoreHistory } from "../entities/ministry-indicator-score-history.entity";
+import { MinistryFinalScore } from "../entities/ministry-final-score.entity";
+import { MinistryManualScoreUpdate } from "../entities/ministry-manual-score-update.entity";
 
 config();
 
@@ -37,6 +41,10 @@ export const AppDataSource = new DataSource({
     MinistrySubmissionIndicator,
     MinistrySubmissionData,
     MinistrySubmissionComment,
+    MinistryIndicatorScore,
+    MinistryIndicatorScoreHistory,
+    MinistryFinalScore,
+    MinistryManualScoreUpdate,
   ],
   migrations: ["src/migrations/*.ts"],
   synchronize: false,
