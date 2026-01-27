@@ -236,7 +236,7 @@ export class MinistryFormRetrieveService {
           .createQueryBuilder('msi')
           .where('msi.submissionId = :submissionUuid', { submissionUuid })
           .andWhere('msi.status IS NOT NULL')
-          .andWhere('msi.status != :draftStatus', { draftStatus: 'DRAFT' })
+          // .andWhere('msi.status != :draftStatus', { draftStatus: 'DRAFT' })
           .getMany();
       } else {
         submissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
