@@ -109,7 +109,7 @@ export class MinistryDashboardService {
     const underReview = await this.ministrySubmissionIndicatorRepository.count({
       where: {
         assignedTo: userId,
-        status: In([SubmissionIndicatorStatus.DRAFT, SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY]),
+        status: In([SubmissionIndicatorStatus.DRAFT, SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY, SubmissionIndicatorStatus.RESUBMITTED]),
       },
     });
 
