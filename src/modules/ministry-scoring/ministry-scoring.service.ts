@@ -842,7 +842,7 @@ export class MinistryScoringService {
             value: 0,
             weight: 0.05,
             score: 0,
-            maxScore: 50,
+            maxScore: 75,
           };
         }
         
