@@ -31,8 +31,8 @@ export class MinistryFormSubmissionController {
 
   @Put('indicator/status')
   @HttpCode(HttpStatus.OK)
-  async updateSubmissionIndicatorStatus(@Body() dto: UpdateSubmissionIndicatorStatusDto) {
-    return this.ministryFormSubmissionService.updateSubmissionIndicatorStatus(dto);
+  async updateSubmissionIndicatorStatus(@Body() dto: UpdateSubmissionIndicatorStatusDto, @Request() req) {
+    return this.ministryFormSubmissionService.updateSubmissionIndicatorStatus(dto, req.user.role);
   }
 
   @Put('form/status')

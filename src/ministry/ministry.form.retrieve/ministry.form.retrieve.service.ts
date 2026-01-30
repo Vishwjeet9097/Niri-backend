@@ -444,16 +444,78 @@ export class MinistryFormRetrieveService {
           // Get status for this indicator
           const indicatorStatus = indicatorStatusMap.get(indicator.id) || null;
 
+          // Add linked indicator data for 1.1 and 3.3
+          let linkedIndicatorData: any = null;
+
+          if (indicator.sNo === '1.1') {
+            // For indicator 1.1: Get data from "Total Budgeted capital allocation (INR Crore)" field
+            const targetInputField = indicatorInputs.find((input) => 
+              input.label.toLowerCase().includes('total budgeted capital allocation') ||
+              input.label === 'Total Budgeted capital allocation (INR Crore)'
+            );
+
+            if (targetInputField && submissionIndicatorId) {
+              const dataKey = `${submissionIndicatorId}_${targetInputField.id}`;
+              const submittedData = submissionDataMap.get(dataKey);
+
+              if (submittedData) {
+                linkedIndicatorData = {
+                  indicatorId: indicator.id,
+                  inputId: targetInputField.id,
+                  data: submittedData.valueNumber,
+                };
+              }
+            }
+          } else if (indicator.sNo === '3.3') {
+            // For indicator 3.3: Get data from indicator 1.1's "Capital Expenditure Allocation for FY (INR)" field
+            const indicator1_1 = indicators.find((ind) => ind.sNo === '1.1');
+            
+            if (indicator1_1) {
+              const indicator1_1SubmissionIndicatorId = submissionIndicatorMap.get(indicator1_1.id);
+              
+              if (indicator1_1SubmissionIndicatorId) {
+                // Get input fields for indicator 1.1
+                const indicator1_1Inputs = inputFieldsBySection[indicator1_1.id] || [];
+                
+                // Find the "Capital Expenditure Allocation for FY (INR)" field
+                const targetInputField = indicator1_1Inputs.find((input) => 
+                  input.label.toLowerCase().includes('capital expenditure allocation for fy') ||
+                  input.label === 'Capital Expenditure Allocation for FY (INR)'
+                );
+
+                if (targetInputField) {
+                  const dataKey = `${indicator1_1SubmissionIndicatorId}_${targetInputField.id}`;
+                  const submittedData = submissionDataMap.get(dataKey);
+
+                  if (submittedData) {
+                    linkedIndicatorData = {
+                      indicatorId: indicator1_1.id,
+                      inputId: targetInputField.id,
+                      data: submittedData.valueNumber,
+                    };
+                  }
+                }
+              }
+            }
+          }
+
           // Build indicator object
+          const indicatorObject: any = {
+            sNo: indicator.sNo,
+            sequence: indicator.sequence,
+            submissionIndicatorId: submissionIndicatorId || null,
+            status: indicatorStatus,
+            inputs: inputsWithData,
+            subsection: subsectionArray,
+          };
+
+          // Add linked indicator data if available
+          if (linkedIndicatorData) {
+            indicatorObject.linkedIndicatorData = linkedIndicatorData;
+          }
+
           return {
-            [indicator.name]: {
-              sNo: indicator.sNo,
-              sequence: indicator.sequence,
-              submissionIndicatorId: submissionIndicatorId || null,
-              status: indicatorStatus,
-              inputs: inputsWithData,
-              subsection: subsectionArray,
-            },
+            [indicator.name]: indicatorObject,
           };
         });
 
@@ -796,17 +858,100 @@ export class MinistryFormRetrieveService {
           // Get assignedTo for this indicator (from first occurrence)
           const indicatorAssignedTo = indicatorAssignedToMap.get(indicator.id) || null;
 
+          // Add linked indicator data for 1.1 and 3.3
+          let linkedIndicatorData: any = null;
+
+          if (indicator.sNo === '1.1') {
+            // For indicator 1.1: Get data from "Total Budgeted capital allocation (INR Crore)" field
+            const targetInputField = indicatorInputs.find((input) => 
+              input.label.toLowerCase().includes('total budgeted capital allocation') ||
+              input.label === 'Total Budgeted capital allocation (INR Crore)'
+            );
+
+            if (targetInputField && submissionIndicatorIds.length > 0) {
+              // Get all data for this input from all submission indicators
+              const allDataForLinkedInput: MinistrySubmissionData[] = [];
+              submissionIndicatorIds.forEach((submissionIndicatorId) => {
+                const dataKey = `${submissionIndicatorId}_${targetInputField.id}`;
+                const dataArray = submissionDataMap.get(dataKey) || [];
+                allDataForLinkedInput.push(...dataArray);
+              });
+
+              // Use the most recent data
+              const linkedSubmittedData = allDataForLinkedInput.length > 0
+                ? allDataForLinkedInput.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+                : null;
+
+              if (linkedSubmittedData) {
+                linkedIndicatorData = {
+                  indicatorId: indicator.id,
+                  inputId: targetInputField.id,
+                  data: linkedSubmittedData.valueNumber,
+                };
+              }
+            }
+          } else if (indicator.sNo === '3.3') {
+            // For indicator 3.3: Get data from indicator 1.1's "Capital Expenditure Allocation for FY (INR)" field
+            const indicator1_1 = indicators.find((ind) => ind.sNo === '1.1');
+            
+            if (indicator1_1) {
+              // Get submission indicator IDs for 1.1
+              const indicator1_1SubmissionIds = submissionIndicatorMap.get(indicator1_1.id) || [];
+              
+              if (indicator1_1SubmissionIds.length > 0) {
+                // Get input fields for indicator 1.1
+                const indicator1_1Inputs = inputFieldsBySection[indicator1_1.id] || [];
+                
+                // Find the "Capital Expenditure Allocation for FY (INR)" field
+                const targetInputField = indicator1_1Inputs.find((input) => 
+                  input.label.toLowerCase().includes('capital expenditure allocation for fy') ||
+                  input.label === 'Capital Expenditure Allocation for FY (INR)'
+                );
+
+                if (targetInputField) {
+                  // Get all data for this input from all submission indicators of 1.1
+                  const allDataForLinkedInput: MinistrySubmissionData[] = [];
+                  indicator1_1SubmissionIds.forEach((submissionIndicatorId) => {
+                    const dataKey = `${submissionIndicatorId}_${targetInputField.id}`;
+                    const dataArray = submissionDataMap.get(dataKey) || [];
+                    allDataForLinkedInput.push(...dataArray);
+                  });
+
+                  // Use the most recent data
+                  const linkedSubmittedData = allDataForLinkedInput.length > 0
+                    ? allDataForLinkedInput.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+                    : null;
+
+                  if (linkedSubmittedData) {
+                    linkedIndicatorData = {
+                      indicatorId: indicator1_1.id,
+                      inputId: targetInputField.id,
+                      data: linkedSubmittedData.valueNumber,
+                    };
+                  }
+                }
+              }
+            }
+          }
+
           // Build indicator object
+          const indicatorObject: any = {
+            sNo: indicator.sNo,
+            sequence: indicator.sequence,
+            submissionIndicatorId: submissionIndicatorIds.length > 0 ? submissionIndicatorIds[0] : null, // Use first one
+            status: indicatorStatus,
+            assignedTo: indicatorAssignedTo,
+            inputs: inputsWithData,
+            subsection: subsectionArray,
+          };
+
+          // Add linked indicator data if available
+          if (linkedIndicatorData) {
+            indicatorObject.linkedIndicatorData = linkedIndicatorData;
+          }
+
           return {
-            [indicator.name]: {
-              sNo: indicator.sNo,
-              sequence: indicator.sequence,
-              submissionIndicatorId: submissionIndicatorIds.length > 0 ? submissionIndicatorIds[0] : null, // Use first one
-              status: indicatorStatus,
-              assignedTo: indicatorAssignedTo,
-              inputs: inputsWithData,
-              subsection: subsectionArray,
-            },
+            [indicator.name]: indicatorObject,
           };
         });
 
