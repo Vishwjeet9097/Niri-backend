@@ -615,6 +615,7 @@ export class MinistryFormSubmissionService {
    */
   async updateSubmissionIndicatorStatus(
     dto: UpdateSubmissionIndicatorStatusDto,
+    userRole?: string,
   ): Promise<{
     status: boolean;
     message: string;
@@ -637,6 +638,42 @@ export class MinistryFormSubmissionService {
         { id: dto.submissionIndicatorId },
         { status: dto.status },
       );
+
+      // If user is MOSPI_APPROVER and indicator is 1.1 or 3.3, also update the other indicator (1.1 ↔ 3.3) with same ministryUser
+      if (userRole === 'MOSPI_APPROVER' && submissionIndicator.ministryUser) {
+        // Get indicator detail to check sNo
+        const indicatorDetail = await this.indicatorDetailRepository.findOne({
+          where: { id: submissionIndicator.indicatorId },
+        });
+
+        if (indicatorDetail && (indicatorDetail.sNo === '1.1' || indicatorDetail.sNo === '3.3')) {
+          // Determine the other indicator sNo (if 1.1, find 3.3; if 3.3, find 1.1)
+          const otherIndicatorSNo = indicatorDetail.sNo === '1.1' ? '3.3' : '1.1';
+
+          // Find the other indicator detail
+          const otherIndicatorDetail = await this.indicatorDetailRepository.findOne({
+            where: { sNo: otherIndicatorSNo },
+          });
+
+          if (otherIndicatorDetail) {
+            // Find the other indicator with the same ministryUser
+            const otherIndicator = await this.ministrySubmissionIndicatorRepository.findOne({
+              where: {
+                ministryUser: submissionIndicator.ministryUser,
+                indicatorId: otherIndicatorDetail.id,
+              },
+            });
+
+            // Update the other indicator with the same status
+            if (otherIndicator) {
+              await this.ministrySubmissionIndicatorRepository.update(
+                { id: otherIndicator.id },
+                { status: dto.status },
+              );
+            }
+          }
+        }
+      }
 
       // Task 1: If status is RETURNED_FROM_MINISTRY or RETURNED_FROM_MOSPI, mark submission as SUBMITTED_TO_MINISTRY
       if (dto.status === SubmissionIndicatorStatus.RETURNED_FROM_MINISTRY || 
