@@ -7,6 +7,7 @@ import { MinistrySubmission } from '../entities/ministry-submission.entity';
 import { Form } from '../entities/form.entity';
 import { User } from '../../entities/user.entity';
 import { Ministry } from '../../entities/ministry.entity';
+import { IndicatorDetail } from '../entities/indicator-detail.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Ministry } from '../../entities/ministry.entity';
       Form,
       User,
       Ministry,
+      IndicatorDetail,
     ]),
   ],
   controllers: [MinistryDashboardController],

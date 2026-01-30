@@ -1056,6 +1056,7 @@ export class UserService {
         return indicatorDetail ? {
           code: indicatorDetail.sNo || indicatorDetail.id,
           name: indicatorDetail.name,
+          status: msi.status,
         } : null;
       }).filter((ind) => ind !== null);
 

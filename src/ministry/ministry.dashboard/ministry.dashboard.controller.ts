@@ -24,6 +24,11 @@ export class MinistryDashboardController {
     return this.ministryDashboardService.getSubmissionDetails(userId);
   }
 
+  @Get('indicators/:userId')
+  async getMinistryUserIndicatorsDashboard(@Param('userId') userId: string) {
+    return this.ministryDashboardService.getMinistryUserIndicatorsDashboard(userId);
+  }
+
   @Get(':userId')
   async getDashboardData(@Param('userId') userId: string) {
     return this.ministryDashboardService.getDashboardData(userId);

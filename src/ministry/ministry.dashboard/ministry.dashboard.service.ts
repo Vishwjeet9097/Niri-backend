@@ -7,6 +7,7 @@ import { Form, FormStatus } from '../entities/form.entity';
 import { User, UserRole } from '../../entities/user.entity';
 import { MinistrySubmissionStatus } from '../entities/ministry-submission.entity';
 import { Ministry } from '../../entities/ministry.entity';
+import { IndicatorDetail } from '../entities/indicator-detail.entity';
 
 @Injectable()
 export class MinistryDashboardService {
@@ -21,6 +22,8 @@ export class MinistryDashboardService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Ministry)
     private readonly ministryRepository: Repository<Ministry>,
+    @InjectRepository(IndicatorDetail)
+    private readonly indicatorDetailRepository: Repository<IndicatorDetail>,
   ) {}
 
   /**
@@ -866,6 +869,130 @@ export class MinistryDashboardService {
     return {
       submissions: submissionsWithUserDetails,
     };
+  }
+
+  /**
+   * Get ministry user indicators dashboard grouped by status
+   * Accepted: ACCEPTED_BY_MINISTRY, ACCEPTED
+   * Under Review: SUBMITTED_TO_MINISTRY, RESUBMITTED, SUBMITTED_TO_MOSPI
+   * Pending: All other statuses
+   */
+  async getMinistryUserIndicatorsDashboard(userId: string): Promise<{
+    status: boolean;
+    data: {
+      accepted: Array<{ code: string; name: string; status: SubmissionIndicatorStatus | null }>;
+      underReview: Array<{ code: string; name: string; status: SubmissionIndicatorStatus | null }>;
+      pending: Array<{ code: string; name: string; status: SubmissionIndicatorStatus | null }>;
+    };
+    message: string;
+  }> {
+    try {
+      // Check if user exists and is a ministry user
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'role', 'ministryId'],
+      });
+
+      if (!user) {
+        throw new NotFoundException(`User with ID ${userId} not found`);
+      }
+
+      // Check if user is a ministry user
+      if (!user.ministryId || user.role !== UserRole.MINISTRY_APPROVER) {
+        throw new BadRequestException(
+          `User with ID ${userId} is not a ministry user. Only MINISTRY_APPROVER users with ministryId can access this dashboard.`,
+        );
+      }
+
+      // Get all indicators from ministry_submission_indicator where ministryUser = userId
+      const ministrySubmissionIndicators = await this.ministrySubmissionIndicatorRepository.find({
+        where: { ministryUser: userId },
+      });
+
+      if (ministrySubmissionIndicators.length === 0) {
+        return {
+          status: true,
+          data: {
+            accepted: [],
+            underReview: [],
+            pending: [],
+          },
+          message: 'No indicators found for this ministry user',
+        };
+      }
+
+      // Get indicator IDs
+      const indicatorIds = ministrySubmissionIndicators.map((msi) => msi.indicatorId);
+
+      // Get indicator details
+      const indicatorDetails = await this.indicatorDetailRepository.find({
+        where: { id: In(indicatorIds) },
+      });
+
+      // Create a map of indicatorId -> indicatorDetail
+      const indicatorDetailMap = new Map(
+        indicatorDetails.map((ind) => [ind.id, ind]),
+      );
+
+      // Initialize arrays for each category
+      const accepted: Array<{ code: string; name: string; status: SubmissionIndicatorStatus | null }> = [];
+      const underReview: Array<{ code: string; name: string; status: SubmissionIndicatorStatus | null }> = [];
+      const pending: Array<{ code: string; name: string; status: SubmissionIndicatorStatus | null }> = [];
+
+      // Accepted statuses
+      const acceptedStatuses = [
+        SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY,
+        SubmissionIndicatorStatus.ACCEPTED,
+      ];
+
+      // Under Review statuses
+      const underReviewStatuses = [
+        SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY,
+        SubmissionIndicatorStatus.RESUBMITTED,
+        SubmissionIndicatorStatus.SUBMITTED_TO_MOSPI,
+      ];
+
+      // Process each indicator
+      ministrySubmissionIndicators.forEach((msi) => {
+        const indicatorDetail = indicatorDetailMap.get(msi.indicatorId);
+        if (!indicatorDetail) {
+          return; // Skip if indicator detail not found
+        }
+
+        const indicatorData = {
+          code: indicatorDetail.sNo || indicatorDetail.id,
+          name: indicatorDetail.name,
+          status: msi.status,
+        };
+
+        // Categorize based on status
+        if (msi.status && acceptedStatuses.includes(msi.status)) {
+          accepted.push(indicatorData);
+        } else if (msi.status && underReviewStatuses.includes(msi.status)) {
+          underReview.push(indicatorData);
+        } else {
+          // All other statuses (including null, DRAFT, etc.) go to pending
+          pending.push(indicatorData);
+        }
+      });
+
+      return {
+        status: true,
+        data: {
+          accepted,
+          underReview,
+          pending,
+        },
+        message: 'Ministry user indicators dashboard retrieved successfully',
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Failed to retrieve ministry user indicators dashboard',
+      );
+    }
   }
 }
 
