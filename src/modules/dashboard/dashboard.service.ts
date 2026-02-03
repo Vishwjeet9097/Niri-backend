@@ -463,46 +463,30 @@ export class DashboardService {
     const totalAssigned = parseInt(totalAssignedRes[0]?.count || "0");
     this.logger.log(`[NodalDashboard] totalAssigned = ${totalAssigned}`);
 
-    // 2️⃣ Total Submitted (any section that has a "status" key)
-    let totalSubmitted = 0;
-    try {
-      const totalSubmittedQuery = await this.submissionRepository.query(
-        `   
-
-      SELECT COUNT(DISTINCT section_key) AS count
-        FROM submissions s
-        JOIN users u ON s.submitted_by = u.id
-        CROSS JOIN LATERAL (
-          SELECT jsonb_object_keys(value) AS section_key
-          FROM jsonb_each(s.form_data)
-          WHERE jsonb_typeof(value) = 'object'
-        ) AS sections
-        WHERE u.role IN ($1)
-           AND s."submitted_by" = $2 
-          AND section_key ~ '^section[0-9]+_[0-9]+$';
-       
-      `,
-        [UserRole.NODAL_OFFICER, userId]
-      );
-      totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
-    } catch (err) {
-      this.logger.warn(
-        `[NodalDashboard] JSONPath failed for totalSubmitted, falling back to regex`
-      );
-      const fallback = await this.submissionRepository.query(
-        `
-      SELECT COALESCE(SUM(matches), 0) AS count FROM (
-        SELECT (
-          SELECT COUNT(*) FROM regexp_matches(s.form_data::text, '"status"\\s*:\\s*"', 'g')
-        ) AS matches
-        FROM submissions s
-        WHERE s.submitted_by = $1
-      ) t;
-      `,
-        [userId]
-      );
-      totalSubmitted = parseInt(fallback[0]?.count || "0");
-    }
+   // 2️⃣ Total Submitted: use section_status.completedCount (excludes SAVE_AS_DRAFT)
+let totalSubmitted = 0;
+try {
+  const totalSubmittedQuery = await this.submissionRepository.query(
+    `
+    SELECT COALESCE(MAX((s.form_data->'section_status'->>'completedCount')::int), 0) AS count
+    FROM submissions s
+    JOIN users u ON s.submitted_by = u.id
+    WHERE u.role = $1
+      AND s.submitted_by = $2
+      AND s.form_data ? 'section_status'
+    `,
+    [UserRole.NODAL_OFFICER, userId]
+  );
+  totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || '0', 10);
+} catch (err) {
+  this.logger.warn(
+    `[NodalDashboard] totalSubmitted from section_status failed: ${err?.message}`,
+  );
+  totalSubmitted = 0;
+}
+this.logger.log(
+  `[NodalDashboard] totalSubmitted (from section_status.completedCount) = ${totalSubmitted}`,
+);
     this.logger.log(
       `[NodalDashboard] totalSubmitted sections = ${totalSubmitted}`
     );
