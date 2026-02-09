@@ -100,19 +100,25 @@ export class MinistryDashboardService {
       where: { assignedTo: userId },
     });
 
-    // Pending: Status is null
-    const pending = await this.ministrySubmissionIndicatorRepository.count({
-      where: {
-        assignedTo: userId,
-        status: IsNull(),
-      },
-    });
+    // Pending: NULL or DRAFT (and optionally RETURNED_FROM_MINISTRY)
+  const pending = await this.ministrySubmissionIndicatorRepository
+  .createQueryBuilder('indicator')
+  .where('indicator.assignedTo = :userId', { userId })
+  .andWhere(
+    '(indicator.status IS NULL OR indicator.status = :draftStatus OR indicator.status = :returnedStatus)',
+    {
+      draftStatus: SubmissionIndicatorStatus.DRAFT,
+      returnedStatus: SubmissionIndicatorStatus.RETURNED_FROM_MINISTRY,
+    }
+  )
+  .getCount();
+
 
     // Under Review: Status is DRAFT or SUBMITTED_TO_MINISTRY
     const underReview = await this.ministrySubmissionIndicatorRepository.count({
       where: {
         assignedTo: userId,
-        status: In([SubmissionIndicatorStatus.DRAFT, SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY, SubmissionIndicatorStatus.RESUBMITTED]),
+        status: In([SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY, SubmissionIndicatorStatus.RESUBMITTED]),
       },
     });
 
@@ -133,11 +139,17 @@ export class MinistryDashboardService {
     });
 
     // Total Submitted: assigned_to = userId and status is not null
-    const total_submitted = await this.ministrySubmissionIndicatorRepository
-      .createQueryBuilder('indicator')
-      .where('indicator.assignedTo = :userId', { userId })
-      .andWhere('indicator.status IS NOT NULL')
-      .getCount();
+    const total_submitted = await this.ministrySubmissionIndicatorRepository.count({
+      where: {
+        assignedTo: userId,
+        status: In([
+          SubmissionIndicatorStatus.SUBMITTED_TO_MINISTRY,
+          SubmissionIndicatorStatus.RESUBMITTED,
+          SubmissionIndicatorStatus.ACCEPTED_BY_MINISTRY,
+          SubmissionIndicatorStatus.ACCEPTED_BY_MOSPI,
+        ]),
+      },
+    });
 
     return {
       totalAllocated,
@@ -172,6 +184,7 @@ export class MinistryDashboardService {
     // Total assigned to ministry approver: assigned_to = userId
     const total_assigned_ministry_approver = await this.ministrySubmissionIndicatorRepository.count({
       where: {
+        ministryUser: userId,
         assignedTo: userId,
       },
     });
