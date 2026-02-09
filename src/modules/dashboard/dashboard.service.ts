@@ -293,34 +293,40 @@ export class DashboardService {
     const totalAssignedCount = parseInt(totalAssigned[0]?.count || "0");
 
     // ✅ 2. Total indicators received (submitted by NODAL_OFFICERS)
-    // Count distinct sections across all submissions from NODAL_OFFICERS
+    // Count distinct sections that are actually submitted (exclude DRAFT, SAVE_AS_DRAFT) and use nested form_data structure.
     let totalIndicatorsReceived = 0;
     try {
       const sqlQuery = `
-        SELECT COUNT(DISTINCT section_key) AS count
+      WITH received_sections AS (
+        SELECT s.id, sec.section_key, sec.section_value
         FROM submissions s
         JOIN users u ON s.submitted_by = u.id
-        CROSS JOIN LATERAL (
-          SELECT jsonb_object_keys(value) AS section_key
-          FROM jsonb_each(s.form_data)
-          WHERE jsonb_typeof(value) = 'object'
-        ) AS sections
+        CROSS JOIN LATERAL jsonb_each(s.form_data) AS cat(cat_key, cat_value)
+        CROSS JOIN LATERAL jsonb_each(
+          CASE WHEN jsonb_typeof(cat.cat_value) = 'object' THEN cat.cat_value ELSE '{}'::jsonb END
+        ) AS sec(section_key, section_value)
         WHERE u.role IN ($1, $2)
           AND u.state_ut = $3
-          AND s."stateUt" = $3 
-          AND section_key ~ '^section[0-9]+_[0-9]+$';
-        `;
-      const params = [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt];      
-      
+          AND s."stateUt" = $3
+          AND s.status != $4
+          AND sec.section_key ~ '^section[0-9]+_[0-9]+$'
+          AND jsonb_typeof(sec.section_value) = 'object'
+          AND sec.section_value->>'status' IS NOT NULL
+          AND sec.section_value->>'status' != 'DRAFT'
+          AND sec.section_value->>'status' != 'SAVE_AS_DRAFT'
+      )
+      SELECT COUNT(DISTINCT section_key) AS count FROM received_sections;
+      `;
+      const params = [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt, SubmissionStatus.DRAFT];
+
       const totalIndicatorsReceivedQuery =
-        await this.submissionRepository.query(sqlQuery, params);   
-       
-      
+        await this.submissionRepository.query(sqlQuery, params);
+
       totalIndicatorsReceived = parseInt(
         totalIndicatorsReceivedQuery[0]?.count || "0"
       );
     } catch (err) {
-      // Fallback: Count using regex
+      // Fallback: Count using regex (may overcount slightly)
       const fallbackQuery = await this.submissionRepository.query(
         `
         SELECT COALESCE(SUM(matches), 0) AS count FROM (
@@ -332,9 +338,10 @@ export class DashboardService {
           WHERE u.role IN ($1, $2)
             AND u.state_ut = $3
             AND s."stateUt" = $3
+            AND s.status != $4
         ) t;
         `,
-        [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt]
+        [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt, SubmissionStatus.DRAFT]
       );
       totalIndicatorsReceived = parseInt(fallbackQuery[0]?.count || "0");
     }
@@ -399,10 +406,41 @@ export class DashboardService {
       returnedToNodal = parseInt(fallback[0]?.count || "0");
     }
 
-    // ✅ 6. Pending = Assigned but not yet submitted by NODAL_OFFICER
-    // This counts indicators assigned to NODAL_OFFICERS that haven't been submitted yet
+    // ✅ 6. Pending submission = all active indicators that are NOT (submitted / resubmitted / accepted)
+    // Includes: draft, SAVE_AS_DRAFT, and any status other than SUBMITTED_TO_STATE, RESUBMITTED, ACCEPTED.
+    // Uses total active indicators (e.g. 19) so all state indicators count, not only assigned ones.
+    const totalIndicators = await this.getTotalActiveIndicators();
+    let indicatorsSubmittedResubmittedAccepted = 0;
+    try {
+      const submittedResubmittedAcceptedQuery = await this.submissionRepository.query(
+        `
+      WITH submitted_sections AS (
+        SELECT s.id, sec.section_key, sec.section_value
+        FROM submissions s
+        JOIN users u ON s.submitted_by = u.id
+        CROSS JOIN LATERAL jsonb_each(s.form_data) AS cat(cat_key, cat_value)
+        CROSS JOIN LATERAL jsonb_each(
+          CASE WHEN jsonb_typeof(cat.cat_value) = 'object' THEN cat.cat_value ELSE '{}'::jsonb END
+        ) AS sec(section_key, section_value)
+        WHERE u.role IN ($1, $2)
+          AND u.state_ut = $3
+          AND s."stateUt" = $3
+          AND sec.section_key ~ '^section[0-9]+_[0-9]+$'
+          AND jsonb_typeof(sec.section_value) = 'object'
+          AND sec.section_value->>'status' IN ('SUBMITTED_TO_STATE', 'RESUBMITTED', 'ACCEPTED')
+      )
+      SELECT COUNT(DISTINCT section_key) AS count FROM submitted_sections;
+      `,
+        [UserRole.NODAL_OFFICER, UserRole.STATE_APPROVER, userStateUt]
+      );
+      indicatorsSubmittedResubmittedAccepted = parseInt(
+        submittedResubmittedAcceptedQuery[0]?.count || "0"
+      );
+    } catch {
+      indicatorsSubmittedResubmittedAccepted = 0;
+    }
     const pendingSubmission = Math.max(
-      totalAssignedCount - totalIndicatorsReceived,
+      totalIndicators - indicatorsSubmittedResubmittedAccepted,
       0
     );
 
@@ -413,9 +451,6 @@ export class DashboardService {
     const returnedFromMoSPI =
       byStatus[SubmissionStatus.RETURNED_FROM_MOSPI] || 0;
     const approvedByMoSPI = byStatus[SubmissionStatus.APPROVED] || 0;
-
-    // ✅ 8. Get Total Active Indicators
-    const totalIndicators = await this.getTotalActiveIndicators();
 
     // ✅ 8. MoSPI indicator status counts from latest submission JSON
     const mospiStatusCounts = await this.indicatorStatusService.getMospiSubmissionStatusByState(userStateUt);
