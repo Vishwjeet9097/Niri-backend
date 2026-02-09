@@ -463,31 +463,36 @@ export class DashboardService {
     const totalAssigned = parseInt(totalAssignedRes[0]?.count || "0");
     this.logger.log(`[NodalDashboard] totalAssigned = ${totalAssigned}`);
 
-    // 2️⃣ Total Submitted (any section that has a "status" key)
+    // 2️⃣ Total Submitted: sections with a non-draft status in form_data (nested under categories like infraFinancing).
+    // Excludes DRAFT and SAVE_AS_DRAFT so only actually submitted sections are counted.
     let totalSubmitted = 0;
     try {
       const totalSubmittedQuery = await this.submissionRepository.query(
-        `   
-
-      SELECT COUNT(DISTINCT section_key) AS count
+        `
+      WITH subm_sections AS (
+        SELECT s.id, sec.section_key, sec.section_value
         FROM submissions s
         JOIN users u ON s.submitted_by = u.id
-        CROSS JOIN LATERAL (
-          SELECT jsonb_object_keys(value) AS section_key
-          FROM jsonb_each(s.form_data)
-          WHERE jsonb_typeof(value) = 'object'
-        ) AS sections
+        CROSS JOIN LATERAL jsonb_each(s.form_data) AS cat(cat_key, cat_value)
+        CROSS JOIN LATERAL jsonb_each(
+          CASE WHEN jsonb_typeof(cat.cat_value) = 'object' THEN cat.cat_value ELSE '{}'::jsonb END
+        ) AS sec(section_key, section_value)
         WHERE u.role IN ($1)
-           AND s."submitted_by" = $2 
-          AND section_key ~ '^section[0-9]+_[0-9]+$';
-       
+          AND s.submitted_by = $2
+          AND sec.section_key ~ '^section[0-9]+_[0-9]+$'
+          AND jsonb_typeof(sec.section_value) = 'object'
+          AND sec.section_value->>'status' IS NOT NULL
+          AND sec.section_value->>'status' != 'DRAFT'
+          AND sec.section_value->>'status' != 'SAVE_AS_DRAFT'
+      )
+      SELECT COUNT(DISTINCT section_key) AS count FROM subm_sections;
       `,
         [UserRole.NODAL_OFFICER, userId]
       );
       totalSubmitted = parseInt(totalSubmittedQuery[0]?.count || "0");
     } catch (err) {
       this.logger.warn(
-        `[NodalDashboard] JSONPath failed for totalSubmitted, falling back to regex`
+        `[NodalDashboard] totalSubmitted query failed, falling back to regex: ${err}`
       );
       const fallback = await this.submissionRepository.query(
         `
@@ -507,7 +512,7 @@ export class DashboardService {
       `[NodalDashboard] totalSubmitted sections = ${totalSubmitted}`
     );
 
-    // 3️⃣ Approved sections (status = "ACCEPTED")
+    // 3️⃣ Approved sections (status = "ACCEPTED" in form_data)
     let approved = 0;
     try {
       const approvedQuery = await this.submissionRepository.query(
@@ -545,7 +550,7 @@ export class DashboardService {
       `[NodalDashboard] approved sections (status=ACCEPTED) = ${approved}`
     );
 
-    // 4️⃣ Reverted sections (status = "REVERTED")
+    // 4️⃣ Reverted sections (status = "REVERTED" in form_data)
     let reverted = 0;
     try {
       const revertedQuery = await this.submissionRepository.query(
