@@ -1632,6 +1632,37 @@ export class UserService {
     return !existingUser; // Return true if available (no user found)
   }
 
+  /**
+   * Admin-only: Change a user's password without requiring current password.
+   * Used when admin resets a user's password from user management.
+   */
+  async changePasswordByAdmin(
+    userId: string,
+    newPassword: string,
+    adminRole: UserRole
+  ): Promise<void> {
+    if (adminRole !== UserRole.ADMIN) {
+      throw new ForbiddenException("Only Admin can change user passwords");
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ["id", "email", "role"],
+    });
+
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    // Hide ADMIN users from all roles (including ADMIN itself)
+    if (user.role === UserRole.ADMIN) {
+      throw new NotFoundException("User not found");
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await this.userRepository.update(userId, { password: hashedPassword });
+  }
+
   async checkContactAvailability(
     contactNumber: string,
     excludeUserId?: string

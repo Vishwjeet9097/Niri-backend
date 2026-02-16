@@ -17,6 +17,7 @@ import {
 import { UserService } from "./user.service";
 import { IndicatorService } from "../indicator/indicator.service";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
+import { AdminChangePasswordDto } from "./dto/admin-change-password.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard, Roles } from "../auth/guards/roles.guard";
 import { UserRole } from "../../entities/user.entity";
@@ -306,6 +307,25 @@ export class UserController {
       //req.user.stateUt
       effectiveStateUt
     );
+  }
+
+  @Patch(":id/change-password")
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async changePasswordByAdmin(
+    @Param("id") id: string,
+    @Body() dto: AdminChangePasswordDto,
+    @Request() req
+  ) {
+    await this.userService.changePasswordByAdmin(
+      id,
+      dto.newPassword,
+      req.user.role
+    );
+    return {
+      status: true,
+      message: "Password changed successfully",
+    };
   }
 
   @Delete(":id")
