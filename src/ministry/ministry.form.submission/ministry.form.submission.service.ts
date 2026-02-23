@@ -537,6 +537,30 @@ export class MinistryFormSubmissionService {
         dataToSave.push(submissionData);
       }
 
+      // Step 4.5: Delete orphaned subsection rows (CRITICAL for row deletion fix)
+      // When user deletes a row and saves, we send fewer rows. The backend assigns sequence = arrayIndex + 1
+      // to the remaining rows. Old rows with higher sequences (e.g. sequence 2 when we now have 1 row)
+      // are never updated - they become "orphans" and appear as duplicates on reload.
+      // Delete all records with sequence > number of submitted rows to remove orphans.
+      const maxSequence = dto.data.subsection?.length ?? 0;
+      if (maxSequence >= 0) {
+        const deleteOrphansResult = await this.ministrySubmissionDataRepository
+          .createQueryBuilder()
+          .delete()
+          .from(MinistrySubmissionData)
+          .where('submission_indicator_id = :submissionIndicatorId', {
+            submissionIndicatorId: dto.submissionIndicatorId,
+          })
+          .andWhere('sequence IS NOT NULL')
+          .andWhere('sequence > :maxSequence', { maxSequence })
+          .execute();
+        if (deleteOrphansResult.affected && deleteOrphansResult.affected > 0) {
+          this.logger.log(
+            `Deleted ${deleteOrphansResult.affected} orphaned subsection row(s) for submissionIndicator ${dto.submissionIndicatorId}`,
+          );
+        }
+      }
+
       // Step 5: Process subsection data (array inside array)
       // subsection is an array of arrays: [[{inputId, value}, ...], [{inputId, value}, ...]]
       // Each array represents a row, assign sequence: first array = 1, second = 2, etc.
