@@ -7,6 +7,14 @@ import { Submission } from "../../entities/submission.entity";
 import { FinalScore } from "../../entities/final-score.entity";
 import { AuditLog } from "../../entities/audit-log.entity";
 import { MinistrySubmissionIndicator } from "../../ministry/entities/ministry-submission-indicator.entity";
+import { MinistrySubmission } from "../../ministry/entities/ministry-submission.entity";
+import { MinistrySubmissionData } from "../../ministry/entities/ministry-submission-data.entity";
+import { MinistrySubmissionComment } from "../../ministry/entities/ministry-submission-comment.entity";
+import { Form } from "../../ministry/entities/form.entity";
+import { MinistryIndicatorScore } from "../../entities/ministry-indicator-score.entity";
+import { MinistryIndicatorScoreHistory } from "../../entities/ministry-indicator-score-history.entity";
+import { MinistryFinalScore } from "../../entities/ministry-final-score.entity";
+import { MinistryManualScoreUpdate } from "../../entities/ministry-manual-score-update.entity";
 import { IndicatorDetail } from "../../ministry/entities/indicator-detail.entity";
 import { UserService } from "./user.service";
 import { UserController } from "./user.controller";
@@ -23,6 +31,14 @@ import { IndicatorModule } from "../indicator/indicator.module";
       FinalScore,
       AuditLog,
       MinistrySubmissionIndicator,
+      MinistrySubmission,
+      MinistrySubmissionData,
+      MinistrySubmissionComment,
+      Form,
+      MinistryIndicatorScore,
+      MinistryIndicatorScoreHistory,
+      MinistryFinalScore,
+      MinistryManualScoreUpdate,
       IndicatorDetail,
     ]),
     IndicatorModule,

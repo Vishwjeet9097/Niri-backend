@@ -16,6 +16,14 @@ import { FinalScore } from "../../entities/final-score.entity";
 import { AuditLog } from "../../entities/audit-log.entity";
 import { UpdateUserDto, CreateUserDto } from "../auth/dto/auth.dto";
 import { MinistrySubmissionIndicator } from "../../ministry/entities/ministry-submission-indicator.entity";
+import { MinistrySubmission, MinistrySubmissionStatus } from "../../ministry/entities/ministry-submission.entity";
+import { MinistrySubmissionData } from "../../ministry/entities/ministry-submission-data.entity";
+import { MinistrySubmissionComment } from "../../ministry/entities/ministry-submission-comment.entity";
+import { Form } from "../../ministry/entities/form.entity";
+import { MinistryIndicatorScore } from "../../entities/ministry-indicator-score.entity";
+import { MinistryIndicatorScoreHistory } from "../../entities/ministry-indicator-score-history.entity";
+import { MinistryFinalScore } from "../../entities/ministry-final-score.entity";
+import { MinistryManualScoreUpdate } from "../../entities/ministry-manual-score-update.entity";
 import { IndicatorDetail } from "../../ministry/entities/indicator-detail.entity";
 import * as bcrypt from "bcryptjs";
 
@@ -160,6 +168,7 @@ export class UserService {
         "contactNumber",
         "role",
         "stateUt",
+        "ministryId",
         "isActive",
         "createdAt",
       ],
@@ -339,12 +348,47 @@ export class UserService {
   async deactivate(
     id: string,
     userRole: UserRole,
-    userStateUt: string
+    userStateUt: string,
+    callerUserId?: string,
+    callerMinistryId?: string
   ): Promise<void> {
     const userToDelete = await this.findOne(id, userRole, userStateUt);
-  
-    // Admin, State Approver and MoSPI roles can deactivate users
-    if (
+
+    // Ministry approver can only delete their own nodal officers
+    if (userRole === UserRole.MINISTRY_APPROVER) {
+      if (userToDelete.role !== UserRole.NODAL_OFFICER) {
+        throw new ForbiddenException(
+          "Ministry Approver can only delete nodal officers under their ministry"
+        );
+      }
+      // Verify the nodal officer belongs to this ministry approver
+      // (1) Has indicators assigned by this ministry approver, or (2) has submission under ministry approver's form
+      const hasAssignedIndicator = await this.ministrySubmissionIndicatorRepository.count({
+        where: { ministryUser: callerUserId, assignedTo: id },
+      });
+      if (hasAssignedIndicator === 0) {
+        const formRepository = this.dataSource.getRepository(Form);
+        const ministrySubmissionRepository = this.dataSource.getRepository(MinistrySubmission);
+        const forms = await formRepository.find({
+          where: { ministryUser: callerUserId },
+          select: ["id"],
+        });
+        const formIds = forms.map((f) => f.id);
+        if (formIds.length === 0) {
+          throw new ForbiddenException(
+            "Ministry Approver can only delete nodal officers under their ministry"
+          );
+        }
+        const nodalSubmission = await ministrySubmissionRepository.findOne({
+          where: { formId: In(formIds), userId: id },
+        });
+        if (!nodalSubmission) {
+          throw new ForbiddenException(
+            "Ministry Approver can only delete nodal officers under their ministry"
+          );
+        }
+      }
+    } else if (
       ![
         UserRole.ADMIN,
         UserRole.STATE_APPROVER,
@@ -353,7 +397,7 @@ export class UserService {
       ].includes(userRole)
     ) {
       throw new ForbiddenException(
-        "Only Admin, State Approver and MoSPI roles can deactivate users"
+        "Only Admin, State Approver, MoSPI and Ministry Approver roles can deactivate users"
       );
     }
   
@@ -377,25 +421,323 @@ export class UserService {
         );
       }
     }
+
+    // Check if the user being deleted is a MINISTRY_APPROVER
+    // If yes, check if there are any NODAL_OFFICER users for this ministry
+    // Nodal officers can be linked via: (1) User.ministryId or (2) MinistrySubmission (assigned via ministry form)
+    if (userToDelete.role === UserRole.MINISTRY_APPROVER) {
+      let ministryId = userToDelete.ministryId;
+      // Fallback: get ministryId from form if not on user (e.g. legacy data)
+      if (!ministryId) {
+        const formRepository = this.dataSource.getRepository(Form);
+        const form = await formRepository.findOne({
+          where: { ministryUser: id },
+          select: ["ministry"],
+        });
+        ministryId = form?.ministry ?? null;
+      }
+      let nodalOfficerCount = 0;
+
+      // (1) Count nodal officers with ministryId on User record
+      if (ministryId) {
+        nodalOfficerCount = await this.userRepository.count({
+          where: {
+            role: UserRole.NODAL_OFFICER,
+            ministryId,
+            isActive: true,
+          },
+        });
+      }
+
+      // (2) If none found, check via MinistrySubmission - nodal officers assigned to this ministry's forms
+      if (nodalOfficerCount === 0 && ministryId) {
+        const formRepository = this.dataSource.getRepository(Form);
+        const ministrySubmissionRepository = this.dataSource.getRepository(MinistrySubmission);
+        const forms = await formRepository.find({
+          where: { ministry: ministryId },
+          select: ["id"],
+        });
+        if (forms.length > 0) {
+          const formIds = forms.map((f) => f.id);
+          const submissions = await ministrySubmissionRepository.find({
+            where: { formId: In(formIds) },
+            select: ["userId"],
+          });
+          const userIds = [...new Set(submissions.map((s) => s.userId).filter(Boolean))];
+          if (userIds.length > 0) {
+            nodalOfficerCount = await this.userRepository.count({
+              where: {
+                id: In(userIds),
+                role: UserRole.NODAL_OFFICER,
+                isActive: true,
+              },
+            });
+          }
+        }
+      }
+
+      if (nodalOfficerCount > 0) {
+        throw new BadRequestException(
+          `Cannot delete Ministry Approver. Nodal officer(s) for this ministry are present. First delete the nodal officers, then you can delete the ministry approver.`
+        );
+      }
+    }
   
-    // Check if the user has any submissions
-    // If they do, prevent deletion
+    // Check if the user has any state submissions (submittedBy)
     const submissionCount = await this.submissionRepository.count({
       where: { submittedBy: id },
     });
-  
+
     if (submissionCount > 0) {
       throw new BadRequestException(
-        `Cannot delete nodal officer. This user has ${submissionCount} submission(s) associated with them. Please remove or reassign the submissions before deleting.`
+        `Cannot delete user. This user has ${submissionCount} state submission(s) associated with them. Please remove or reassign the submissions before deleting.`
       );
+    }
+
+    // Check if the user has any ministry submissions
+    const ministrySubmissionRepository = this.dataSource.getRepository(MinistrySubmission);
+    if (userToDelete.role === UserRole.MINISTRY_APPROVER) {
+      // Ministry approver: block if they have any ministry submissions (form submission created with ministry)
+      const ministrySubmissionCount = await ministrySubmissionRepository.count({
+        where: { userId: id },
+      });
+      if (ministrySubmissionCount > 0) {
+        throw new BadRequestException(
+          `Cannot delete Ministry Approver. This ministry has active submission(s).`
+        );
+      }
+    } else if (userToDelete.role === UserRole.NODAL_OFFICER) {
+      // Nodal officer: block only if they have actually submitted (not just DRAFT - assigned but not submitted)
+      const submittedStatuses = [
+        MinistrySubmissionStatus.SUBMITTED_TO_MINISTRY,
+        MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_REVIEWER,
+        MinistrySubmissionStatus.SUBMITTED_TO_MOSPI_APPROVER,
+        MinistrySubmissionStatus.REJECTED,
+        MinistrySubmissionStatus.REJECTED_FINAL,
+        MinistrySubmissionStatus.RETURNED_FROM_MINISTRY,
+        MinistrySubmissionStatus.RETURNED_FROM_MOSPI_APPROVER,
+        MinistrySubmissionStatus.APPROVED,
+      ];
+      const nodalSubmittedCount = await ministrySubmissionRepository.count({
+        where: { userId: id, status: In(submittedStatuses) },
+      });
+      if (nodalSubmittedCount > 0) {
+        throw new BadRequestException(
+          `Cannot delete Nodal Officer. This user has ${nodalSubmittedCount} submission(s) that have been submitted.`
+        );
+      }
+    }
+
+    // Check if the user being deleted is a NODAL_OFFICER with assigned indicators
+    // If yes, prevent deletion until indicators are unassigned
+    if (userToDelete.role === UserRole.NODAL_OFFICER) {
+      const userIndicatorCount = await this.userIndicatorScopeRepository.count({
+        where: { userId: id },
+      });
+      const ministryIndicatorCount = await this.ministrySubmissionIndicatorRepository.count({
+        where: { assignedTo: id },
+      });
+
+      if (userIndicatorCount > 0 || ministryIndicatorCount > 0) {
+        throw new BadRequestException(
+          `Cannot delete nodal officer. Indicators are assigned to this nodal officer. First unassign the indicators, then you can delete the nodal officer.`
+        );
+      }
     }
   
     // Use transaction to ensure both operations happen atomically
     await this.dataSource.transaction(async (manager) => {
+      // If deleting a MINISTRY_APPROVER, delete their ministry form and related records
+      // (form is created in ministry_form when ministry approver is created)
+      if (userToDelete.role === UserRole.MINISTRY_APPROVER) {
+        // Get ministry submissions for this user
+        const ministrySubmissions = await manager.find(MinistrySubmission, {
+          where: { userId: id },
+          select: ["id"],
+        });
+        const submissionIds = ministrySubmissions.map((s) => s.id);
+
+        // Get ministry submission indicator ids (needed to delete data and comments first)
+        let indicatorIds: string[] = [];
+        if (submissionIds.length > 0) {
+          const indicators = await manager.find(MinistrySubmissionIndicator, {
+            where: { submissionId: In(submissionIds) },
+            select: ["id"],
+          });
+          indicatorIds = indicators.map((i) => i.id);
+        }
+        const indicatorsByMinistryUser = await manager.find(MinistrySubmissionIndicator, {
+          where: { ministryUser: id },
+          select: ["id"],
+        });
+        indicatorIds = [...new Set([...indicatorIds, ...indicatorsByMinistryUser.map((i) => i.id)])];
+
+        // Delete ministry submission data and comments (reference ministry_submission_indicator)
+        if (indicatorIds.length > 0) {
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistrySubmissionData)
+            .where("submission_indicator_id IN (:...ids)", { ids: indicatorIds })
+            .execute();
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistrySubmissionComment)
+            .where("submission_indicator_id IN (:...ids)", { ids: indicatorIds })
+            .execute();
+        }
+
+        // Delete ministry submission indicators linked to this user's submissions
+        if (submissionIds.length > 0) {
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistrySubmissionIndicator)
+            .where("submission_id IN (:...ids)", { ids: submissionIds })
+            .execute();
+        }
+
+        // Delete ministry submission indicators where this user is ministry_user
+        await manager
+          .createQueryBuilder()
+          .delete()
+          .from(MinistrySubmissionIndicator)
+          .where("ministry_user = :userId", { userId: id })
+          .execute();
+
+        // Delete ministry scoring records (FK to ministry_submission) before deleting submissions
+        if (submissionIds.length > 0) {
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryManualScoreUpdate)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryIndicatorScoreHistory)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryIndicatorScore)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryFinalScore)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+        }
+
+        // Delete ministry submissions
+        await manager.delete(MinistrySubmission, { userId: id });
+
+        // Delete ministry form(s) where this user is ministry_user
+        await manager
+          .createQueryBuilder()
+          .delete()
+          .from(Form)
+          .where("ministry_user = :userId", { userId: id })
+          .execute();
+      }
+
+      // If deleting a NODAL_OFFICER, delete their ministry submissions and related records
+      // (nodal officers can have ministry_submission entries when assigned indicators by ministry approver)
+      if (userToDelete.role === UserRole.NODAL_OFFICER) {
+        const ministrySubmissions = await manager.find(MinistrySubmission, {
+          where: { userId: id },
+          select: ["id"],
+        });
+        const submissionIds = ministrySubmissions.map((s) => s.id);
+
+        if (submissionIds.length > 0) {
+          // Get ministry submission indicator ids (needed to delete data and comments first)
+          const indicators = await manager.find(MinistrySubmissionIndicator, {
+            where: { submissionId: In(submissionIds) },
+            select: ["id"],
+          });
+          const indicatorIds = indicators.map((i) => i.id);
+
+          // Delete ministry submission data and comments
+          if (indicatorIds.length > 0) {
+            await manager
+              .createQueryBuilder()
+              .delete()
+              .from(MinistrySubmissionData)
+              .where("submission_indicator_id IN (:...ids)", { ids: indicatorIds })
+              .execute();
+            await manager
+              .createQueryBuilder()
+              .delete()
+              .from(MinistrySubmissionComment)
+              .where("submission_indicator_id IN (:...ids)", { ids: indicatorIds })
+              .execute();
+          }
+
+          // Delete ministry submission indicators for this nodal's submissions
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistrySubmissionIndicator)
+            .where("submission_id IN (:...ids)", { ids: submissionIds })
+            .execute();
+
+          // Delete ministry submission indicators where this nodal is assigned_to
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistrySubmissionIndicator)
+            .where("assigned_to = :userId", { userId: id })
+            .execute();
+
+          // Delete ministry scoring records (FK to ministry_submission)
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryManualScoreUpdate)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryIndicatorScoreHistory)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryIndicatorScore)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistryFinalScore)
+            .where("submissionId IN (:...ids)", { ids: submissionIds })
+            .execute();
+
+          // Delete ministry submissions
+          await manager.delete(MinistrySubmission, { userId: id });
+        } else {
+          // No submissions with userId, but may have indicators where assigned_to = id
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(MinistrySubmissionIndicator)
+            .where("assigned_to = :userId", { userId: id })
+            .execute();
+        }
+      }
+
       // Delete all indicator scope assignments for this user first
       // This ensures indicators become available again for the state approver
       await manager.delete(UserIndicatorScope, { userId: id });
-  
+
       // Hard delete the user since they have no submissions
       await manager.delete(User, id);
     });
@@ -404,23 +746,26 @@ export class UserService {
   async bulkDeactivate(
     userIds: string[],
     userRole: UserRole,
-    userStateUt: string
+    userStateUt: string,
+    callerUserId?: string,
+    callerMinistryId?: string
   ): Promise<{
     successCount: number;
     failedCount: number;
     errors: Array<{ userId: string; error: string }>;
   }> {
-    // Only ADMIN, STATE_APPROVER, MOSPI_REVIEWER, and MOSPI_APPROVER can bulk deactivate users
+    // ADMIN, STATE_APPROVER, MOSPI_REVIEWER, MOSPI_APPROVER, and MINISTRY_APPROVER can bulk deactivate users
     if (
       ![
         UserRole.ADMIN,
         UserRole.STATE_APPROVER,
         UserRole.MOSPI_REVIEWER,
         UserRole.MOSPI_APPROVER,
+        UserRole.MINISTRY_APPROVER,
       ].includes(userRole)
     ) {
       throw new ForbiddenException(
-        "Only Admin, State Approvers and MoSPI roles can bulk deactivate users"
+        "Only Admin, State Approvers, MoSPI and Ministry Approver roles can bulk deactivate users"
       );
     }
 
@@ -432,7 +777,7 @@ export class UserService {
 
     for (const userId of userIds) {
       try {
-        await this.deactivate(userId, userRole, userStateUt);
+        await this.deactivate(userId, userRole, userStateUt, callerUserId, callerMinistryId);
         results.successCount++;
       } catch (error) {
         results.failedCount++;

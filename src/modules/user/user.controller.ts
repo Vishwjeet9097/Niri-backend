@@ -338,7 +338,7 @@ export class UserController {
     UserRole.MINISTRY_APPROVER
   )
   async deactivate(@Param("id") id: string, @Request() req) {
-    await this.userService.deactivate(id, req.user.role, req.user.stateUt);
+    await this.userService.deactivate(id, req.user.role, req.user.stateUt, req.user.id, req.user.ministryId);
     return { message: "User deleted successfully" };
   }
 
@@ -358,7 +358,9 @@ export class UserController {
     const result = await this.userService.bulkDeactivate(
       bulkDeleteDto.userIds,
       req.user.role,
-      req.user.stateUt
+      req.user.stateUt,
+      req.user.id,
+      req.user.ministryId
     );
     return {
       message: `Successfully deactivated ${result.successCount} users`,
