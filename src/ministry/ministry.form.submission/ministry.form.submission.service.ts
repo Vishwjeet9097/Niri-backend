@@ -98,6 +98,23 @@ export class MinistryFormSubmissionService {
         subsectionInputFieldsMap.set(subsection.id, inputFields);
       }
 
+      // Step 3.5: Delete ALL existing data for this submission indicator (CRITICAL for first-time/duplicate fix)
+      // submitMinistryData (POST) always creates new records. Without this, repeated saves (e.g. Save as Draft
+      // then Submit, or multiple Save as Draft) would APPEND new records on top of existing = duplicates.
+      const deleteExistingResult = await this.ministrySubmissionDataRepository
+        .createQueryBuilder()
+        .delete()
+        .from(MinistrySubmissionData)
+        .where('submission_indicator_id = :submissionIndicatorId', {
+          submissionIndicatorId: dto.submissionIndicatorId,
+        })
+        .execute();
+      if (deleteExistingResult.affected && deleteExistingResult.affected > 0) {
+        this.logger.log(
+          `Cleared ${deleteExistingResult.affected} existing record(s) before submit for submissionIndicator ${dto.submissionIndicatorId}`,
+        );
+      }
+
       // Step 4: Process and save inputs data
       const savedData: MinistrySubmissionData[] = [];
 

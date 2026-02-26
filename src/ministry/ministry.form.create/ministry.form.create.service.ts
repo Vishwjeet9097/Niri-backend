@@ -989,49 +989,60 @@ export class MinistryFormCreateService {
         // Update user's ministryId
         await this.userRepository.update(userId, { ministryId: ministryId });
 
-        // Generate submission ID: SUB-{year}-{randomNum}
-        const randomNum = Math.floor(Math.random() * 1000000);
-        const submissionId = `SUB-${currentYear}-${randomNum}`;
-
-        // Create submission with formId and userId
-        const submission = this.ministrySubmissionRepository.create({
-          submissionId,
-          formId: existingForm.id,
-          userId: userId,
-          //status: SubmissionStatus.DRAFT,
-          status: null,
+        // Reuse existing submission if one already exists for this form + userId (prevents double entries)
+        let savedSubmission = await this.ministrySubmissionRepository.findOne({
+          where: { formId: existingForm.id, userId: userId },
+          order: { createdAt: 'DESC' },
         });
 
-        const savedSubmission = await this.ministrySubmissionRepository.save(submission);
+        if (!savedSubmission) {
+          // Generate submission ID: SUB-{year}-{randomNum}
+          const randomNum = Math.floor(Math.random() * 1000000);
+          const submissionId = `SUB-${currentYear}-${randomNum}`;
 
-        // Get all active indicator details
-        const activeIndicators = await this.indicatorDetailRepository.find({
-          where: { status: true },
+          // Create submission with formId and userId
+          const submission = this.ministrySubmissionRepository.create({
+            submissionId,
+            formId: existingForm.id,
+            userId: userId,
+            status: null,
+          });
+
+          savedSubmission = await this.ministrySubmissionRepository.save(submission);
+
+          // Get all active indicator details
+          const activeIndicators = await this.indicatorDetailRepository.find({
+            where: { status: true },
+          });
+
+          // Insert submission indicators for all active indicators with userId and ministryUser
+          const submissionIndicators = activeIndicators.map((indicator) =>
+            this.ministrySubmissionIndicatorRepository.create({
+              submissionId: savedSubmission!.id,
+              indicatorId: indicator.id,
+              status: null, // Status is null initially
+              ministryUser: userId,
+              assignedTo: userId,
+            })
+          );
+
+          await this.ministrySubmissionIndicatorRepository.save(submissionIndicators);
+        }
+
+        const activeIndicatorsCount = await this.ministrySubmissionIndicatorRepository.count({
+          where: { submissionId: savedSubmission!.id },
         });
-
-        // Insert submission indicators for all active indicators with userId and ministryUser
-        const submissionIndicators = activeIndicators.map((indicator) =>
-          this.ministrySubmissionIndicatorRepository.create({
-            submissionId: savedSubmission.id,
-            indicatorId: indicator.id,
-            status: null, // Status is null initially
-            ministryUser: userId,
-            assignedTo: userId,
-          })
-        );
-
-        await this.ministrySubmissionIndicatorRepository.save(submissionIndicators);
 
         return {
           status: true,
           data: {
             form: existingForm,
             submission: savedSubmission,
-            indicatorsCount: activeIndicators.length,
+            indicatorsCount: activeIndicatorsCount,
             role: 'MINISTRY_APPROVER',
             action: formExisted ? 'updated' : 'created',
           },
-          message: `Form ${formExisted ? 'updated' : 'created'} and submission created successfully for Ministry Approver. ${activeIndicators.length} indicators added.`,
+          message: `Form ${formExisted ? 'updated' : 'created'} and submission created successfully for Ministry Approver. ${activeIndicatorsCount} indicators.`,
         };
       }
 
