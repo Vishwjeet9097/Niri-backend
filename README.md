@@ -163,11 +163,12 @@ JWT_EXPIRES_IN=24h
 #### File Storage Configuration
 
 ```env
-# File Storage (Local)
+# File Storage (NFS - default for NIRI)
+# Ensure /neibackend NFS mount is available before starting
 STORAGE_TYPE=local
-STORAGE_PATH_LOCAL=./uploads
+STORAGE_PATH_LOCAL=/neibackend
 
-# File Storage (AWS S3)
+# File Storage (AWS S3 - alternative)
 STORAGE_TYPE=s3
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
@@ -339,13 +340,14 @@ npm run test:cov
 
 ## 📁 File Storage
 
-### Local Storage
+### NFS Storage (Default for NIRI)
 
-- Files stored in `./uploads` directory
-- Organized by submission ID
+- Files stored at NFS mount path `/neibackend`
+- Organized by submission ID: `submissions/[submission_id]/`
 - Unique filenames with UUID
+- Ensure NFS is mounted at `/neibackend` before starting the backend
 
-### AWS S3 Storage
+### AWS S3 Storage (Alternative)
 
 - Files uploaded to configured S3 bucket
 - Organized in `submissions/[submission_id]/` structure
@@ -378,10 +380,16 @@ PORT=3000
 DB_HOST=your-production-db-host
 DB_PASSWORD=your-production-password
 JWT_SECRET=your-production-jwt-secret
-STORAGE_TYPE=s3
-AWS_ACCESS_KEY_ID=your-production-aws-key
-AWS_SECRET_ACCESS_KEY=your-production-aws-secret
-S3_BUCKET_NAME=your-production-bucket
+
+# NFS Storage (default for NIRI)
+STORAGE_TYPE=local
+STORAGE_PATH_LOCAL=/neibackend
+
+# Or AWS S3 (alternative)
+# STORAGE_TYPE=s3
+# AWS_ACCESS_KEY_ID=your-production-aws-key
+# AWS_SECRET_ACCESS_KEY=your-production-aws-secret
+# S3_BUCKET_NAME=your-production-bucket
 ```
 
 ### Docker Deployment
@@ -390,12 +398,15 @@ S3_BUCKET_NAME=your-production-bucket
 # Build production image
 docker build -t niri_dev-backend:latest .
 
-# Run with environment variables
+# Run with NFS volume mount (ensure /neibackend is mounted on host)
 docker run -d \
   -p 3000:3000 \
+  -v /neibackend:/neibackend \
   -e NODE_ENV=production \
   -e DB_HOST=your-db-host \
   -e DB_PASSWORD=your-password \
+  -e STORAGE_TYPE=local \
+  -e STORAGE_PATH_LOCAL=/neibackend \
   niri_dev-backend:latest
 ```
 
@@ -416,10 +427,13 @@ psql -l | grep niri_db
 #### File Upload Issues
 
 ```bash
-# Check upload directory permissions
-ls -la ./uploads
+# Check NFS mount and directory permissions
+ls -la /neibackend
 
-# Check AWS credentials (for S3)
+# Ensure NFS is mounted (if using NFS)
+mount | grep neibackend
+
+# Check AWS credentials (if using S3)
 aws s3 ls
 ```
 

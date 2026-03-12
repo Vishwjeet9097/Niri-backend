@@ -123,6 +123,7 @@ Thumbs.db
 
 # Uploads and user content
 /uploads/
+/neibackend/
 public/uploads/
 
 # Documentation generated files

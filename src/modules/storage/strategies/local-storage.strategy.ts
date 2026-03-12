@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { UploadedFile, StoredFile, IStorageStrategy } from '../interfaces/storage.interface';
 import { promises as fsPromises, createReadStream , statSync, existsSync} from 'fs';
 import { ensureDirSync } from 'fs-extra';
-import { join, basename } from 'path';
+import { join, basename, resolve } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -15,8 +15,17 @@ export class LocalStorageStrategy implements IStorageStrategy {
     if (!this.basePath || typeof this.basePath !== 'string') {
       throw new Error('STORAGE_PATH_LOCAL environment variable is not set or is invalid.');
     }
-    // ensure base dir exists
-    ensureDirSync(this.basePath);
+    // For absolute paths (e.g. /neibackend NFS mount): directory must already exist
+    // For relative paths (e.g. ./uploads): create if needed
+    if (this.basePath.startsWith('/')) {
+      if (!existsSync(this.basePath)) {
+        throw new Error(
+          `Storage path ${this.basePath} does not exist. For NFS: ensure the share is mounted. For local: create it with "sudo mkdir -p ${this.basePath} && sudo chown $USER ${this.basePath}"`
+        );
+      }
+    } else {
+      ensureDirSync(this.basePath);
+    }
   }
 
   private makePath(file: UploadedFile | Express.Multer.File, subFolder?: string): string {
@@ -52,8 +61,11 @@ export class LocalStorageStrategy implements IStorageStrategy {
     }
 
     const stats = await fsPromises.stat(dest);
-    const safeBasePath = typeof this.basePath === 'string' && this.basePath ? this.basePath.replace(/\/+$/, '') : '';
-    const relativePath = typeof dest === 'string' && dest ? dest.replace(`${safeBasePath}/`, '') : '';
+    const resolvedBase = resolve(this.basePath);
+    const resolvedDest = resolve(dest);
+    const relativePath = resolvedDest.startsWith(resolvedBase)
+      ? resolvedDest.slice(resolvedBase.length).replace(/^\/+/, '')
+      : dest;
 
     const stored: StoredFile = {
       fileName: basename(dest),
@@ -72,7 +84,11 @@ export class LocalStorageStrategy implements IStorageStrategy {
 
   async deleteFile(filePath: string): Promise<boolean> {
     try {
-      const pathOnDisk = join(this.basePath, filePath);
+      let pathOnDisk = join(this.basePath, filePath);
+      if (!existsSync(pathOnDisk)) {
+        const altPath = resolve(process.cwd(), filePath);
+        if (existsSync(altPath)) pathOnDisk = altPath;
+      }
       await fsPromises.unlink(pathOnDisk);
       this.logger.log(`Deleted local file ${pathOnDisk}`);
       return true;
@@ -95,10 +111,14 @@ export class LocalStorageStrategy implements IStorageStrategy {
     contentLength?: number;
     fileName?: string;
   }> {
-    const fullPath = join(this.basePath, filePath);
-  
+    let fullPath = join(this.basePath, filePath);
     if (!existsSync(fullPath)) {
-      throw new Error(`File not found: ${filePath}`);
+      const altPath = resolve(process.cwd(), filePath);
+      if (existsSync(altPath)) {
+        fullPath = altPath;
+      } else {
+        throw new Error(`File not found: ${filePath}`);
+      }
     }
   
     const stats = statSync(fullPath);

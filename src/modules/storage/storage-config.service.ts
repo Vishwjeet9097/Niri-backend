@@ -43,7 +43,7 @@ export class StorageConfigService {
       awsSecretAccessKey: this.configService.get('AWS_SECRET_ACCESS_KEY'),
       awsRegion: this.configService.get('S3_REGION'),
       s3BucketName: this.configService.get('S3_BUCKET_NAME'),
-      storagePathLocal: this.configService.get('STORAGE_PATH_LOCAL', './uploads'),
+      storagePathLocal: this.configService.get('STORAGE_PATH_LOCAL', '/neibackend'),
     };
   }
 

@@ -49,16 +49,16 @@ NODE_ENV=development
 
 ### 4. File Storage Configuration
 
-#### Option A: Local Storage (Default)
+#### Option A: NFS Storage (Default for NIRI)
 ```env
-# Local File Storage
+# NFS File Storage - ensure /neibackend is mounted before starting
 STORAGE_TYPE=local
-STORAGE_PATH_LOCAL=./uploads
+STORAGE_PATH_LOCAL=/neibackend
 ```
 
 **कहाँ मिलेगा:**
-- `STORAGE_TYPE`: "local" set करें
-- `STORAGE_PATH_LOCAL`: Local directory path
+- `STORAGE_TYPE`: "local" set करें (NFS uses local strategy with mounted path)
+- `STORAGE_PATH_LOCAL`: NFS mount path (/neibackend for NIRI)
 
 #### Option B: AWS S3 Storage
 ```env
@@ -132,9 +132,9 @@ JWT_EXPIRES_IN=24h
 PORT=3000
 NODE_ENV=development
 
-# File Storage (Local)
+# File Storage (NFS)
 STORAGE_TYPE=local
-STORAGE_PATH_LOCAL=./uploads
+STORAGE_PATH_LOCAL=/neibackend
 ```
 
 ### Step 5: Install Dependencies
@@ -279,13 +279,16 @@ psql -U postgres -d niri_db -c "SELECT 1;"
 
 #### File Upload Issues
 ```bash
-# Check upload directory
-ls -la ./uploads
+# Check NFS mount and upload directory
+ls -la /neibackend
 
-# Check permissions
-chmod 755 ./uploads
+# Check NFS is mounted
+mount | grep neibackend
 
-# Check AWS credentials (S3 के लिए)
+# Check permissions (if needed)
+chmod 755 /neibackend
+
+# Check AWS credentials (if using S3)
 aws s3 ls
 ```
 
@@ -320,10 +323,10 @@ psql -U postgres -d niri_db -c "SELECT version();"
 
 ### File Storage Status
 ```bash
-# Local storage
-ls -la ./uploads
+# NFS storage
+ls -la /neibackend
 
-# S3 storage
+# S3 storage (if using)
 aws s3 ls s3://your-bucket-name
 ```
 
@@ -346,10 +349,16 @@ PORT=3000
 DB_HOST=your-production-db-host
 DB_PASSWORD=very_secure_production_password
 JWT_SECRET=production-jwt-secret-32-chars-minimum
-STORAGE_TYPE=s3
-AWS_ACCESS_KEY_ID=production-access-key
-AWS_SECRET_ACCESS_KEY=production-secret-key
-S3_BUCKET_NAME=production-bucket-name
+
+# NFS Storage (default for NIRI)
+STORAGE_TYPE=local
+STORAGE_PATH_LOCAL=/neibackend
+
+# Or S3 (alternative)
+# STORAGE_TYPE=s3
+# AWS_ACCESS_KEY_ID=production-access-key
+# AWS_SECRET_ACCESS_KEY=production-secret-key
+# S3_BUCKET_NAME=production-bucket-name
 ```
 
 ## 🎉 Success!
